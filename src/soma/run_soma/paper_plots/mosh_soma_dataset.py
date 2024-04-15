@@ -33,11 +33,86 @@ from glob import glob
 
 import numpy as np
 from loguru import logger
+from moshpp.tools.mocap_interface import read_mocap
+# from soma.amass.mosh_manual import mosh_manual
 
-from soma.amass.mosh_manual import mosh_manual
 
 
+def gen_stagei_mocap_fnames_random(mocap_base_dir, subject_name, ext='.c3d'):
+    """
+    During the first stage, MoSh++ uses 12 frames randomly selected from subject specific mocaps to
+    estimate the shape of the subject and placement of the markers. These 12 frames should have the
+     same frame number so that the results for the second stage of MoSh++ would be comparable.
+     To achieve this we use gen_stagei_mocap_fnames for the SOMA dataset mocaps.
+    """
+    np.random.seed(0)
+    assert ext in ['.c3d', '.pkl'], f"ext should be either '.c3d' or '.pkl' but got {ext}"
+
+    fnames = glob(osp.join(mocap_base_dir, subject_name, f"*{ext}"))
+    seq_ids = []
+    frame_ids = []
+    for i, fname in enumerate(fnames):
+        mocap = read_mocap(fname)
+        markers = mocap['markers']
+        seq_ids.append([i] * markers.shape[0])
+        frame_ids.append(np.arange(markers.shape[0]))
+    # randomly select a frame number for 12 times
+    seq_ids = np.concatenate(seq_ids)
+    frame_ids = np.concatenate(frame_ids)
+    total_frames = len(seq_ids)
+    selected_ids = np.random.choice(np.arange(total_frames), 12, replace=False)
+
+    selected_seq_ids = seq_ids[selected_ids]
+    selected_seq_names = [osp.split(fnames[i])[1] for i in selected_seq_ids]
+    selected_frame_ids = frame_ids[selected_ids]
+    stagei_mocap_fnames = [osp.join(mocap_base_dir, subject_name, f"{seq_name}_{frame_id:06d}")
+                           for seq_name, frame_id in zip(selected_seq_names, selected_frame_ids)]
+
+
+    # stagei_mocap_fnames = [osp.join(mocap_base_dir, subject_name, frame) for frame in
+    #                        {
+    #                            'soma_subject1': [
+    #                                f'run_002{ext}_001091',
+    #                                f'jump_001{ext}_000137',
+    #                                f'run_001{ext}_001366',
+    #                                f'jump_001{ext}_000509',
+    #                                f'throw_001{ext}_000596',
+    #                                f'jump_001{ext}_000588',
+    #                                f'jump_002{ext}_000471',
+    #                                f'run_001{ext}_000032',
+    #                                f'dance_001{ext}_001042',
+    #                                f'dance_001{ext}_000289',
+    #                                f'jump_001{ext}_000088',
+    #                                f'jump_001{ext}_000089',
+    #                            ],
+    #                            'soma_subject2': [
+    #                                f'dance_005{ext}_001289',
+    #                                f'random_004{ext}_000166',
+    #                                f'run_001{ext}_000826',
+    #                                f'random_004{ext}_000001',
+    #                                f'jump_001{ext}_000871',
+    #                                f'squat_003{ext}_000543',
+    #                                f'squat_003{ext}_000696',
+    #                                f'squat_003{ext}_001769',
+    #                                f'dance_003{ext}_001207',
+    #                                f'jump_001{ext}_000550',
+    #                                f'run_001{ext}_000865',
+    #                                f'throw_001{ext}_000069'
+    #                            ]
+    #                        }[subject_name]]
+
+    available_stagei_mocap_fnames = [osp.exists('_'.join(f.split('_')[:-1])) for f in stagei_mocap_fnames]
+    assert sum(available_stagei_mocap_fnames) == len(available_stagei_mocap_fnames), \
+        FileNotFoundError(np.array(stagei_mocap_fnames)[np.logical_not(available_stagei_mocap_fnames)])
+
+    return stagei_mocap_fnames
 def gen_stagei_mocap_fnames(mocap_base_dir, subject_name, ext='.c3d'):
+    """
+    During the first stage, MoSh++ uses 12 frames randomly selected from subject specific mocaps to
+    estimate the shape of the subject and placement of the markers. These 12 frames should have the
+     same frame number so that the results for the second stage of MoSh++ would be comparable.
+     To achieve this we use gen_stagei_mocap_fnames for the SOMA dataset mocaps.
+    """
     stagei_mocap_fnames = [osp.join(mocap_base_dir, subject_name, frame) for frame in
                            {
                                'soma_subject1': [
@@ -46,13 +121,13 @@ def gen_stagei_mocap_fnames(mocap_base_dir, subject_name, ext='.c3d'):
                                    f'run_001{ext}_001366',
                                    f'jump_001{ext}_000509',
                                    f'throw_001{ext}_000596',
-                                   f'dance_003{ext}_001488',
                                    f'jump_001{ext}_000588',
-                                   f'squat_002{ext}_001134',
                                    f'jump_002{ext}_000471',
                                    f'run_001{ext}_000032',
                                    f'dance_001{ext}_001042',
-                                   f'dance_001{ext}_000289'
+                                   f'dance_001{ext}_000289',
+                                   f'jump_001{ext}_000088',
+                                   f'jump_001{ext}_000089',
                                ],
                                'soma_subject2': [
                                    f'dance_005{ext}_001289',

@@ -1,7 +1,7 @@
 mocap_gt:
   fname: ??? # should be provided at runtime
   ds_name: ${resolve_mocap_ds_name:${mocap_gt.fname}} # dataset name
-  subject_name: ${resolve_mocap_subject:${mocap_gt.fname}}
+  subject_name: ${resolve_mocap_session:${mocap_gt.fname}}
   basename: ${resolve_mocap_basename:${mocap_gt.fname}}
   unit: mm
   rotate:
@@ -11,7 +11,7 @@ mocap_gt:
 mocap_rec:
   fname: ???
   ds_name: ${resolve_mocap_ds_name:${mocap_rec.fname}}
-  subject_name: ${resolve_mocap_subject:${mocap_rec.fname}}
+  subject_name: ${resolve_mocap_session:${mocap_rec.fname}}
   basename: ${resolve_mocap_basename:${mocap_rec.fname}}
   unit: m # the mocap unit for soma pkl is meters
   rotate:

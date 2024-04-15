@@ -115,11 +115,8 @@ def run_soma_on_multiple_settings(soma_expr_ids: List[str], soma_mocap_target_ds
     if eval_v2v_cfg is None: eval_v2v_cfg = {}
     if parallel_cfg is None: parallel_cfg = {}
 
-    if mocap_base_dir is None:
-        mocap_base_dir = '/ps/project/soma/support_files/release_soma/evaluation_mocaps/with_synthetic_noise'
-
-    if soma_work_base_dir is None:
-        soma_work_base_dir = '/is/cluster/scratch/nghorbani/soma'
+    assert mocap_base_dir is not None, ValueError(f'mocap_base_dir is not provided')
+    assert soma_work_base_dir is not None, ValueError(f'soma_work_base_dir is not provided')
 
     soma_jobs = []
     mosh_jobs = []

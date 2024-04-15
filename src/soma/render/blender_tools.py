@@ -32,7 +32,7 @@ import os
 import sys
 from os import path as osp
 
-import bpy
+# import bpy
 from human_body_prior.tools.omni_tools import get_support_data_dir
 from loguru import logger
 from omegaconf import OmegaConf, DictConfig

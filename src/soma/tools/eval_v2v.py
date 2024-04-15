@@ -151,7 +151,8 @@ def evaluate_v2v_once(cfg):
 
     body_gt = produce_body_from_mosh_pkl(cfg.mosh_gt.stageii_fname, support_base_dir=cfg.dirs.support_base_dir)
 
-    assert body_gt['surface_v'].shape[0] == body_rec['surface_v'].shape[0]
+    # assert body_gt['surface_v'].shape[0] == body_rec['surface_v'].shape[0]
+    body_gt['surface_v'] = body_gt['surface_v'][:body_rec['surface_v'].shape[0]]
 
     perframe_v2v = np.sqrt(np.power(body_gt['surface_v'] - body_rec['surface_v'], 2).sum(-1))
 

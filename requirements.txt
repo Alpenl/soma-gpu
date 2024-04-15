@@ -18,7 +18,6 @@ six
 tk
 toolz
 wheel
-pytorch3d
 notifiers
 tqdm
 opencv-python
@@ -29,7 +28,8 @@ markdown
 omegaconf
 pandas
 pycodestyle
-pytorch-lightning
+pytorch_lightning==1.4.0
+torchmetrics==0.4
 scikit-learn
 tensorboard
 threadpoolctl
