@@ -1,16 +1,9 @@
 ## SOMA: Solving Optical Marker-Based MoCap Automatically, ICCV'21
 
-This repository contains the official PyTorch implementation of:
-
-SOMA: Solving Optical Marker-Based MoCap Automatically\
-Nima Ghorbani and Michael J. Black\
-[Paper](https://download.is.tue.mpg.de/soma/SOMA_ICCV21.pdf) | [Supp.Mat.](https://download.is.tue.mpg.de/soma/SOMA_Suppmat.pdf) | [Video](https://www.youtube.com/watch?v=BEFCqIefLA8&t=1s&ab_channel=MichaelBlack) | [Project website](https://soma.is.tue.mpg.de/) | [Poster](https://download.is.tue.mpg.de/soma/SOMA_Poster.pdf)
-
-![alt text](https://download.is.tue.mpg.de/soma/tutorials/soma_github_teaser.gif "mocap point clouds (black dots in the back) turned into labeled markers (colored dots)")
-
-SOMA **automatically transforms raw marker-based mocap point clouds** (black dots in the back) into **solved SMPL-X bodies** and **labeled markers** (colored dots).
-
 ## Installation
+
+**在2080ti上已经有安装好的conda环境： `/home/user416/miniconda3/envs/soma`**
+ 
 
 SOMA is originally developed in Python 3.7, PyTorch 1.8.2 LTS, for Ubuntu 20.04.2 LTS. 
 Below we prepare the python environment using [Anaconda](https://www.anaconda.com/products/individual), 
@@ -51,46 +44,32 @@ into your python site-packages folder, i.e. ````anaconda3/envs/soma/lib/python3.
 Last but not least, the current SOMA code relies on [MoSh++](https://github.com/nghorbani/moshpp) mocap solver. 
 Please install MoSh++ following the guidelines in its repository.
 
+## Directory Structure
+2080ti机器上， `ROOT`为`/home/user416/data/tennis_motion`
 
-## Using SOMA
-There are multiple main parts of the codebase that we try to explain in the [Tutorials](src/tutorials):
-- [Run SOMA On MoCap Point Cloud Data](src/tutorials/run_soma_on_soma_dataset.ipynb)
-- [Label Priming an Unknown Marker Layout](src/tutorials/label_priming.ipynb)
-- [SOMA Ablative Studies](src/tutorials/ablation_study.ipynb)
-- [Solve Already Labeled MoCaps With MoSh++](src/tutorials/solve_labeled_mocap.ipynb)
+文件层次从上到下为 `每次mocap session` -> `每次mocap session的每个subject` -> `subject的多个动作序列`
 
-## Citation
+注意，同一subject在不同mocap session的shape是不同的，因为身材会有变化。
+````
+ROOT
+--mocap_raw/[session]/[subject]
+----[seq].fbx
+----[seq].npy
+----[seq].c3d
+----[seq]_racket.npy
+--soma_labeled_mocap_tracklet
+----soma中间结果，不太用管
+--mosh_results_tracklet/[session]/[subject]
+----[seq]_stageii.pkl
+--processed
+````
 
-Please cite the following paper if you use this code directly or indirectly in your research/projects:
-
-```
-@inproceedings{SOMA:ICCV:2021,
-  title = {{SOMA}: Solving Optical Marker-Based MoCap Automatically},
-  author = {Ghorbani, Nima and Black, Michael J.},
-  booktitle = {Proceedings of IEEE/CVF International Conference on Computer Vision (ICCV)},
-  month = oct,
-  year = {2021},
-  doi = {},
-  month_numeric = {10}}
-```
-
-## License
-
-Software Copyright License for **non-commercial scientific research purposes**. Please read carefully
-the [terms and conditions](./LICENSE) and any accompanying documentation before you download and/or
-use the SOMA data and software, (the "Data & Software"), software, scripts, and animations. 
-By downloading and/or using the Data & Software (including downloading, cloning, installing, and any other use of this repository), 
-you acknowledge that you have read these terms
-and conditions, understand them, and agree to be bound by them. If you do not agree with these terms and conditions, you
-must not download and/or use the Data & Software. 
-Any infringement of the terms of this agreement will automatically terminate
-your rights under this [License](./LICENSE).
-
-## Contact
-
-The code in this repository is developed by [Nima Ghorbani](https://nghorbani.github.io/) 
-while at [Max-Planck Institute for Intelligent Systems, Tübingen, Germany](https://is.mpg.de/person/nghorbani).
-
-If you have any questions you can contact us at [soma@tuebingen.mpg.de](mailto:amass@tuebingen.mpg.de).
-
-For commercial licensing, contact [ps-licensing@tue.mpg.de](mailto:ps-licensing@tue.mpg.de)
+## Pipeline
+1. Pre-process data using Maya  
+用maya的pip安装numpy   
+`C:/Program Files/Autodesk/Maya2025/bin/mayapy.exe -m pip install numpy`  
+打开Maya，右下角script窗口，将`fbx_convert.py`复制进去运行，需要更改中间的`data_dir`路径为你的`ROOT`路径（见上一节）
+结果会保存在`ROOT/mocap_raw/[session]/[subject]/[seq].npy`和`[seq]_racket.npy`
+2. 切回soma的环境，运行`npy2c3d.py`，将npy文件转换为c3d文件
+3. 运行soma的`convert_tennis.py`，会自动运行soma和mosh++，得到最终的smplx结果，储存在`ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl`  
+关于pkl文件内容解析，可参考`save_smplx_verts.py`
