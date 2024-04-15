@@ -4,7 +4,8 @@
 
 **在2080ti上已经有安装好的conda环境： `/home/user416/miniconda3/envs/soma`**
  
-
+<details open>
+<summary>Click to expand 详细安装流程</summary>
 SOMA is originally developed in Python 3.7, PyTorch 1.8.2 LTS, for Ubuntu 20.04.2 LTS. 
 Below we prepare the python environment using [Anaconda](https://www.anaconda.com/products/individual), 
 however, we opt for a simple pip package manager for installing dependencies.
@@ -36,13 +37,15 @@ The final directory should look like ````anaconda3/envs/soma/lib/python3.7/site-
 Install the psbody.mesh library following the instructions in [https://github.com/MPI-IS/mesh](https://github.com/MPI-IS/mesh).
 Hint: clone the mesh repository and run the following from the anaconda environment:  ````python setup.py install ````.
 
-To use the rendering capabilities first install an instance of Blender-2.83 LTS on your machine.
+~~To use the rendering capabilities first install an instance of Blender-2.83 LTS on your machine.
 Afterward uncompress contents of the precompiled 
 [bpy-2.83](https://download.is.tue.mpg.de/download.php?domain=soma&sfile=blender/bpy-2.83-20200908.tar.bz2) 
-into your python site-packages folder, i.e. ````anaconda3/envs/soma/lib/python3.7/site-packages````. 
+into your python site-packages folder, i.e. ````anaconda3/envs/soma/lib/python3.7/site-packages````.~~ 
 
 Last but not least, the current SOMA code relies on [MoSh++](https://github.com/nghorbani/moshpp) mocap solver. 
 Please install MoSh++ following the guidelines in its repository.
+
+</details>
 
 ## Directory Structure
 2080ti机器上， `ROOT`为`/home/user416/data/tennis_motion`
