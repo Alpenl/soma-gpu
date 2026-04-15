@@ -1,87 +1,135 @@
+import argparse
 import os.path as osp
-import numpy as np
-from soma.tools.run_soma_multiple import run_soma_on_multiple_settings
 
-soma_expr_id = 'V48_02_SuperSet'  # the checkpoint name, don't change
-soma_data_id = 'OC_05_G_03_real_000_synt_100'
+from utils.script_utils import resolve_support_base_dir
 
-# data-specific settings
-soma_mocap_target_ds_name = '20240205'
-# subject_name = 'linxu'
-# where the mocap data is stored
-mocap_base_dir = "/home/user416/data/tennis_motion/mocap_raw"
-
-soma_work_base_dir = '/home/user416/project/soma'
-support_base_dir = osp.join(soma_work_base_dir, 'support_files')
-
-fname_filter = ['zhou']
-
-run_soma_on_multiple_settings(
-    soma_expr_ids=[
-        soma_expr_id,
-    ],
-    soma_mocap_target_ds_names=[
-        soma_mocap_target_ds_name,
-    ],
-    soma_data_ids=[
-        soma_data_id,
-    ],
-    soma_cfg={
-        'soma.batch_size': 256,
-        'dirs.support_base_dir':support_base_dir,
-        'mocap.unit': 'mm',
-        'save_c3d': True,
-        'keep_nan_points': True,
-        'remove_zero_trajectories': True
-    },
-    parallel_cfg={
-        # 'max_num_jobs': 10,# comment to run on whole dataset
-        'randomly_run_jobs': True,
-    },
-    run_tasks=[
-        'soma',
-    ],
-    mocap_base_dir = mocap_base_dir,
-    soma_work_base_dir=soma_work_base_dir,
-    mocap_ext='.c3d',
-    fname_filter=fname_filter,
-)
+DEFAULT_EXPR_ID = "V48_02_SuperSet"
+DEFAULT_DATA_ID = "OC_05_G_03_real_000_synt_100"
+DEFAULT_MOCAP_EXT = ".c3d"
 
 
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description="Run SOMA followed by MoSh++ for a tennis-style mocap dataset."
+    )
+    parser.add_argument(
+        "--dataset",
+        required=True,
+        help="Dataset/session name under the mocap base directory.",
+    )
+    parser.add_argument(
+        "--mocap-base-dir",
+        required=True,
+        help="Base directory containing <dataset>/<subject>/*.c3d.",
+    )
+    parser.add_argument(
+        "--soma-work-base-dir",
+        default=osp.dirname(osp.abspath(__file__)),
+        help="Root working directory used by SOMA.",
+    )
+    parser.add_argument(
+        "--support-base-dir",
+        default=None,
+        help="Optional override for the support files directory.",
+    )
+    parser.add_argument(
+        "--expr-id",
+        default=DEFAULT_EXPR_ID,
+        help="SOMA checkpoint expression id.",
+    )
+    parser.add_argument(
+        "--data-id",
+        default=DEFAULT_DATA_ID,
+        help="SOMA dataset id for the selected checkpoint.",
+    )
+    parser.add_argument(
+        "--fname-filter",
+        nargs="*",
+        default=[],
+        help="Optional list of substrings used to filter mocap filenames.",
+    )
+    parser.add_argument(
+        "--mocap-unit",
+        default="mm",
+        help="Unit stored in the mocap files.",
+    )
+    parser.add_argument(
+        "--mocap-ext",
+        default=DEFAULT_MOCAP_EXT,
+        help="Extension of the input mocap files.",
+    )
+    parser.add_argument(
+        "--soma-batch-size",
+        type=int,
+        default=256,
+        help="Batch size passed to SOMA inference.",
+    )
+    parser.add_argument(
+        "--skip-soma",
+        action="store_true",
+        help="Skip the SOMA labeling pass.",
+    )
+    parser.add_argument(
+        "--skip-mosh",
+        action="store_true",
+        help="Skip the MoSh++ fitting pass.",
+    )
+    return parser
 
 
-mocap_dir = osp.join(mocap_base_dir, '..',
-                         'soma_labeled_mocap_tracklet',
-                         soma_mocap_target_ds_name)
-# stagei_mocap_fnames = gen_stagei_mocap_fnames_random(mocap_dir, subject_name, ext='.pkl')
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
-run_soma_on_multiple_settings(
-    soma_expr_ids=[
-        soma_expr_id,
-    ],
-    soma_mocap_target_ds_names=[
-        soma_mocap_target_ds_name,
-    ],
-    soma_data_ids=
-    [soma_data_id,],
-    mosh_cfg={
-        'moshpp.verbosity': 1,  # set to two to visualize the process in psbody.mesh.mesh_viewer
-        # 'moshpp.stagei_frame_picker.stagei_mocap_fnames': stagei_mocap_fnames,
-        'moshpp.stagei_frame_picker.type': 'random',
+    if args.skip_soma and args.skip_mosh:
+        parser.error("At least one of SOMA or MoSh++ must remain enabled.")
 
-        'dirs.support_base_dir': support_base_dir,
+    from soma.tools.run_soma_multiple import run_soma_on_multiple_settings
 
-        # 'mocap.end_fidx': 600  # comment in real runs
-    },
-    mocap_base_dir=mocap_base_dir,
-    run_tasks=['mosh'],
-    fname_filter=fname_filter,
-    #         fast_dev_run=True,
-    mocap_ext='.c3d',
-    soma_work_base_dir=soma_work_base_dir,
-    parallel_cfg={
-        # 'max_num_jobs': 1,  # comment to run on all mocaps
-        'randomly_run_jobs': True,
-    },
+    support_base_dir = resolve_support_base_dir(
+        args.soma_work_base_dir, args.support_base_dir
+    )
+    parallel_cfg = {"randomly_run_jobs": True}
 
-)
+    if not args.skip_soma:
+        run_soma_on_multiple_settings(
+            soma_expr_ids=[args.expr_id],
+            soma_mocap_target_ds_names=[args.dataset],
+            soma_data_ids=[args.data_id],
+            soma_cfg={
+                "soma.batch_size": args.soma_batch_size,
+                "dirs.support_base_dir": support_base_dir,
+                "mocap.unit": args.mocap_unit,
+                "save_c3d": True,
+                "keep_nan_points": True,
+                "remove_zero_trajectories": True,
+            },
+            parallel_cfg=parallel_cfg,
+            run_tasks=["soma"],
+            mocap_base_dir=args.mocap_base_dir,
+            soma_work_base_dir=args.soma_work_base_dir,
+            mocap_ext=args.mocap_ext,
+            fname_filter=args.fname_filter,
+        )
+
+    if not args.skip_mosh:
+        run_soma_on_multiple_settings(
+            soma_expr_ids=[args.expr_id],
+            soma_mocap_target_ds_names=[args.dataset],
+            soma_data_ids=[args.data_id],
+            mosh_cfg={
+                "moshpp.verbosity": 1,
+                "moshpp.stagei_frame_picker.type": "random",
+                "dirs.support_base_dir": support_base_dir,
+            },
+            mocap_base_dir=args.mocap_base_dir,
+            run_tasks=["mosh"],
+            fname_filter=args.fname_filter,
+            mocap_ext=args.mocap_ext,
+            soma_work_base_dir=args.soma_work_base_dir,
+            parallel_cfg=parallel_cfg,
+        )
+
+
+if __name__ == "__main__":
+    main()

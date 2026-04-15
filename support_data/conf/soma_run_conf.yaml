@@ -12,7 +12,7 @@ mocap:
 dirs:
   work_base_dir: ???
   support_base_dir: ???
-  work_dir: /home/user416/data/tennis_motion/${resolve_soma_runtime_work_dir:${soma.tracklet_labeling.enable}}
+  work_dir: ${soma.expr_dir}/evaluations/${resolve_soma_runtime_work_dir:${soma.tracklet_labeling.enable}}
   mocap_out_fname: ${dirs.work_dir}/${mocap.ds_name}/${mocap.subject_name}/${mocap.basename}.pkl
   log_fname: ${dirs.work_dir}/${mocap.ds_name}/${mocap.subject_name}/${mocap.basename}.log
 

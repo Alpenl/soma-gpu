@@ -128,3 +128,21 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .idea/
+
+# Local vendor checkouts and downloaded assets
+/body_visualizer/
+/configer/
+/human_body_prior/
+/mesh/
+/support_files/
+
+# Local datasets and experiment outputs
+/data/
+/training_experiments/
+/mosh_results/
+
+# Downloaded archives and generated artifacts
+*.tar.bz2
+*.zip
+*.ckpt
+events.out.tfevents.*

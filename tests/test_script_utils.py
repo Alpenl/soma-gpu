@@ -1,0 +1,57 @@
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from utils.script_utils import (
+    codec_for_video_path,
+    default_stageii_output_paths,
+    list_stageii_pickles,
+    resolve_support_base_dir,
+)
+
+
+def test_resolve_support_base_dir_uses_default_under_work_base_dir():
+    assert resolve_support_base_dir("/tmp/soma-work") == os.path.join(
+        "/tmp/soma-work", "support_files"
+    )
+
+
+def test_resolve_support_base_dir_prefers_explicit_override():
+    assert resolve_support_base_dir("/tmp/soma-work", "/data/support") == "/data/support"
+
+
+def test_default_stageii_output_paths_replace_stageii_suffix():
+    obj_out, pc2_out = default_stageii_output_paths("/tmp/demo_stageii.pkl")
+
+    assert obj_out == "/tmp/demo_stageii.obj"
+    assert pc2_out == "/tmp/demo_stageii.pc2"
+
+
+def test_default_stageii_output_paths_fall_back_to_plain_stem():
+    obj_out, pc2_out = default_stageii_output_paths("/tmp/demo.pkl")
+
+    assert obj_out == "/tmp/demo.obj"
+    assert pc2_out == "/tmp/demo.pc2"
+
+
+def test_list_stageii_pickles_returns_sorted_matches(tmp_path):
+    (tmp_path / "b_stageii.pkl").write_text("")
+    (tmp_path / "ignore.pkl").write_text("")
+    (tmp_path / "a_stageii.pkl").write_text("")
+
+    assert list_stageii_pickles(str(tmp_path)) == [
+        str(tmp_path / "a_stageii.pkl"),
+        str(tmp_path / "b_stageii.pkl"),
+    ]
+
+
+def test_codec_for_video_path_uses_mp4v_for_mp4():
+    assert codec_for_video_path("demo.mp4") == "mp4v"
+
+
+def test_codec_for_video_path_uses_xvid_for_avi():
+    assert codec_for_video_path("demo.avi") == "XVID"
