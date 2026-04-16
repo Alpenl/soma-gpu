@@ -4,7 +4,7 @@ round:
   date: "2026-04-16"
 repo:
   branch: "main"
-  head_commit: "<to-fill-after-commit>"
+  head_commit: "4fb8c2af7449d6850cfaeb45839287b1524a2408"
 environment:
   os: "Linux 6.8.0-94-generic"
   python: "Python 3.10.12 (python3)"

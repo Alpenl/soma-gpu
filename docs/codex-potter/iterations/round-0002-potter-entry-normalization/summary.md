@@ -6,7 +6,7 @@ round:
 repo:
   branch: "main"
   commits:
-    - "<to-fill-after-commit>"
+    - "4fb8c2af7449d6850cfaeb45839287b1524a2408"
 artifacts:
   docs:
     - "round-overview.md"

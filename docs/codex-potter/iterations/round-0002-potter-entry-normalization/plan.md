@@ -6,7 +6,7 @@ round:
 repo:
   branch: "main"
   base_commit: "462f95d457e6eafcc963e613eba7b08e15241c93"
-  head_commit: "<to-fill-after-commit>"
+  head_commit: "4fb8c2af7449d6850cfaeb45839287b1524a2408"
 roles:
   orchestrator: "main-session"
   workers:
