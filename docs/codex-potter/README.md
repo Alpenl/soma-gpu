@@ -4,6 +4,12 @@
 
 仓库级入口请从：[MAIN.md](../../MAIN.md) 开始。
 
+运行 CodexPotter 时，请把**仓库根 `MAIN.md`** 和 **runtime progress file** 区分开：
+
+- 人类入口：`MAIN.md`
+- runtime progress file：`.codexpotter/projects/2026/04/16/1/MAIN.md`
+- 当前标准续跑命令：`codex-potter resume 2026/04/16/1 --yolo --rounds <N>`
+
 ## 1. 你在这里要解决什么问题
 
 本仓库的 GPU 线路要在“能跑”之上达成更高标准：

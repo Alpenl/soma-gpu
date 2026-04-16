@@ -7,6 +7,8 @@
 - 总说明（本项目的控制面总览）：[docs/codex-potter/README.md](./docs/codex-potter/README.md)
 - 工作流协议（每轮固定阶段与子代理约束）：[docs/codex-potter/governance/workflow-protocol.md](./docs/codex-potter/governance/workflow-protocol.md)
 - 轮次规范与当前轮目录：[docs/codex-potter/iterations/README.md](./docs/codex-potter/iterations/README.md)
+- CodexPotter 标准续跑命令：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`
+- CodexPotter runtime progress file（本地 gitignored）：`.codexpotter/projects/2026/04/16/1/MAIN.md`
 
 ## 1. 项目目标（GPU 线路）
 
@@ -50,6 +52,7 @@
 | 轮次 | 日期 | 主题 | 上一轮指针 | 本轮产物指针 | 状态 |
 |---|---|---|---|---|---|
 | R0001 | 2026-04-16 | 控制面初始化 | 无 | `docs/codex-potter/iterations/round-0001-init/` | 完成 |
+| R0002 | 2026-04-16 | Potter 入口归一化 | `round-0001-init` | `docs/codex-potter/iterations/round-0002-potter-entry-normalization/` | 完成 |
 
 后续每轮的标准产物目录：`docs/codex-potter/iterations/round-XXXX-<slug>/`。
 
@@ -61,3 +64,10 @@
 - 轮次入口：`docs/codex-potter/iterations/README.md`
 
 三者必须保持互链；新增文档必须至少回链到上述其一，避免“孤儿文档”。
+
+## 7. 人类入口与 Runtime 入口的区别
+
+- 仓库根 `MAIN.md` 是**人类与主会话**使用的控制面入口，已经提交到 git。
+- `.codexpotter/projects/.../MAIN.md` 是 **CodexPotter runtime progress file**，供 `codex-potter resume` 使用，默认不进 git。
+- 对当前仓库，标准续跑命令是：`codex-potter resume 2026/04/16/1 --yolo --rounds <N>`。
+- 不要把仓库根 `MAIN.md` 直接当成 `resume` 的 `PROJECT_PATH`；根据 CodexPotter 源码，runtime progress file 必须位于 `.codexpotter/projects/...` 目录下。

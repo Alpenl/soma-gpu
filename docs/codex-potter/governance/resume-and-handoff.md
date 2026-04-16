@@ -6,6 +6,21 @@
 
 ---
 
+## Runtime 入口约束
+
+对当前仓库，CodexPotter 的 `resume` 入口必须使用 `.codexpotter/projects/.../MAIN.md` 这一类 progress file，而不是仓库根 `MAIN.md`。
+
+- 人类控制面入口：`/home/alpen/DEV/soma-gpu/MAIN.md`
+- 当前 runtime progress file：`/home/alpen/DEV/soma-gpu/.codexpotter/projects/2026/04/16/1/MAIN.md`
+- 当前标准续跑命令：`codex-potter resume 2026/04/16/1 --yolo --rounds <N>`
+
+原因：
+
+- 根据 CodexPotter 源码，`resume` 在解析到 `MAIN.md` 之后，会继续从该文件路径向上回溯，要求它必须位于 `.codexpotter/` 目录内，才能推导出项目工作目录。
+- 仓库根 `MAIN.md` 是提交到 git 的人类入口，不满足这条 runtime 约束。
+
+---
+
 ## 术语与角色
 
 - **一轮（round）**：从“读取上轮交接包”开始，到“提交本轮产物并写完交接包”结束的完整闭环。
@@ -23,13 +38,16 @@
 
 1. `MAIN.md`（仓库主控文档）
    - 读出：当前长期目标、阶段目标、分支策略、指标口径、当前优先级与约束。
-2. 上一轮交接包（必须）
+2. 当前 CodexPotter runtime progress file（必须）
+   - 推荐路径：`.codexpotter/projects/2026/04/16/1/MAIN.md`
+   - 读出：Potter 当前内部任务状态、最近完成轮次、下一步 todo。
+3. 上一轮交接包（必须）
    - 上一轮的 `summary.md`：读出“做了什么、没做什么、为什么、下一轮建议、未解决问题”。
    - 上一轮的 `test.md`：读出验证范围、是否有已知未覆盖的测试空洞、如何复现。
    - 上一轮的 `plan.md`：对照实际产出，识别偏离点与遗留 TODO。
-3. 本规范：`docs/codex-potter/governance/resume-and-handoff.md`
+4. 本规范：`docs/codex-potter/governance/resume-and-handoff.md`
    - 读出：本轮必须产出什么、子代理汇报格式、提交要求。
-4. 与当前方向强相关的“基线/背景”文档（按需，但通常建议读）
+5. 与当前方向强相关的“基线/背景”文档（按需，但通常建议读）
    - `docs/如何将原生MoSh++改造成GPU版.md`（现有瓶颈与方向背景）
    - 若仓库存在并被标记为“候选资产”的工作树/分支文档，也应快速扫读其计划与现状（例如 `.worktrees/.../docs/...` 中的实现计划）。
 
