@@ -77,6 +77,10 @@ def build_parser():
 
 
 def _validate_mesh_cli_args(parser, args):
+    if args.warmup_runs < 0:
+        parser.error("--warmup-runs must be >= 0")
+    if args.measured_runs <= 0:
+        parser.error("--measured-runs must be > 0")
     if args.mesh_chunk_size is not None:
         if args.mesh_reference is None:
             parser.error("--mesh-chunk-size requires --mesh-reference")

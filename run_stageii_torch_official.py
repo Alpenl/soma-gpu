@@ -225,6 +225,10 @@ def _validate_mesh_cli_args(parser, args):
         parser.error("--mesh-reference requires benchmark to be enabled")
     if args.mesh_reference_output_suffix is not None and args.skip_benchmark:
         parser.error("--mesh-reference-output-suffix requires benchmark to be enabled")
+    if args.warmup_runs < 0:
+        parser.error("--warmup-runs must be >= 0")
+    if args.measured_runs <= 0:
+        parser.error("--measured-runs must be > 0")
 
     has_mesh_reference = args.mesh_reference is not None or args.mesh_reference_output_suffix is not None
     if args.mesh_chunk_size is not None:

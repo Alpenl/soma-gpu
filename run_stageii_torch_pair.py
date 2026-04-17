@@ -256,6 +256,10 @@ def _build_candidate_runner_args(
 def _validate_mesh_cli_args(parser, args):
     if args.mesh_output_dir is not None and not args.export_mesh:
         parser.error("--mesh-output-dir requires --export-mesh")
+    if args.warmup_runs < 0:
+        parser.error("--warmup-runs must be >= 0")
+    if args.measured_runs <= 0:
+        parser.error("--measured-runs must be > 0")
     if args.mesh_chunk_size is not None and args.mesh_chunk_size <= 0:
         parser.error("--mesh-chunk-size must be > 0")
     if args.mesh_chunk_overlap is not None and args.mesh_chunk_size is None:

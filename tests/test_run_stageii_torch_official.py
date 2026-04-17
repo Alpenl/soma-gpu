@@ -2016,6 +2016,32 @@ def test_run_stageii_torch_official_main_rejects_mesh_chunk_size_without_mesh_re
     assert "--mesh-chunk-size requires --mesh-reference or --mesh-reference-output-suffix" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_rejects_non_positive_measured_runs(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--measured-runs",
+                "0",
+            ]
+        )
+
+    assert "--measured-runs must be > 0" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_rejects_negative_mesh_chunk_overlap(
     tmp_path, monkeypatch, capsys
 ):

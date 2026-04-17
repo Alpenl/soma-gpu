@@ -965,6 +965,28 @@ def test_benchmark_stageii_public_main_rejects_mesh_chunk_size_without_mesh_refe
     assert "--mesh-chunk-size requires --mesh-reference" in capsys.readouterr().err
 
 
+def test_benchmark_stageii_public_main_rejects_negative_warmup_runs(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark helper should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        benchmark_stageii_public.main(
+            [
+                "--input",
+                "candidate_stageii.pkl",
+                "--warmup-runs",
+                "-1",
+            ]
+        )
+
+    assert "--warmup-runs must be >= 0" in capsys.readouterr().err
+
+
 def test_benchmark_stageii_public_main_rejects_non_positive_mesh_chunk_size(
     monkeypatch, capsys
 ):
