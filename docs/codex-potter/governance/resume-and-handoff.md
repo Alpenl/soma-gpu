@@ -23,11 +23,22 @@
 - 当前默认续跑示例命令：`codex-potter resume 2026/04/17/1 --yolo --rounds 10`
 - 若需要不同轮数，只替换最后的 `10`；`--rounds <N>` 只是参数占位写法。
 - 若运行中出现 `Current project is interrupted` 弹窗，必须在弹窗中选择 `I made some changes, continue iterate`，或按 `2` 再回车；不要把普通文本 `继续` 发送进会话，否则 CodexPotter 会把它当成新的 `user_message`，新建一个新的 `.codexpotter/projects/...` 项目。
+- 当前 GPU 优化项目处于临时 `incident mode`：若近期日志已明确出现 `thread/rollback` 且发生在 `spawn_agent` / `wait_agent` 后，续跑时禁止再派生子代理，改为主会话单线程本地完成读仓库、实现、测试和审阅。
 
 原因：
 
 - 根据 CodexPotter 源码，`resume` 在解析到 `MAIN.md` 之后，会继续从该文件路径向上回溯，要求它必须位于 `.codexpotter/` 目录内，才能推导出项目工作目录。
 - 仓库根 `MAIN.md` 是提交到 git 的人类入口，不满足这条 runtime 约束。
+- 最近 GPU 项目的 `thread/rollback` 样本里，子线程本身已经 `task_complete`，但父线程在回收 explorer 结果时仍被记录为失败；在这个链路恢复稳定前，继续使用子代理只会反复消耗轮次预算而不推进代码工作。
+
+推荐的 incident mode 续跑指令：
+
+```text
+继续当前 GPU 项目，但进入单会话 incident mode。
+不要调用任何子代理，不要使用 spawn_agent / wait_agent / dispatching-parallel-agents。
+主会话直接在本地完成 round-0007 的 strict review、benchmark 缺口修补、foundation candidate 审计、实现和测试。
+如果再次出现 interrupted，只在弹窗里选择 continue iterate，不发送普通文本消息。
+```
 
 ---
 
