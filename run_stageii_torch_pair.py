@@ -192,10 +192,16 @@ def _build_candidate_runner_args(args, *, mesh_reference_path=None):
     return runner_args
 
 
+def _validate_mesh_cli_args(parser, args):
+    if args.mesh_output_dir is not None and not args.export_mesh:
+        parser.error("--mesh-output-dir requires --export-mesh")
+
+
 def run(argv=None, *, emit_json=True):
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    _validate_mesh_cli_args(parser, args)
     if args.baseline_output_suffix == args.candidate_output_suffix:
         parser.error("--baseline-output-suffix and --candidate-output-suffix must be different")
 

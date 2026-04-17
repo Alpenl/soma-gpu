@@ -162,6 +162,11 @@ def _validate_mesh_reference_output_suffix(parser, args):
         )
 
 
+def _validate_mesh_cli_args(parser, args):
+    if args.mesh_output_dir is not None and not args.export_mesh:
+        parser.error("--mesh-output-dir requires --export-mesh")
+
+
 def _resolve_mesh_reference_path(parser, args):
     if args.mesh_reference is not None:
         return args.mesh_reference
@@ -226,6 +231,7 @@ def _export_meshes(stageii_path, args):
 def run(argv=None, *, emit_json=True):
     parser = build_parser()
     args = parser.parse_args(argv)
+    _validate_mesh_cli_args(parser, args)
     _validate_mesh_reference_output_suffix(parser, args)
 
     cfg = MoSh.prepare_cfg(**_cfg_overrides(parser, args))

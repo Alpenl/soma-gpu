@@ -356,3 +356,27 @@ def test_run_stageii_torch_pair_main_rejects_matching_output_suffixes():
                 "_same",
             ]
         )
+
+
+def test_run_stageii_torch_pair_main_rejects_mesh_output_dir_without_export_mesh(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        run_stageii_torch_pair.run_stageii_torch_official,
+        "run",
+        lambda *args, **kwargs: pytest.fail("underlying runner should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--mesh-output-dir",
+                str(tmp_path / "mesh_exports"),
+            ]
+        )
+
+    assert "--mesh-output-dir requires --export-mesh" in capsys.readouterr().err
