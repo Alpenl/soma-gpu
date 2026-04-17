@@ -615,7 +615,7 @@ def _splice_chunk_overlap_reference(
     return reference
 
 
-def _build_chunk_transl_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
+def _build_chunk_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
     if previous_tail is None:
         return None
     anchor = previous_tail[-1:].detach().clone()
@@ -630,6 +630,15 @@ def _build_chunk_transl_velocity_reference(base_reference, previous_tail, overla
         return anchor
     seam_positions = seam_positions - seam_positions[:1].clone()
     return anchor + seam_positions
+
+
+def _build_chunk_transl_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
+    return _build_chunk_velocity_reference(
+        base_reference,
+        previous_tail,
+        overlap_count,
+        keep_seam_window=keep_seam_window,
+    )
 
 
 def mosh_stageii_torch(
@@ -886,6 +895,24 @@ def mosh_stageii_torch(
                     else None
                 )
 
+            velocity_reference = None
+            velocity_reference_index = None
+            if (
+                sequence_boundary_velocity_reference
+                and prev_latent_pose is not None
+                and chunk_overlap_count < chunk_length
+            ):
+                velocity_reference_index = chunk_overlap_count
+                velocity_reference = prev_latent_pose
+                keep_seam_window = min(chunk_overlap_count, chunk_length - chunk_overlap_count)
+                if previous_chunk_latent_tail is not None and keep_seam_window > 1:
+                    velocity_reference = _build_chunk_velocity_reference(
+                        chunk_latent_init,
+                        previous_chunk_latent_tail,
+                        chunk_overlap_count,
+                        keep_seam_window=keep_seam_window,
+                    )
+
             transl_velocity_reference = None
             transl_velocity_reference_index = None
             if (
@@ -952,7 +979,8 @@ def mosh_stageii_torch(
                 optimize_fingers=optimize_fingers,
                 optimize_face=optimize_face,
                 optimize_toes=bool(cfg.moshpp.optimize_toes),
-                velocity_reference=prev_latent_pose if sequence_boundary_velocity_reference else None,
+                velocity_reference=velocity_reference,
+                velocity_reference_index=velocity_reference_index,
                 transl_velocity_reference=transl_velocity_reference,
                 transl_velocity_reference_index=transl_velocity_reference_index,
                 visible_mask=chunk_visible,

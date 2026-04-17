@@ -223,6 +223,7 @@ def fit_stageii_sequence_torch(
     optimize_face=False,
     optimize_toes=False,
     velocity_reference=None,
+    velocity_reference_index=None,
     transl_velocity_reference=None,
     transl_velocity_reference_index=None,
     visible_mask=None,
@@ -284,7 +285,20 @@ def fit_stageii_sequence_torch(
     if marker_data_weights is not None:
         marker_data_weights = torch.as_tensor(marker_data_weights, dtype=torch.float32, device=device)
     if velocity_reference is not None:
-        velocity_reference = torch.as_tensor(velocity_reference, dtype=torch.float32, device=device)
+        velocity_reference = _coerce_optional_velocity_reference(
+            velocity_reference,
+            device=device,
+            dtype=torch.float32,
+            feature_shape=(layout.latent_dim,),
+            num_frames=num_frames,
+            name="velocity_reference",
+        )
+        velocity_reference = velocity_reference.detach().clone()
+    velocity_reference_index = _coerce_optional_index(
+        velocity_reference_index,
+        num_frames=num_frames,
+        name="velocity_reference_index",
+    )
     transl_velocity_reference = _coerce_optional_velocity_reference(
         transl_velocity_reference,
         device=device,
@@ -375,6 +389,7 @@ def fit_stageii_sequence_torch(
             marker_data_weights=marker_data_weights,
             weights=weights,
             velocity_reference=velocity_reference,
+            velocity_reference_index=velocity_reference_index,
             transl_velocity_reference=transl_velocity_reference,
             transl_velocity_reference_index=transl_velocity_reference_index,
             latent_pose_reference=latent_pose_reference,
@@ -397,6 +412,7 @@ def fit_stageii_sequence_torch(
         marker_data_weights=marker_data_weights,
         weights=weights,
         velocity_reference=velocity_reference,
+        velocity_reference_index=velocity_reference_index,
         transl_velocity_reference=transl_velocity_reference,
         transl_velocity_reference_index=transl_velocity_reference_index,
         latent_pose_reference=latent_pose_reference,

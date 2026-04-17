@@ -84,6 +84,59 @@ def _coerce_reference_index(reference_index, *, num_frames, name):
     return reference_index
 
 
+def _velocity_term(sequence, *, weight, reference=None, reference_index=None, index_name):
+    term = sequence.new_zeros((sequence.shape[0],))
+    if weight == 0.0:
+        return term
+
+    reduce_dims = tuple(range(1, sequence.ndim))
+    if sequence.shape[0] >= 2:
+        diffs = sequence[1:] - sequence[:-1]
+        term[1:] = torch.sum((diffs * weight) ** 2, dim=reduce_dims)
+
+    if reference is None:
+        return term
+
+    reference = _coerce_velocity_reference(reference, sequence)
+    if reference.shape[0] == 1:
+        seam_idx = _coerce_reference_index(
+            reference_index,
+            num_frames=sequence.shape[0],
+            name=index_name,
+        )
+        if seam_idx is None:
+            seam_idx = 0
+        term[seam_idx] = torch.sum(((sequence[seam_idx] - reference[0]) * weight) ** 2)
+        return term
+
+    if reference.shape[0] == sequence.shape[0]:
+        return torch.sum(((sequence - reference) * weight) ** 2, dim=reduce_dims)
+
+    seam_idx = _coerce_reference_index(
+        reference_index,
+        num_frames=sequence.shape[0],
+        name=index_name,
+    )
+    if seam_idx is None:
+        seam_idx = 0
+    local_frame_count = reference.shape[0] - 1
+    window_end = seam_idx + local_frame_count
+    if window_end > sequence.shape[0]:
+        raise ValueError(
+            f"{index_name.rsplit('_', 1)[0]} local window exceeds sequence length: "
+            f"start={seam_idx}, window={local_frame_count}, num_frames={sequence.shape[0]}"
+        )
+    reference_diffs = reference[1:] - reference[:-1]
+    term[seam_idx] = torch.sum((((sequence[seam_idx] - reference[0]) - reference_diffs[0]) * weight) ** 2)
+    if local_frame_count > 1:
+        local_diffs = sequence[seam_idx + 1 : window_end] - sequence[seam_idx : window_end - 1]
+        term[seam_idx + 1 : window_end] = torch.sum(
+            ((local_diffs - reference_diffs[1:]) * weight) ** 2,
+            dim=reduce_dims,
+        )
+    return term
+
+
 class StageIISequenceEvaluator(torch.nn.Module):
     def __init__(
         self,
@@ -116,6 +169,7 @@ class StageIISequenceEvaluator(torch.nn.Module):
         marker_data_weights,
         weights,
         velocity_reference,
+        velocity_reference_index=None,
         transl_velocity_reference=None,
         transl_velocity_reference_index=None,
         latent_pose_reference=None,
@@ -152,75 +206,24 @@ class StageIISequenceEvaluator(torch.nn.Module):
         velocity_term = latent_pose.new_zeros((latent_pose.shape[0],))
         velocity_weight = float(getattr(weights, "velocity", 0.0))
         if velocity_weight != 0.0:
-            if velocity_reference is not None:
-                velocity_reference = _coerce_velocity_reference(velocity_reference, latent_pose)
-                if velocity_reference.shape[0] == 1:
-                    velocity_term[0] = torch.sum(((latent_pose[0] - velocity_reference[0]) * velocity_weight) ** 2)
-                    if latent_pose.shape[0] >= 2:
-                        diffs = latent_pose[1:] - latent_pose[:-1]
-                        velocity_term[1:] = torch.sum((diffs * velocity_weight) ** 2, dim=1)
-                else:
-                    velocity_term = torch.sum(((latent_pose - velocity_reference) * velocity_weight) ** 2, dim=1)
-            elif latent_pose.shape[0] >= 2:
-                diffs = latent_pose[1:] - latent_pose[:-1]
-                velocity_term[1:] = torch.sum((diffs * velocity_weight) ** 2, dim=1)
+            velocity_term = _velocity_term(
+                latent_pose,
+                weight=velocity_weight,
+                reference=velocity_reference,
+                reference_index=velocity_reference_index,
+                index_name="velocity_reference_index",
+            )
 
         transl_velocity_term = latent_pose.new_zeros((latent_pose.shape[0],))
         transl_velocity_weight = float(getattr(weights, "transl_velocity", 0.0))
         if transl_velocity_weight != 0.0:
-            if transl.shape[0] >= 2:
-                diffs = transl[1:] - transl[:-1]
-                transl_velocity_term[1:] = torch.sum((diffs * transl_velocity_weight) ** 2, dim=1)
-            if transl_velocity_reference is not None:
-                transl_velocity_reference = _coerce_velocity_reference(transl_velocity_reference, transl)
-                if transl_velocity_reference.shape[0] == 1:
-                    seam_idx = _coerce_reference_index(
-                        transl_velocity_reference_index,
-                        num_frames=transl.shape[0],
-                        name="transl_velocity_reference_index",
-                    )
-                    if seam_idx is None:
-                        seam_idx = 0
-                    transl_velocity_term[seam_idx] = torch.sum(
-                        ((transl[seam_idx] - transl_velocity_reference[0]) * transl_velocity_weight) ** 2
-                    )
-                elif transl_velocity_reference.shape[0] == transl.shape[0]:
-                    transl_velocity_term = torch.sum(
-                        ((transl - transl_velocity_reference) * transl_velocity_weight) ** 2,
-                        dim=1,
-                    )
-                else:
-                    seam_idx = _coerce_reference_index(
-                        transl_velocity_reference_index,
-                        num_frames=transl.shape[0],
-                        name="transl_velocity_reference_index",
-                    )
-                    if seam_idx is None:
-                        seam_idx = 0
-                    local_frame_count = transl_velocity_reference.shape[0] - 1
-                    window_end = seam_idx + local_frame_count
-                    if window_end > transl.shape[0]:
-                        raise ValueError(
-                            "transl_velocity_reference local window exceeds sequence length: "
-                            f"start={seam_idx}, window={local_frame_count}, num_frames={transl.shape[0]}"
-                        )
-                    reference_diffs = transl_velocity_reference[1:] - transl_velocity_reference[:-1]
-                    transl_velocity_term[seam_idx] = torch.sum(
-                        (
-                            (
-                                (transl[seam_idx] - transl_velocity_reference[0])
-                                - reference_diffs[0]
-                            )
-                            * transl_velocity_weight
-                        )
-                        ** 2
-                    )
-                    if local_frame_count > 1:
-                        local_diffs = transl[seam_idx + 1 : window_end] - transl[seam_idx : window_end - 1]
-                        transl_velocity_term[seam_idx + 1 : window_end] = torch.sum(
-                            ((local_diffs - reference_diffs[1:]) * transl_velocity_weight) ** 2,
-                            dim=1,
-                        )
+            transl_velocity_term = _velocity_term(
+                transl,
+                weight=transl_velocity_weight,
+                reference=transl_velocity_reference,
+                reference_index=transl_velocity_reference_index,
+                index_name="transl_velocity_reference_index",
+            )
 
         accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
         temporal_accel = float(getattr(weights, "temporal_accel", 0.0))
@@ -296,6 +299,7 @@ def evaluate_stageii_sequence(
     marker_data_weights,
     weights,
     velocity_reference,
+    velocity_reference_index=None,
     transl_velocity_reference=None,
     transl_velocity_reference_index=None,
     latent_pose_reference=None,
@@ -313,6 +317,7 @@ def evaluate_stageii_sequence(
         marker_data_weights=marker_data_weights,
         weights=weights,
         velocity_reference=velocity_reference,
+        velocity_reference_index=velocity_reference_index,
         transl_velocity_reference=transl_velocity_reference,
         transl_velocity_reference_index=transl_velocity_reference_index,
         latent_pose_reference=latent_pose_reference,
