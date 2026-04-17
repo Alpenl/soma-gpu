@@ -585,3 +585,122 @@ def test_run_stageii_torch_pair_main_rejects_colliding_benchmark_outputs(
         )
 
     assert "baseline and candidate resolve to the same benchmark output path" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_baseline_actual_stageii_path_collides_with_candidate_plan(
+    tmp_path, monkeypatch, capsys
+):
+    candidate_stageii = tmp_path / "candidate" / "shared_stageii.pkl"
+    calls = []
+
+    def fake_run(argv, *, emit_json):
+        calls.append((list(argv), emit_json))
+        if len(calls) == 1:
+            return {
+                "benchmark": None,
+                "stageii_path": str(candidate_stageii),
+            }
+        pytest.fail("candidate runner should not run when baseline actual stageii path collides with candidate plan")
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--candidate-cfg",
+                f"dirs.stageii_fname={candidate_stageii}",
+            ]
+        )
+
+    assert len(calls) == 1
+    assert "baseline actual stageii output path collides with candidate plan" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_baseline_actual_mesh_export_collides_with_candidate_plan(
+    tmp_path, monkeypatch, capsys
+):
+    mesh_output_dir = tmp_path / "mesh_exports"
+    candidate_stageii = tmp_path / "candidate" / "shared_stageii.pkl"
+    calls = []
+
+    def fake_run(argv, *, emit_json):
+        calls.append((list(argv), emit_json))
+        if len(calls) == 1:
+            return {
+                "benchmark": None,
+                "mesh_export": {
+                    "obj_path": str(mesh_output_dir / "shared_stageii.obj"),
+                    "pc2_path": str(mesh_output_dir / "shared_stageii.pc2"),
+                },
+                "stageii_path": str(tmp_path / "baseline" / "baseline_stageii.pkl"),
+            }
+        pytest.fail("candidate runner should not run when baseline actual mesh export collides with candidate plan")
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(mesh_output_dir),
+                "--candidate-cfg",
+                f"dirs.stageii_fname={candidate_stageii}",
+            ]
+        )
+
+    assert len(calls) == 1
+    assert "baseline actual mesh export output collides with candidate plan" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_baseline_actual_benchmark_output_collides_with_candidate_plan(
+    tmp_path, monkeypatch, capsys
+):
+    candidate_stageii = tmp_path / "candidate" / "shared_stageii.pkl"
+    calls = []
+
+    def fake_run(argv, *, emit_json):
+        calls.append((list(argv), emit_json))
+        if len(calls) == 1:
+            return {
+                "benchmark": {
+                    "artifact": {
+                        "report_path": str(candidate_stageii.with_name("shared_benchmark.json")),
+                    }
+                },
+                "stageii_path": str(tmp_path / "baseline" / "baseline_stageii.pkl"),
+            }
+        pytest.fail("candidate runner should not run when baseline actual benchmark output collides with candidate plan")
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--baseline-benchmark-output",
+                str(tmp_path / "baseline" / "baseline_benchmark.json"),
+                "--candidate-cfg",
+                f"dirs.stageii_fname={candidate_stageii}",
+            ]
+        )
+
+    assert len(calls) == 1
+    assert "baseline actual benchmark output path collides with candidate plan" in capsys.readouterr().err
