@@ -285,6 +285,7 @@ def _run_lbfgs(
 def fit_stageii_frame_torch(
     *,
     body_model,
+    wrapper=None,
     betas,
     marker_attachment,
     marker_observations,
@@ -302,6 +303,7 @@ def fit_stageii_frame_torch(
     velocity_reference=None,
     rigid_init=True,
     warmup_pose_scales=(1.0,),
+    evaluator=None,
 ):
     latent_pose_init = torch.as_tensor(latent_pose_init, dtype=torch.float32)
     transl_init = torch.as_tensor(transl_init, dtype=torch.float32)
@@ -320,15 +322,17 @@ def fit_stageii_frame_torch(
     betas = betas.to(device)
     hand_pca = _as_hand_pca_spec(hand_pca, device=device, dtype=latent_pose_param.dtype)
 
-    wrapper = SmplxTorchWrapper(body_model=body_model, surface_model_type=layout.surface_model_type)
-    evaluator = build_stageii_evaluator(
-        wrapper=wrapper,
-        layout=layout,
-        hand_pca=hand_pca,
-        pose_prior=pose_prior,
-        optimize_fingers=optimize_fingers,
-        optimize_face=optimize_face,
-    )
+    if wrapper is None:
+        wrapper = SmplxTorchWrapper(body_model=body_model, surface_model_type=layout.surface_model_type)
+    if evaluator is None:
+        evaluator = build_stageii_evaluator(
+            wrapper=wrapper,
+            layout=layout,
+            hand_pca=hand_pca,
+            pose_prior=pose_prior,
+            optimize_fingers=optimize_fingers,
+            optimize_face=optimize_face,
+        )
 
     def closure_for(current_weights):
         def compute():

@@ -17,6 +17,7 @@ from moshpp.optim.frame_fit_torch import (
     HandPcaSpec,
     TorchFrameFitOptions,
     TorchFrameFitWeights,
+    build_stageii_evaluator,
     decode_stageii_latent_pose,
     fit_stageii_frame_torch,
     make_stageii_latent_layout,
@@ -479,6 +480,18 @@ def mosh_stageii_torch(
         markers_latent_tensor.detach().cpu(),
         surface_model_type=cfg.surface_model.type,
     ).to(device=device, dtype=torch.float32)
+    runtime = getattr(cfg, "runtime", None)
+    evaluator = build_stageii_evaluator(
+        wrapper=wrapper,
+        layout=layout,
+        hand_pca=hand_pca,
+        pose_prior=pose_prior,
+        optimize_fingers=optimize_fingers,
+        optimize_face=optimize_face,
+        compile_module=bool(_runtime_get(runtime, "compile_evaluator", False)),
+        compile_mode=str(_runtime_get(runtime, "compile_mode", "default")),
+        compile_fullgraph=bool(_runtime_get(runtime, "compile_fullgraph", False)),
+    )
 
     perframe_data = {
         "markers_sim": [],
@@ -505,7 +518,6 @@ def mosh_stageii_torch(
         else None
     )
     prev_latent_pose = None
-    runtime = getattr(cfg, "runtime", None)
     label_to_latent_id = {label: idx for idx, label in enumerate(latent_labels)}
     sequence_chunk_size = max(int(_runtime_get(runtime, "sequence_chunk_size", 1) or 1), 1)
     sequence_chunk_overlap = max(int(_runtime_get(runtime, "sequence_chunk_overlap", 0) or 0), 0)
@@ -583,6 +595,7 @@ def mosh_stageii_torch(
                 visible_mask=chunk_visible,
                 weights=sequence_weights,
                 options=sequence_options,
+                evaluator=evaluator,
             )
 
             current_latent_pose = torch.as_tensor(result.latent_pose[-1:]).detach()
@@ -663,6 +676,7 @@ def mosh_stageii_torch(
                 options=options,
                 rigid_init=rigid_init,
                 warmup_pose_scales=warmup_scales,
+                evaluator=evaluator,
             )
 
             current_latent_pose = result.latent_pose.detach()
