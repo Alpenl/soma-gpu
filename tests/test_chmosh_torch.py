@@ -427,6 +427,146 @@ def test_runtime_sequence_fit_options_inherit_refine_solver_defaults():
     assert options.max_eval == 77
 
 
+def test_mosh_stageii_torch_sequence_solver_inherits_refine_runtime_defaults(tmp_path, monkeypatch):
+    module = _load_chmosh_torch_module()
+
+    markers_latent = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    ).numpy()
+    latent_labels = ["A", "B", "C", "D"]
+    marker_offsets = torch.tensor(
+        [
+            [0.10, 0.00, 0.00],
+            [0.25, -0.15, 0.35],
+            [0.05, 0.20, -0.10],
+            [-0.15, 0.10, 0.05],
+        ],
+        dtype=torch.float32,
+    )
+    markers = markers_latent[None, :, :] + marker_offsets[:, None, :].numpy()
+    mocap_fname = tmp_path / "synthetic_sequence_inherit_refine_defaults.pkl"
+    with mocap_fname.open("wb") as handle:
+        pickle.dump({"markers": markers, "labels": latent_labels, "frame_rate": 120.0}, handle)
+
+    cfg = _ns(
+        {
+            "mocap": {
+                "unit": "m",
+                "rotate": None,
+                "subject_name": None,
+                "multi_subject": False,
+                "start_fidx": 0,
+                "end_fidx": -1,
+                "ds_rate": 1,
+            },
+            "surface_model": {
+                "type": "smplx",
+                "num_betas": 10,
+                "dof_per_hand": 24,
+                "num_expressions": 10,
+                "use_hands_mean": True,
+                "betas_expr_start_id": 300,
+            },
+            "moshpp": {
+                "optimize_fingers": False,
+                "optimize_face": False,
+                "optimize_toes": False,
+                "optimize_dynamics": False,
+                "verbosity": 0,
+            },
+            "opt_settings": {
+                "maxiter": 0,
+                "weights": {
+                    "stageii_wt_data": 1.0,
+                    "stageii_wt_poseB": 0.0,
+                    "stageii_wt_poseH": 0.0,
+                    "stageii_wt_poseF": 0.0,
+                    "stageii_wt_expr": 0.0,
+                    "stageii_wt_dmpl": 0.0,
+                    "stageii_wt_velo": 0.0,
+                    "stageii_wt_annealing": 0.0,
+                },
+            },
+            "runtime": {
+                "backend": "torch",
+                "device": "cpu",
+                "sequence_chunk_size": 2,
+                "sequence_chunk_overlap": 1,
+                "refine_optimizer": "lbfgs",
+                "refine_iters": 33,
+                "refine_lr": 0.7,
+                "lbfgs_history_size": 55,
+                "lbfgs_tolerance_grad": 1e-5,
+                "lbfgs_tolerance_change": 1e-6,
+                "lbfgs_max_eval": 77,
+            },
+        }
+    )
+
+    recorded = {"sequence_calls": 0}
+
+    def fail_if_frame_solver_called(**kwargs):
+        del kwargs
+        pytest.fail("frame solver should not run when chunked sequence path is active without seed prepass")
+
+    def fake_fit_stageii_sequence_torch(**kwargs):
+        recorded["sequence_calls"] += 1
+        recorded["options"] = kwargs["options"]
+        markers_obs = torch.as_tensor(kwargs["marker_observations"], dtype=torch.float32)
+        transl = torch.as_tensor(kwargs["transl_init"], dtype=torch.float32)
+        latent_pose = torch.as_tensor(kwargs["latent_pose_init"], dtype=torch.float32)
+        if latent_pose.ndim == 2 and latent_pose.shape[0] == 1 and markers_obs.shape[0] > 1:
+            latent_pose = latent_pose.expand(markers_obs.shape[0], -1).clone()
+        return SimpleNamespace(
+            latent_pose=latent_pose,
+            fullpose=torch.zeros(markers_obs.shape[0], 165, dtype=torch.float32),
+            transl=transl,
+            expression=None,
+            predicted_markers=markers_obs.clone(),
+            vertices=markers_obs.clone(),
+            joints=torch.zeros(markers_obs.shape[0], 3, 3, dtype=torch.float32),
+            loss_terms={
+                "data": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseB": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseH": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseF": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "expr": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "velo": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "accel": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+            },
+        )
+
+    monkeypatch.setattr(module, "fit_stageii_frame_torch", fail_if_frame_solver_called)
+    monkeypatch.setattr(module, "fit_stageii_sequence_torch", fake_fit_stageii_sequence_torch, raising=False)
+
+    module.mosh_stageii_torch(
+        mocap_fname=str(mocap_fname),
+        cfg=cfg,
+        markers_latent=markers_latent,
+        latent_labels=latent_labels,
+        betas=torch.zeros(10).numpy(),
+        marker_meta={"marker_type_mask": {}, "marker_type": {}, "surface_model_type": "smplx"},
+        body_model_factory=lambda: TranslOnlyBodyModel(torch.as_tensor(markers_latent, dtype=torch.float32)),
+        pose_prior=ZeroPosePrior(63),
+        device="cpu",
+    )
+
+    assert recorded["sequence_calls"] > 0
+    assert recorded["options"].optimizer == "lbfgs"
+    assert recorded["options"].max_iters == 33
+    assert recorded["options"].lr == pytest.approx(0.7)
+    assert recorded["options"].history_size == 55
+    assert recorded["options"].tolerance_grad == pytest.approx(1e-5)
+    assert recorded["options"].tolerance_change == pytest.approx(1e-6)
+    assert recorded["options"].max_eval == 77
+
+
 def test_mosh_stageii_torch_builds_stageii_evaluator_once_and_reuses_it(tmp_path, monkeypatch):
     module = _load_chmosh_torch_module()
 
