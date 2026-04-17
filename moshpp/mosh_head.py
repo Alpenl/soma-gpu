@@ -62,6 +62,10 @@ from moshpp.marker_layout.labels_map import general_labels_map
 from moshpp.tools.run_tools import turn_fullpose_into_parts, setup_mosh_omegaconf_resolvers
 
 
+def _canonical_surface_model_path(surface_model_fname: Union[str, Path]) -> str:
+    return str(Path(str(surface_model_fname)).expanduser().resolve(strict=False))
+
+
 class MoSh:
     """
     The role of the head is to ensure a flexible input/output to various implementations of MoSh
@@ -211,7 +215,9 @@ class MoSh:
         if osp.exists(self.stagei_fname):
             self.stagei_data = pickle.load(open(self.stagei_fname, 'rb'))
             prev_surface_model_fname = self.stagei_data['stagei_debug_details']['cfg']['surface_model']['fname']
-            assert prev_surface_model_fname == self.cfg.surface_model.fname, \
+            assert _canonical_surface_model_path(prev_surface_model_fname) == _canonical_surface_model_path(
+                self.cfg.surface_model.fname
+            ), \
                 ValueError(
                     f'The surface_model_fname used for previous stagei '
                     f'({prev_surface_model_fname}) '
@@ -607,7 +613,7 @@ def run_moshpp_once(cfg):
                 f"{attr_name} requires the legacy chumpy backend dependencies to be installed"
             ) from exc
 
-    mp = MoSh(**cfg)
+    mp = MoSh(dict_cfg=cfg)
 
     stagei_backend = _cached_backend_placeholder("stagei")
     if not osp.exists(mp.stagei_fname):

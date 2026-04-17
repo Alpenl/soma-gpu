@@ -1,10 +1,12 @@
 import importlib
+import pickle
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,3 +95,91 @@ def test_prepare_cfg_resolves_mcp_subjects_without_manual_subject_overrides(tmp_
     assert cfg.mocap.subject_names == ["null"]
     assert cfg.mocap.subject_name is None
     assert cfg.mocap.multi_subject is False
+
+
+def test_mosh_stagei_accepts_cached_surface_model_when_relative_and_absolute_paths_match(
+    tmp_path, monkeypatch
+):
+    module = importlib.import_module("moshpp.mosh_head")
+    monkeypatch.chdir(tmp_path)
+
+    model_path = tmp_path / "support_files" / "smplx" / "male" / "model.pkl"
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    model_path.write_bytes(b"model")
+
+    stagei_path = tmp_path / "cached_stagei.pkl"
+    with stagei_path.open("wb") as handle:
+        pickle.dump(
+            {
+                "stagei_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "fname": str(model_path.resolve()),
+                        }
+                    }
+                }
+            },
+            handle,
+        )
+
+    dummy = object.__new__(module.MoSh)
+    dummy.stagei_fname = str(stagei_path)
+    dummy.stagei_data = None
+    dummy.cfg = SimpleNamespace(
+        surface_model=SimpleNamespace(
+            fname="support_files/smplx/male/model.pkl",
+            type="smplx",
+        )
+    )
+
+    module.MoSh.mosh_stagei(dummy, lambda *_args, **_kwargs: pytest.fail("cached stagei should be reused"))
+
+    assert dummy.stagei_data["stagei_debug_details"]["cfg"]["surface_model"]["fname"] == str(
+        model_path.resolve()
+    )
+
+
+def test_run_moshpp_once_keeps_null_rotate_when_reusing_prepared_cfg(tmp_path, monkeypatch):
+    module = importlib.import_module("moshpp.mosh_head")
+    real_mosh_cls = module.MoSh
+
+    mocap_path = tmp_path / "input" / "wolf001" / "capture.mcp"
+    mocap_path.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / "out1.c3d", mocap_path)
+
+    prepared_cfg = real_mosh_cls.prepare_cfg(
+        **{
+            "mocap.fname": str(mocap_path),
+            "dirs.support_base_dir": str(tmp_path / "support_files"),
+            "dirs.work_base_dir": str(tmp_path / "work"),
+            "runtime.backend": "torch",
+        }
+    )
+    assert prepared_cfg.mocap.rotate is None
+
+    seen = {}
+
+    class DummyMoSh:
+        def __init__(self, dict_cfg=None, **kwargs):
+            seen["dict_cfg"] = dict_cfg
+            seen["kwargs"] = kwargs
+            self.cfg = dict_cfg if dict_cfg is not None else real_mosh_cls.prepare_cfg(**kwargs)
+            self.stagei_fname = str(tmp_path / "cached_stagei.pkl")
+            self.stageii_fname = str(tmp_path / "cached_stageii.pkl")
+            Path(self.stagei_fname).write_bytes(b"cached")
+            Path(self.stageii_fname).write_bytes(b"cached")
+            self.stagei_data = None
+            self.stageii_data = None
+
+        def mosh_stagei(self, _backend):
+            seen["rotate_after_rebuild"] = self.cfg.mocap.rotate
+            self.stagei_data = {"stagei_debug_details": {"stagei_errs": {"data": np.zeros(1)}}}
+
+        def mosh_stageii(self, _backend):
+            self.stageii_data = {"stageii_debug_details": {"stageii_errs": {"data": np.zeros(1)}}}
+
+    monkeypatch.setattr(module, "MoSh", DummyMoSh)
+
+    module.run_moshpp_once(prepared_cfg)
+
+    assert seen["rotate_after_rebuild"] is None
