@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -12,6 +14,7 @@ from utils.script_utils import (
     default_stageii_artifact_paths,
     default_stageii_output_paths,
     list_stageii_pickles,
+    planned_stageii_output_path_from_overrides,
     resolve_support_base_dir,
     resolve_stageii_model_path,
 )
@@ -55,6 +58,44 @@ def test_default_stageii_artifact_paths_fall_back_to_plain_stem():
     assert obj_out == "/tmp/demo.obj"
     assert pc2_out == "/tmp/demo.pc2"
     assert video_out == "/tmp/demo_stageii.mp4"
+
+
+def test_planned_stageii_output_path_from_overrides_infers_dataset_and_session_from_mocap_path(tmp_path):
+    overrides = {
+        "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "mocap.basename": "manual_candidate",
+    }
+
+    assert planned_stageii_output_path_from_overrides(overrides) == (
+        tmp_path / "work" / "input" / "wolf001" / "manual_candidate_stageii.pkl"
+    )
+
+
+def test_planned_stageii_output_path_from_overrides_prefers_explicit_stageii_path(tmp_path):
+    explicit_stageii_path = tmp_path / "explicit" / "candidate_stageii.pkl"
+
+    assert planned_stageii_output_path_from_overrides(
+        {
+            "dirs.stageii_fname": explicit_stageii_path,
+        }
+    ) == explicit_stageii_path
+
+
+def test_planned_stageii_output_path_from_overrides_errors_for_multi_subject_without_subject_name(
+    tmp_path,
+):
+    overrides = {
+        "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "mocap.multi_subject": "true",
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="cannot infer multi-subject stageii output path without mocap.subject_name",
+    ):
+        planned_stageii_output_path_from_overrides(overrides)
 
 
 def test_list_stageii_pickles_returns_sorted_matches(tmp_path):
