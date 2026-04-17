@@ -256,12 +256,44 @@ def _validate_mesh_reference_path(parser, *, stageii_path, mesh_reference_path):
         )
 
 
-def _preflight_mesh_reference_path(parser, args):
-    if args.skip_benchmark:
+def _preflight_planned_output_contracts(parser, args):
+    planned_stageii_path = _planned_stageii_output_path(parser, args)
+    mesh_reference_path = None
+
+    if not args.skip_benchmark:
+        mesh_reference_path = _resolve_mesh_reference_path(parser, args)
+    if planned_stageii_path is None:
+        return mesh_reference_path
+
+    if not args.skip_benchmark:
+        benchmark_output_path = _resolve_benchmark_output_path(
+            planned_stageii_path,
+            output_path=args.benchmark_output,
+        )
+        _validate_expected_output_path(
+            benchmark_output_path,
+            expected_path=args.expected_benchmark_output,
+            label="benchmark output",
+        )
+    if args.export_mesh:
+        obj_out, pc2_out = _resolve_mesh_export_paths(
+            planned_stageii_path,
+            output_dir=args.mesh_output_dir,
+        )
+        _validate_expected_output_path(
+            obj_out,
+            expected_path=args.expected_mesh_obj_path,
+            label="mesh export obj",
+        )
+        _validate_expected_output_path(
+            pc2_out,
+            expected_path=args.expected_mesh_pc2_path,
+            label="mesh export pc2",
+        )
+
+    if mesh_reference_path is None:
         return None
 
-    mesh_reference_path = _resolve_mesh_reference_path(parser, args)
-    planned_stageii_path = _planned_stageii_output_path(parser, args)
     if planned_stageii_path is not None:
         _validate_mesh_reference_path(
             parser,
@@ -369,7 +401,7 @@ def run(argv=None, *, emit_json=True):
     _validate_mesh_cli_args(parser, args)
     _validate_mesh_reference_output_suffix(parser, args)
     try:
-        mesh_reference_path = _preflight_mesh_reference_path(parser, args)
+        mesh_reference_path = _preflight_planned_output_contracts(parser, args)
     except ValueError as exc:
         parser.error(str(exc))
 

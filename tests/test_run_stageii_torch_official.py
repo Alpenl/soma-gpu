@@ -901,28 +901,22 @@ def test_run_stageii_torch_official_main_errors_when_prepared_stageii_path_drift
 def test_run_stageii_torch_official_main_errors_when_benchmark_output_drifts_from_expected_contract(
     tmp_path, monkeypatch, capsys
 ):
-    stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
     expected_benchmark_output = tmp_path / "benchmarks" / "capture_candidate_benchmark.json"
 
     monkeypatch.setattr(
         run_stageii_torch_official,
         "MoSh",
-        SimpleNamespace(
-            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
-        ),
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
         "run_moshpp_once",
-        lambda cfg: (
-            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
-            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
-        ),
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
         "run_public_stageii_benchmark",
-        lambda *args, **kwargs: {"sample": {"path": str(stageii_path)}, "quality": {}},
+        lambda *args, **kwargs: pytest.fail("benchmark helper should not run when benchmark output drifts"),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
@@ -945,25 +939,18 @@ def test_run_stageii_torch_official_main_errors_when_benchmark_output_drifts_fro
 def test_run_stageii_torch_official_main_errors_when_mesh_export_paths_drift_from_expected_contract(
     tmp_path, monkeypatch, capsys
 ):
-    stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
     mesh_output_dir = tmp_path / "mesh_exports"
     mesh_support_dir = tmp_path / "mesh_support"
-    resolved_model_path = mesh_support_dir / "smplx" / "male" / "model.npz"
 
     monkeypatch.setattr(
         run_stageii_torch_official,
         "MoSh",
-        SimpleNamespace(
-            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
-        ),
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
         "run_moshpp_once",
-        lambda cfg: (
-            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
-            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
-        ),
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
@@ -973,7 +960,7 @@ def test_run_stageii_torch_official_main_errors_when_mesh_export_paths_drift_fro
     monkeypatch.setattr(
         run_stageii_torch_official,
         "resolve_stageii_model_path",
-        lambda *args, **kwargs: str(resolved_model_path),
+        lambda *args, **kwargs: pytest.fail("resolve_stageii_model_path should not run when mesh paths drift"),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
