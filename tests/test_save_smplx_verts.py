@@ -277,3 +277,172 @@ def test_save_smplx_verts_main_errors_when_model_load_fails(monkeypatch, tmp_pat
         )
 
     assert excinfo.value.code == 2
+
+
+def test_export_stageii_meshes_batch_reuses_loaded_model_and_mirrors_output_dir(
+    monkeypatch, tmp_path
+):
+    support_dir = tmp_path / "support"
+    shared_model = support_dir / "smplx" / "male" / "model.npz"
+    shared_model.parent.mkdir(parents=True, exist_ok=True)
+    shared_model.write_bytes(b"npz")
+
+    input_root = tmp_path / "exports"
+    swing_stageii = input_root / "subject01" / "swing_stageii.pkl"
+    serve_stageii = input_root / "subject02" / "serve_stageii.pkl"
+    _write_stageii_pickle(
+        swing_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+    _write_stageii_pickle(
+        serve_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    load_calls = []
+    loaded_model = object()
+    export_calls = []
+
+    monkeypatch.setattr(
+        save_smplx_verts.render_video,
+        "load_render_model",
+        lambda model_path: load_calls.append(model_path) or loaded_model,
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "export_stageii_meshes",
+        lambda **kwargs: (
+            export_calls.append(kwargs),
+            (str(kwargs["obj_out"]), str(kwargs["pc2_out"])),
+        )[-1],
+    )
+
+    output_dir = tmp_path / "mesh-only"
+    results = save_smplx_verts.export_stageii_meshes_batch(
+        input_pkls=[swing_stageii, serve_stageii],
+        support_base_dir=support_dir,
+        output_dir=output_dir,
+        input_root=input_root,
+    )
+
+    expected_swing_obj = output_dir / "subject01" / "swing_stageii.obj"
+    expected_swing_pc2 = output_dir / "subject01" / "swing_stageii.pc2"
+    expected_serve_obj = output_dir / "subject02" / "serve_stageii.obj"
+    expected_serve_pc2 = output_dir / "subject02" / "serve_stageii.pc2"
+
+    assert load_calls == [str(shared_model)]
+    assert [call["input_pkl"] for call in export_calls] == [str(swing_stageii), str(serve_stageii)]
+    assert [call["model_path"] for call in export_calls] == [str(shared_model), str(shared_model)]
+    assert [call["model"] for call in export_calls] == [loaded_model, loaded_model]
+    assert [call["obj_out"] for call in export_calls] == [
+        str(expected_swing_obj),
+        str(expected_serve_obj),
+    ]
+    assert [call["pc2_out"] for call in export_calls] == [
+        str(expected_swing_pc2),
+        str(expected_serve_pc2),
+    ]
+    assert results == [
+        {"obj_path": str(expected_swing_obj), "pc2_path": str(expected_swing_pc2)},
+        {"obj_path": str(expected_serve_obj), "pc2_path": str(expected_serve_pc2)},
+    ]
+
+
+def test_save_smplx_verts_main_uses_output_dir_for_single_input(monkeypatch, tmp_path):
+    support_dir = tmp_path / "support"
+    support_model = support_dir / "smplx" / "male" / "model.npz"
+    support_model.parent.mkdir(parents=True, exist_ok=True)
+    support_model.write_bytes(b"npz")
+
+    input_path = tmp_path / "tiny_stageii.pkl"
+    _write_stageii_pickle(
+        input_path,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    captured = {}
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "export_stageii_meshes",
+        lambda **kwargs: captured.update(kwargs) or ("out.obj", "out.pc2"),
+    )
+
+    output_dir = tmp_path / "mesh-only"
+    save_smplx_verts.main(
+        [
+            "--input-pkl",
+            str(input_path),
+            "--support-base-dir",
+            str(support_dir),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+
+    expected_obj, expected_pc2 = default_stageii_output_paths(str(input_path))
+    assert captured["obj_out"] == str(output_dir / Path(expected_obj).name)
+    assert captured["pc2_out"] == str(output_dir / Path(expected_pc2).name)
+
+
+def test_save_smplx_verts_main_dispatches_batch_export(monkeypatch, tmp_path):
+    support_dir = tmp_path / "support"
+    support_model = support_dir / "smplx" / "male" / "model.npz"
+    support_model.parent.mkdir(parents=True, exist_ok=True)
+    support_model.write_bytes(b"npz")
+
+    matching_stageii = tmp_path / "exports" / "subject01" / "swing_stageii.pkl"
+    ignored_stageii = tmp_path / "exports" / "subject01" / "serve_stageii.pkl"
+    _write_stageii_pickle(
+        matching_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+    _write_stageii_pickle(
+        ignored_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    captured = {}
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "export_stageii_meshes_batch",
+        lambda **kwargs: captured.update(kwargs) or [],
+    )
+
+    save_smplx_verts.main(
+        [
+            "--input-dir",
+            str(tmp_path / "exports"),
+            "--support-base-dir",
+            str(support_dir),
+            "--output-dir",
+            str(tmp_path / "mesh-only"),
+            "--fname-filter",
+            "swing",
+        ]
+    )
+
+    assert captured["input_pkls"] == [str(matching_stageii)]
+    assert captured["support_base_dir"] == str(support_dir)
+    assert captured["output_dir"] == str(tmp_path / "mesh-only")
+    assert captured["input_root"] == str(tmp_path / "exports")
+
+
+def test_save_smplx_verts_main_errors_when_input_dir_matches_no_stageii_pickles(tmp_path):
+    with pytest.raises(SystemExit) as excinfo:
+        save_smplx_verts.main(
+            [
+                "--input-dir",
+                str(tmp_path / "exports"),
+                "--fname-filter",
+                "swing",
+            ]
+        )
+
+    assert excinfo.value.code == 2

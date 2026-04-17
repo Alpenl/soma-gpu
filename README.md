@@ -117,4 +117,12 @@ python save_smplx_verts.py \
   --input-pkl ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl \
   --support-base-dir support_files
 ````
-`save_smplx_verts.py` 与 `export_stageii_artifacts.py` 一样，默认会优先从 stageii pickle 解析模型路径，并在需要时回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`；只有想强制指定单一模型时才需要显式传 `--model-path`。若只需要 preview MP4，可使用 `render_video.py`。
+`save_smplx_verts.py` 与 `export_stageii_artifacts.py` 一样，默认会优先从 stageii pickle 解析模型路径，并在需要时回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`；只有想强制指定单一模型时才需要显式传 `--model-path`。如需批量补导出 mesh 而不想渲染 mp4，可直接用 mesh-only 批量入口：
+````
+python save_smplx_verts.py \
+  --input-dir ROOT/mosh_results_tracklet/[session] \
+  --support-base-dir support_files \
+  --output-dir ROOT/mesh_exports/[session] \
+  --fname-filter swing
+````
+批量模式会递归发现匹配的 `*_stageii.pkl`，按相对目录结构镜像写出 OBJ/PC2；如果目录下没有任何匹配结果，脚本会直接报错而不是静默成功。若只需要 preview MP4，可使用 `render_video.py`。
