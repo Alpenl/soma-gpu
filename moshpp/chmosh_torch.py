@@ -303,6 +303,19 @@ def _runtime_get(runtime, key, default=None):
     return getattr(runtime, key, default)
 
 
+def _runtime_optional_positive_int(runtime, key):
+    value = _runtime_get(runtime, key, None)
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Runtime {key} must be a positive integer when provided. Got {value!r}.") from exc
+    if parsed <= 0:
+        raise ValueError(f"Runtime {key} must be a positive integer when provided. Got {parsed}.")
+    return parsed
+
+
 def _runtime_stage_fit_options(cfg, runtime):
     valid_optimizers = {"lbfgs", "adam"}
 
@@ -784,6 +797,10 @@ def mosh_stageii_torch(
     sequence_boundary_transl_velocity_reference_full_length = bool(
         _runtime_get(runtime, "sequence_boundary_transl_velocity_reference_full_length", False)
     )
+    sequence_boundary_transl_velocity_reference_window = _runtime_optional_positive_int(
+        runtime,
+        "sequence_boundary_transl_velocity_reference_window",
+    )
     compile_evaluator = bool(_runtime_get(runtime, "compile_evaluator", False))
     compile_mode = str(_runtime_get(runtime, "compile_mode", "default"))
     compile_fullgraph = bool(_runtime_get(runtime, "compile_fullgraph", False))
@@ -965,8 +982,12 @@ def mosh_stageii_torch(
                 else:
                     transl_velocity_reference_index = chunk_overlap_count
                     transl_velocity_reference = prev_transl
-                    keep_seam_window = min(chunk_overlap_count, chunk_length - chunk_overlap_count)
-                    if previous_chunk_transl_tail is not None and keep_seam_window > 1:
+                    keep_seam_window = sequence_boundary_transl_velocity_reference_window
+                    if keep_seam_window is None:
+                        keep_seam_window = min(chunk_overlap_count, chunk_length - chunk_overlap_count)
+                    if previous_chunk_transl_tail is not None and (
+                        sequence_boundary_transl_velocity_reference_window is not None or keep_seam_window > 1
+                    ):
                         transl_velocity_reference = _build_chunk_transl_velocity_reference(
                             chunk_transl_init,
                             previous_chunk_transl_tail,

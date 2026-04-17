@@ -180,6 +180,8 @@ single runner 现在还会继续校验 helper 返回 payload 本身：`export_st
 
 如果想直接复现当前保留的高权重 translation-friendly 候选，可把 preset 换成 `real-mcp-transvelo100-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=100` 与 `runtime.sequence_boundary_transl_velocity_reference=true`。这样就能配合现有 `--mesh-reference` / `--benchmark-output` 直接做 baseline vs candidate 的 stageii / mesh 对照，而不需要再手工维护第二串高权重 velocity overrides。
 
+如果想在同一条 translation-friendly 候选结构上继续精调 seam 后局部窗口长度，现在也可以直接追加 `--cfg runtime.sequence_boundary_transl_velocity_reference_window=<正整数>`。未显式传时，runtime 会保留当前默认语义：`overlap > 1` 时继续沿用现有的 seed-velocity local-window，`overlap = 1` 时仍保留单点 keep-seam hook；只有显式给出这个正整数覆盖时，才会按指定窗口宽度去构造 seam 后的 prefix-aware translation velocity reference。例如 `--cfg runtime.sequence_boundary_transl_velocity_reference_window=1` 会把 local window 收窄成“上一 chunk 尾帧 + seam 后一帧”，适合在不改代码的前提下继续复核 real `.mcp` 主线的 translation seam 语义。
+
 当 baseline 和 candidate 共用同一个 `--work-base-dir` 时，建议同时给 `--output-suffix`，例如 `_baseline` / `_seedvelowindow`。这个后缀会在 preset/`--cfg` 解析完成后追加到 `mocap.basename`，从而让默认生成的 `stageii/log` 文件名分开；如果你已经显式用 `--cfg mocap.basename=...` 固定了名字，suffix 会继续在那个 basename 后面追加。
 
 如果当前是在跑 candidate，而 baseline 也正好是同一组 `mocap/support/work` 参数下、只差一个输出 suffix，那么不必再手工把 baseline `stageii.pkl` 路径抄进 `--mesh-reference`。可以直接在 candidate 命令上改用：
