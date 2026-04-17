@@ -829,6 +829,66 @@ def test_run_stageii_torch_official_main_errors_when_official_run_does_not_produ
     assert "run_moshpp_once did not produce the expected stageii file" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_errors_when_prepare_cfg_fails(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: (_ for _ in ()).throw(ValueError("invalid official cfg"))),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run when cfg preparation fails"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert "invalid official cfg" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_runtime_error(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (_ for _ in ()).throw(OSError("mocap load failed")),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert "mocap load failed" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_parser_rejects_explicit_mesh_reference_and_output_suffix_together():
     parser = run_stageii_torch_official.build_parser()
 
