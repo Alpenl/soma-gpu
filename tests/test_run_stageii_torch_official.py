@@ -690,6 +690,44 @@ def test_run_stageii_torch_official_run_can_suppress_json_output(tmp_path, monke
     }
 
 
+def test_run_stageii_torch_official_main_errors_when_official_run_does_not_produce_stageii(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: None,
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should not run when stageii output is missing"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert "run_moshpp_once did not produce the expected stageii file" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_parser_rejects_explicit_mesh_reference_and_output_suffix_together():
     parser = run_stageii_torch_official.build_parser()
 

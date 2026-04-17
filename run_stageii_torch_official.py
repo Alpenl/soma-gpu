@@ -32,6 +32,7 @@ OFFICIAL_PRESETS = {
 }
 
 BENCHMARK_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
+OFFICIAL_RUN_CLI_ERROR_TYPES = (FileNotFoundError,)
 
 
 def build_parser():
@@ -225,6 +226,11 @@ def _mesh_support_base_dir(args):
     return args.mesh_support_base_dir or args.support_base_dir
 
 
+def _require_stageii_output(stageii_path):
+    if not stageii_path.exists():
+        raise FileNotFoundError(f"run_moshpp_once did not produce the expected stageii file: {stageii_path}")
+
+
 def _resolve_mesh_export_paths(stageii_path, *, output_dir=None):
     obj_out, pc2_out = default_stageii_output_paths(str(stageii_path))
     if output_dir is None:
@@ -258,12 +264,13 @@ def run(argv=None, *, emit_json=True):
     _validate_mesh_cli_args(parser, args)
     _validate_mesh_reference_output_suffix(parser, args)
 
-    cfg = MoSh.prepare_cfg(**_cfg_overrides(parser, args))
-    run_moshpp_once(cfg)
-
-    stageii_path = Path(str(cfg.dirs.stageii_fname))
-    if not stageii_path.exists():
-        raise FileNotFoundError(f"run_moshpp_once did not produce the expected stageii file: {stageii_path}")
+    try:
+        cfg = MoSh.prepare_cfg(**_cfg_overrides(parser, args))
+        run_moshpp_once(cfg)
+        stageii_path = Path(str(cfg.dirs.stageii_fname))
+        _require_stageii_output(stageii_path)
+    except OFFICIAL_RUN_CLI_ERROR_TYPES as exc:
+        parser.error(str(exc))
 
     payload = {
         "stageii_path": str(stageii_path),
