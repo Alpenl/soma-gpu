@@ -230,6 +230,7 @@ python run_stageii_torch_pair.py \
   - `--expected-mesh-obj-path`
   - `--expected-mesh-pc2-path`
   这样若 single runner 在真正写 benchmark JSON / OBJ / PC2 前发现输出路径已经偏离 pair runner 的静态计划，就会在覆盖发生前直接失败，而不是等 pair runner 事后从 payload 才发现。
+- 即使 underlying single runner 没有在内部把上面的 hidden contract 收紧到底，pair runner 现在也会在 candidate 真正返回后再核对一次 payload：`stageii_path`、`benchmark.artifact.report_path`，以及开启 `--export-mesh` 时的 `mesh_export.obj_path/.pc2_path` 都必须仍等于这次 candidate 的 planned `--expected-*` 落点。由于这些 planned 路径在运行前已经和 baseline 的计划值、以及 baseline 第一次真实返回值做过冲突检查，candidate payload 只要偏离这套 contract，就会被当作重新引入覆盖风险并直接报错。
 - pair runner 现在还会把请求过的产物当作强 contract：
   - 开了 `--export-mesh`，baseline/candidate 两侧都必须从 underlying single runner 返回 `mesh_export.obj_path` 与 `mesh_export.pc2_path`
   - baseline 显式开了 standalone benchmark 或 candidate 默认 benchmark 路径缺失 `benchmark.artifact.report_path` 时，也会直接报错

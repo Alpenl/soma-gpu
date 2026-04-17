@@ -486,6 +486,48 @@ def _require_mesh_export_paths(payload, *, label):
     return obj_path, pc2_path
 
 
+def _validate_candidate_actual_outputs_against_candidate_plan(
+    parser,
+    args,
+    *,
+    candidate_payload,
+    candidate_stageii_path,
+    candidate_benchmark_output,
+    candidate_mesh_obj_path=None,
+    candidate_mesh_pc2_path=None,
+):
+    actual_stageii_path = _require_stageii_path(candidate_payload, label="candidate")
+    if _normalized_path(actual_stageii_path) != _normalized_path(candidate_stageii_path):
+        parser.error(
+            "candidate actual stageii output path drifted from candidate plan; "
+            "adjust stageii basenames/paths or investigate underlying runner path drift"
+        )
+
+    actual_benchmark_output = _require_benchmark_report_path(candidate_payload, label="candidate")
+    if _normalized_path(actual_benchmark_output) != _normalized_path(candidate_benchmark_output):
+        parser.error(
+            "candidate actual benchmark output path drifted from candidate plan; "
+            "adjust benchmark outputs, candidate stageii basename/path, or investigate underlying runner path drift"
+        )
+
+    if not args.export_mesh:
+        return
+
+    actual_mesh_obj_path, actual_mesh_pc2_path = _require_mesh_export_paths(
+        candidate_payload,
+        label="candidate",
+    )
+    if (
+        _normalized_path(actual_mesh_obj_path) != _normalized_path(candidate_mesh_obj_path)
+    ) or (
+        _normalized_path(actual_mesh_pc2_path) != _normalized_path(candidate_mesh_pc2_path)
+    ):
+        parser.error(
+            "candidate actual mesh export output path drifted from candidate plan; "
+            "adjust stageii basenames/paths, export directories, or investigate underlying runner path drift"
+        )
+
+
 def _validate_baseline_actual_outputs_against_candidate_plan(
     parser,
     args,
@@ -654,10 +696,15 @@ def run(argv=None, *, emit_json=True):
             ),
             emit_json=False,
         )
-        _require_stageii_path(candidate_payload, label="candidate")
-        if args.export_mesh:
-            _require_mesh_export_paths(candidate_payload, label="candidate")
-        _require_benchmark_report_path(candidate_payload, label="candidate")
+        _validate_candidate_actual_outputs_against_candidate_plan(
+            parser,
+            args,
+            candidate_payload=candidate_payload,
+            candidate_stageii_path=candidate_stageii_path,
+            candidate_benchmark_output=candidate_benchmark_output,
+            candidate_mesh_obj_path=candidate_mesh_obj_path,
+            candidate_mesh_pc2_path=candidate_mesh_pc2_path,
+        )
     except PAIR_RUNNER_CLI_ERROR_TYPES as exc:
         parser.error(str(exc))
 
