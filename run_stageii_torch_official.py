@@ -77,10 +77,19 @@ def build_parser():
     )
     parser.add_argument("--warmup-runs", type=int, default=1, help="Warmup runs forwarded to the stageii benchmark.")
     parser.add_argument("--measured-runs", type=int, default=5, help="Measured runs forwarded to the stageii benchmark.")
-    parser.add_argument(
+    mesh_reference_group = parser.add_mutually_exclusive_group()
+    mesh_reference_group.add_argument(
         "--mesh-reference",
         default=None,
         help="Optional baseline stageii.pkl or .pc2/.pc16 passed through to benchmark_stageii_public.",
+    )
+    mesh_reference_group.add_argument(
+        "--mesh-reference-output-suffix",
+        default=None,
+        help=(
+            "Optional suffix used to resolve a baseline stageii path under the same work dir and mocap "
+            "basename logic as the current run, e.g. _baseline while the candidate uses _candidate."
+        ),
     )
     parser.add_argument(
         "--mesh-support-base-dir",
@@ -97,7 +106,7 @@ def build_parser():
     return parser
 
 
-def _cfg_overrides(parser, args):
+def _cfg_overrides(parser, args, *, output_suffix=None):
     overrides = dict(OFFICIAL_PRESETS.get(args.preset, {}))
     for entry in args.cfg:
         if "=" not in entry:
@@ -107,17 +116,34 @@ def _cfg_overrides(parser, args):
             parser.error(f"--cfg entries must include a non-empty key, got: {entry}")
         overrides[key] = value
 
-    if args.output_suffix:
+    suffix = args.output_suffix if output_suffix is None else output_suffix
+    if suffix:
         basename = overrides.get("mocap.basename")
         if basename is None:
             basename = Path(args.mocap_fname).stem
-        overrides["mocap.basename"] = f"{basename}{args.output_suffix}"
+        overrides["mocap.basename"] = f"{basename}{suffix}"
 
     overrides["mocap.fname"] = args.mocap_fname
     overrides["dirs.support_base_dir"] = args.support_base_dir
     overrides["dirs.work_base_dir"] = args.work_base_dir
     overrides["runtime.backend"] = args.backend
     return overrides
+
+
+def _resolve_mesh_reference_path(parser, args):
+    if args.mesh_reference is not None:
+        return args.mesh_reference
+    if args.mesh_reference_output_suffix is None:
+        return None
+
+    reference_cfg = MoSh.prepare_cfg(
+        **_cfg_overrides(
+            parser,
+            args,
+            output_suffix=args.mesh_reference_output_suffix,
+        )
+    )
+    return str(reference_cfg.dirs.stageii_fname)
 
 
 def main(argv=None):
@@ -137,11 +163,12 @@ def main(argv=None):
     }
 
     if not args.skip_benchmark:
+        mesh_reference_path = _resolve_mesh_reference_path(parser, args)
         report = run_public_stageii_benchmark(
             str(stageii_path),
             warmup_runs=args.warmup_runs,
             measured_runs=args.measured_runs,
-            mesh_reference_path=args.mesh_reference,
+            mesh_reference_path=mesh_reference_path,
             mesh_support_base_dir=args.mesh_support_base_dir or args.support_base_dir,
             mesh_chunk_size=args.mesh_chunk_size,
             mesh_chunk_overlap=args.mesh_chunk_overlap,

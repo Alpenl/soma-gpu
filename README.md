@@ -156,3 +156,17 @@ python run_stageii_torch_official.py \
 如果想直接复现当前保留的 translation-friendly 候选，可把 preset 换成 `real-mcp-transvelo100-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=100` 与 `runtime.sequence_boundary_transl_velocity_reference=true`。这样就能配合现有 `--mesh-reference` / `--benchmark-output` 直接做 baseline vs candidate 的 stageii / mesh 对照，而不需要再手工维护第二串高权重 velocity overrides。
 
 当 baseline 和 candidate 共用同一个 `--work-base-dir` 时，建议同时给 `--output-suffix`，例如 `_baseline` / `_seedvelowindow`。这个后缀会在 preset/`--cfg` 解析完成后追加到 `mocap.basename`，从而让默认生成的 `stageii/log` 文件名分开；如果你已经显式用 `--cfg mocap.basename=...` 固定了名字，suffix 会继续在那个 basename 后面追加。
+
+如果当前是在跑 candidate，而 baseline 也正好是同一组 `mocap/support/work` 参数下、只差一个输出 suffix，那么不必再手工把 baseline `stageii.pkl` 路径抄进 `--mesh-reference`。可以直接在 candidate 命令上改用：
+````
+python run_stageii_torch_official.py \
+  --mocap-fname ROOT/mocap_raw/[session]/[subject]/[seq].mcp \
+  --support-base-dir support_files \
+  --work-base-dir ROOT/work \
+  --preset real-mcp-transvelo100-seedvelowindow \
+  --output-suffix _seedvelowindow \
+  --mesh-reference-output-suffix _baseline \
+  --cfg surface_model.gender=male \
+  --benchmark-output ROOT/benchmarks/[seq]_candidate_vs_baseline.json
+````
+`--mesh-reference-output-suffix` 会按同一套 `preset < --cfg < dedicated args` 解析逻辑重新推导 baseline 的 `cfg.dirs.stageii_fname`，因此适合“baseline/candidate 共用一个 work dir，只靠 basename suffix 分名”的主线复现；如果 baseline 根本不在同一命名规则下，再继续显式传 `--mesh-reference`。

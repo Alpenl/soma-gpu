@@ -114,6 +114,97 @@ def test_run_stageii_torch_official_main_builds_cfg_and_wires_benchmark(tmp_path
     assert payload["benchmark"]["artifact"]["report_path"] == str(benchmark_output)
 
 
+def test_run_stageii_torch_official_main_can_resolve_mesh_reference_from_output_suffix(
+    tmp_path, monkeypatch
+):
+    captured = {"prepare_cfg_calls": []}
+
+    def fake_prepare_cfg(**kwargs):
+        captured["prepare_cfg_calls"].append(kwargs)
+        basename = kwargs.get("mocap.basename", Path(kwargs["mocap.fname"]).stem)
+        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(tmp_path / f"{basename}_stageii.pkl")))
+
+    def fake_run_moshpp_once(cfg):
+        Path(cfg.dirs.stageii_fname).write_bytes(b"stageii")
+
+    def fake_run_public_stageii_benchmark(
+        sample_path,
+        *,
+        warmup_runs,
+        measured_runs,
+        mesh_reference_path,
+        mesh_support_base_dir,
+        mesh_chunk_size,
+        mesh_chunk_overlap,
+    ):
+        captured["benchmark_call"] = {
+            "sample_path": sample_path,
+            "warmup_runs": warmup_runs,
+            "measured_runs": measured_runs,
+            "mesh_reference_path": mesh_reference_path,
+            "mesh_support_base_dir": mesh_support_base_dir,
+            "mesh_chunk_size": mesh_chunk_size,
+            "mesh_chunk_overlap": mesh_chunk_overlap,
+        }
+        return {"sample": {"path": str(sample_path)}, "quality": {"mesh_compare": None}}
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(run_stageii_torch_official, "run_moshpp_once", fake_run_moshpp_once)
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        fake_run_public_stageii_benchmark,
+    )
+
+    payload = run_stageii_torch_official.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--cfg",
+            "mocap.basename=manual_name",
+            "--output-suffix",
+            "_candidate",
+            "--mesh-reference-output-suffix",
+            "_baseline",
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+        ]
+    )
+
+    assert captured["prepare_cfg_calls"] == [
+        {
+            "mocap.basename": "manual_name_candidate",
+            "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "dirs.support_base_dir": str(tmp_path / "support_files"),
+            "dirs.work_base_dir": str(tmp_path / "work"),
+            "runtime.backend": "torch",
+        },
+        {
+            "mocap.basename": "manual_name_baseline",
+            "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "dirs.support_base_dir": str(tmp_path / "support_files"),
+            "dirs.work_base_dir": str(tmp_path / "work"),
+            "runtime.backend": "torch",
+        },
+    ]
+    assert captured["benchmark_call"] == {
+        "sample_path": str(tmp_path / "manual_name_candidate_stageii.pkl"),
+        "warmup_runs": 0,
+        "measured_runs": 1,
+        "mesh_reference_path": str(tmp_path / "manual_name_baseline_stageii.pkl"),
+        "mesh_support_base_dir": str(tmp_path / "support_files"),
+        "mesh_chunk_size": None,
+        "mesh_chunk_overlap": None,
+    }
+    assert payload["stageii_path"] == str(tmp_path / "manual_name_candidate_stageii.pkl")
+
+
 def test_run_stageii_torch_official_main_applies_real_mcp_baseline_preset_before_explicit_cfg(
     tmp_path, monkeypatch
 ):
@@ -318,3 +409,23 @@ def test_run_stageii_torch_official_main_can_skip_benchmark(tmp_path, monkeypatc
         "benchmark": None,
         "stageii_path": str(stageii_path),
     }
+
+
+def test_run_stageii_torch_official_parser_rejects_explicit_mesh_reference_and_output_suffix_together():
+    parser = run_stageii_torch_official.build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "--mocap-fname",
+                "capture.mcp",
+                "--support-base-dir",
+                "support_files",
+                "--work-base-dir",
+                "work",
+                "--mesh-reference",
+                "baseline_stageii.pkl",
+                "--mesh-reference-output-suffix",
+                "_baseline",
+            ]
+        )
