@@ -458,6 +458,26 @@ def _summarize_reference_stageii_quality(reference_path):
     return _summarize_stageii_quality(reference_path, reference_sample)
 
 
+def _summarize_reference_stageii_delta(candidate_quality, reference_quality):
+    if reference_quality is None:
+        return None
+
+    delta = {}
+    for metric_name, candidate_metric in candidate_quality.items():
+        reference_metric = reference_quality.get(metric_name)
+        if candidate_metric is None or reference_metric is None:
+            delta[metric_name] = None
+            continue
+
+        metric_delta = {}
+        for stat_name in ("mean", "p90", "max"):
+            if stat_name in candidate_metric and stat_name in reference_metric:
+                metric_delta[stat_name] = float(candidate_metric[stat_name]) - float(reference_metric[stat_name])
+        delta[metric_name] = metric_delta or None
+
+    return delta
+
+
 def _support_files_root(repo_root):
     return Path(repo_root) / "support_files"
 
@@ -826,11 +846,18 @@ def run_public_stageii_benchmark(
         warmup_runs=warmup_runs,
         measured_runs=measured_runs,
     )
-    quality_summary = dict(_summarize_stageii_quality(sample_path, baseline))
+    candidate_quality = dict(_summarize_stageii_quality(sample_path, baseline))
+    quality_summary = dict(candidate_quality)
     quality_summary["reference_stageii_quality"] = None
+    quality_summary["reference_stageii_delta"] = None
     quality_summary["mesh_compare"] = None
     if mesh_reference_path is not None:
-        quality_summary["reference_stageii_quality"] = _summarize_reference_stageii_quality(mesh_reference_path)
+        reference_quality = _summarize_reference_stageii_quality(mesh_reference_path)
+        quality_summary["reference_stageii_quality"] = reference_quality
+        quality_summary["reference_stageii_delta"] = _summarize_reference_stageii_delta(
+            candidate_quality,
+            reference_quality,
+        )
         quality_summary["mesh_compare"] = _summarize_mesh_compare(
             sample_path,
             reference_path=mesh_reference_path,

@@ -276,6 +276,7 @@ def test_run_public_stageii_benchmark_includes_quality_summary_when_available(mo
     assert report["quality"] == {
         **quality_summary,
         "reference_stageii_quality": None,
+        "reference_stageii_delta": None,
         "mesh_compare": None,
     }
 
@@ -341,6 +342,7 @@ def test_run_public_stageii_benchmark_includes_optional_mesh_compare_summary(mon
 
     assert report["quality"]["mesh_compare"] == mesh_compare_summary
     assert report["quality"]["reference_stageii_quality"] is None
+    assert report["quality"]["reference_stageii_delta"] is None
     assert captured == {
         "sample_path": ROOT / "support_data/tests/mosh_stageii.pkl",
         "reference_path": "/tmp/baseline_stageii.pkl",
@@ -422,6 +424,25 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_sta
     assert reference_quality is not None
     assert reference_quality["marker_residual_l2"]["mean"] == pytest.approx(2.0)
     assert reference_quality["trans_jitter_l2"]["mean"] == pytest.approx(1.0)
+    assert report["quality"]["reference_stageii_delta"] == {
+        "marker_residual_l2": {
+            "mean": pytest.approx(-1.0),
+            "p90": pytest.approx(-1.0),
+            "max": pytest.approx(-1.0),
+        },
+        "trans_jitter_l2": {
+            "mean": pytest.approx(0.0),
+            "p90": pytest.approx(0.0),
+            "max": pytest.approx(0.0),
+        },
+        "pose_jitter_l2": {
+            "mean": pytest.approx(0.0),
+            "p90": pytest.approx(0.0),
+            "max": pytest.approx(0.0),
+        },
+        "chunk_seam_transl_jump_l2": None,
+        "chunk_seam_pose_jump_l2": None,
+    }
     assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.25}}
 
 
@@ -453,6 +474,7 @@ def test_run_public_stageii_benchmark_leaves_reference_stageii_quality_empty_for
     )
 
     assert report["quality"]["reference_stageii_quality"] is None
+    assert report["quality"]["reference_stageii_delta"] is None
     assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.5}}
 
 
