@@ -136,3 +136,20 @@ python benchmark_stageii_public.py \
   --output ROOT/benchmarks/candidate_vs_baseline.json
 ````
 此时报告除了现有 `quality.marker_residual_l2` / `trans_jitter_l2` / `chunk_seam_*` 摘要外，还会在 `quality.mesh_compare` 下追加 baseline 与 candidate 的 `reference` / `candidate` / `frame_delta_l2` mesh-space 摘要。对于 `stageii.pkl` 输入通常不需要显式传 `--mesh-chunk-size/--mesh-chunk-overlap`；只有直接比较裸 `pc2/pc16` 缓存时才需要覆盖。
+
+若想直接走官方 `run_moshpp_once(cfg)` 单序列入口，并在同一条命令里产出 `stageii.pkl + benchmark JSON`，可使用：
+````
+python run_stageii_torch_official.py \
+  --mocap-fname ROOT/mocap_raw/[session]/[subject]/[seq].mcp \
+  --support-base-dir support_files \
+  --work-base-dir ROOT/work \
+  --cfg surface_model.gender=male \
+  --cfg moshpp.optimize_fingers=true \
+  --cfg runtime.sequence_chunk_size=32 \
+  --cfg runtime.sequence_chunk_overlap=4 \
+  --cfg runtime.refine_lr=0.05 \
+  --cfg runtime.sequence_lr=0.05 \
+  --cfg runtime.sequence_max_iters=30 \
+  --benchmark-output ROOT/benchmarks/[seq]_torch.json
+````
+该脚本只做薄编排：基础路径参数会直接落到 `MoSh.prepare_cfg(...)`，其余 candidate-specific 参数继续通过 repeatable `--cfg key=value` 透传；默认会在官方入口结束后立即对生成的 `stageii.pkl` 复用 `benchmark_stageii_public.py` 同一套质量/mesh 对比口径。如只想先产出 `stageii.pkl`、暂时不跑 benchmark，可加 `--skip-benchmark`。
