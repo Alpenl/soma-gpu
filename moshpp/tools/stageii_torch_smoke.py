@@ -178,18 +178,36 @@ def load_stageii_frame_inputs(stageii_pkl_path, frame_idx=0):
 
 def load_mocap_frame(mocap_path, frame_idx=0):
     mocap_path = Path(mocap_path)
-    if mocap_path.suffix.lower() != ".pkl":
+    suffix = mocap_path.suffix.lower()
+    if suffix == ".pkl":
+        mocap_data = _load_pickle_compat(mocap_path)
+        markers = _coerce_marker_frame(mocap_data["markers"], frame_idx, name="markers")
+        labels = _labels_for_frame(mocap_data.get("labels_perframe"), frame_idx) or _to_string_list(
+            mocap_data.get("labels")
+        )
+        frame_rate = float(mocap_data.get("frame_rate", 120.0))
+        source_format = "mocap_pkl"
+    elif suffix == ".c3d":
+        from moshpp.tools.c3d import Reader as C3DReader
+
+        with mocap_path.open("rb") as handle:
+            reader = C3DReader(handle)
+            labels = [str(label).strip() for label in reader.point_labels]
+            for current_idx, (_, points, _) in enumerate(reader.read_frames(copy=True)):
+                if current_idx == frame_idx:
+                    markers = points[:, :3].astype(np.float32, copy=True)
+                    invalid = points[:, 3] < 0
+                    markers[invalid] = np.nan
+                    frame_rate = float(reader.point_rate)
+                    source_format = "mocap_c3d"
+                    break
+            else:
+                raise IndexError(f"frame_idx {frame_idx} out of range for {mocap_path}")
+    else:
         raise ValueError(f"Unsupported mocap file format: {mocap_path}")
 
-    mocap_data = _load_pickle_compat(mocap_path)
-    markers = _coerce_marker_frame(mocap_data["markers"], frame_idx, name="markers")
-    labels = _labels_for_frame(mocap_data.get("labels_perframe"), frame_idx) or _to_string_list(
-        mocap_data.get("labels")
-    )
-    frame_rate = float(mocap_data.get("frame_rate", 120.0))
-
     return MocapFrameData(
-        source_format="mocap_pkl",
+        source_format=source_format,
         markers=torch.as_tensor(markers, dtype=torch.float32),
         labels=labels,
         frame_rate=frame_rate,

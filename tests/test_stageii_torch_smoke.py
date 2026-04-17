@@ -114,9 +114,14 @@ def test_load_mocap_frame_supports_real_pickle_sample():
     assert loaded.frame_rate == pytest.approx(120.0)
 
 
-def test_load_mocap_frame_rejects_c3d_until_parser_fix_lands():
-    with pytest.raises(ValueError, match="Unsupported mocap file format"):
-        load_mocap_frame(ROOT / "out1.c3d", frame_idx=0)
+def test_load_mocap_frame_supports_real_c3d_sample():
+    loaded = load_mocap_frame(ROOT / "out1.c3d", frame_idx=0)
+
+    assert loaded.source_format == "mocap_c3d"
+    assert loaded.markers.shape == (54, 3)
+    assert len(loaded.labels) == 54
+    assert loaded.frame_rate == pytest.approx(60.0)
+    assert loaded.labels[:3] == ["0", "1", "2"]
 
 
 def test_stageii_torch_smoke_runs_on_real_legacy_stageii_frame_with_dummy_body():

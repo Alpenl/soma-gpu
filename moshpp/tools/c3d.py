@@ -1315,11 +1315,16 @@ class Reader(Manager):
                 if self.processor == PROCESSOR_DEC:
                     # Convert each of the first 6 16-bit words from DEC to IEEE float
                     points[:, :4] = DEC_to_IEEE_BYTES(raw_bytes).reshape((self.point_used, 4))
+                    raw_last_word = np.frombuffer(raw_bytes,
+                                                  dtype=self.dtypes.uint32,
+                                                  count=N_point).reshape((int(self.point_used), 4))[:, 3]
                 else:  # If IEEE or MIPS:
-                    # Re-read the raw byte representation directly
-                    points[:, :4] = np.frombuffer(raw_bytes,
-                                                  dtype=self.dtypes.float32,
-                                                  count=N_point).reshape((int(self.point_used), 4))
+                    # Re-read the raw words directly so the 4th field keeps its original bit-pattern.
+                    raw_words = np.frombuffer(raw_bytes,
+                                              dtype=self.dtypes.uint32,
+                                              count=N_point).reshape((int(self.point_used), 4))
+                    points[:, :4] = raw_words.view(self.dtypes.float32).reshape((int(self.point_used), 4))
+                    raw_last_word = raw_words[:, 3]
 
                 # Parse the camera-observed bits and residuals.
                 # Notes:
@@ -1329,8 +1334,8 @@ class Reader(Manager):
                 #   with the difference that the words are 16 and 8 bit respectively (see the MLS guide).
                 # - While words are 16 bit, residual and camera mask is always interpreted as 8 packed in a single word!
                 # - 16 or 32 bit may represent a sign (indication that certain files write a -1 floating point only)
-                last_word = points[:, 3].astype(np.int32)
-                valid = (last_word & 0x80008000) == 0
+                last_word = raw_last_word.astype(np.uint32, copy=False)
+                valid = (last_word & np.uint32(0x80008000)) == 0
                 points[~valid, 3:5] = -1.0
                 c = last_word[valid]
 
@@ -1349,10 +1354,13 @@ class Reader(Manager):
 
             # Convert coordinate data
             # fourth value is floating-point (scaled) error estimate (residual)
-            points[valid, 3] = (c & 0xff).astype(np.float32) * scale_mag
+            points[valid, 3] = (c & np.uint32(0xff)).astype(np.float32) * scale_mag
 
             # fifth value is number of bits set in camera-observation byte
-            points[valid, 4] = sum((c & (1 << k)) >> k for k in range(8, 15))
+            points[valid, 4] = sum(
+                ((c & np.uint32(1 << k)) >> np.uint32(k)).astype(np.float32)
+                for k in range(8, 15)
+            )
             # Get value as is: points[valid, 4] = (c >> 8)
 
             # Check if analog data exist, and parse if so
