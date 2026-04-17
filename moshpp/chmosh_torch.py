@@ -21,6 +21,16 @@ from moshpp.optim.frame_fit_torch import (
     fit_stageii_frame_torch,
     make_stageii_latent_layout,
 )
+try:
+    from moshpp.optim.sequence_fit_torch import (
+        TorchSequenceFitOptions,
+        TorchSequenceFitWeights,
+        fit_stageii_sequence_torch,
+    )
+except ModuleNotFoundError:
+    TorchSequenceFitOptions = None
+    TorchSequenceFitWeights = None
+    fit_stageii_sequence_torch = None
 from moshpp.prior.gmm_prior_torch import prepare_gmm_prior
 from moshpp.tools.c3d import Reader as C3DReader
 from moshpp.transformed_lm_torch import MarkerAttachment, build_marker_attachment
@@ -200,6 +210,8 @@ def load_hand_pca_spec_torch(pose_hand_prior_fname, *, dof_per_hand, use_hands_m
 def make_body_model_factory_torch(cfg, *, device):
     model_type = cfg.surface_model.type
     model_fname = Path(str(cfg.surface_model.fname))
+    runtime = getattr(cfg, "runtime", None)
+    sequence_chunk_size = max(int(_runtime_get(runtime, "sequence_chunk_size", 1) or 1), 1)
 
     if model_type == "smplx":
         npz_fname = model_fname.with_suffix(".npz")
@@ -258,7 +270,7 @@ def make_body_model_factory_torch(cfg, *, device):
             "model_path": str(model_fname),
             "gender": cfg.surface_model.gender,
             "ext": ext,
-            "batch_size": 1,
+            "batch_size": sequence_chunk_size,
             "num_betas": cfg.surface_model.num_betas,
             "dtype": torch.float32,
         }
@@ -282,7 +294,21 @@ def _runtime_device(cfg, explicit_device=None):
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def _initial_translation(markers_obs, markers_latent):
+def _runtime_get(runtime, key, default=None):
+    if runtime is None:
+        return default
+    return getattr(runtime, key, default)
+
+
+def _initial_translation(markers_obs, markers_latent, visible_mask=None):
+    if visible_mask is not None:
+        visible_mask = torch.as_tensor(visible_mask, dtype=torch.bool, device=markers_obs.device)
+        if visible_mask.ndim != 1:
+            raise ValueError(f"visible_mask must be 1D, got {tuple(visible_mask.shape)}")
+        if int(visible_mask.sum().item()) == 0:
+            raise ValueError("visible_mask must keep at least one marker.")
+        markers_obs = markers_obs[visible_mask]
+        markers_latent = markers_latent[visible_mask]
     return (markers_obs.mean(dim=0, keepdim=True) - markers_latent.mean(dim=0, keepdim=True)).to(torch.float32)
 
 
@@ -290,6 +316,86 @@ def _subset_attachment(attachment, marker_ids):
     return MarkerAttachment(
         closest=attachment.closest[marker_ids],
         coeffs=attachment.coeffs[marker_ids],
+    )
+
+
+def _sequence_chunk_ranges(total_frames, chunk_size, overlap):
+    if total_frames <= 0:
+        return []
+    chunk_size = max(int(chunk_size), 1)
+    overlap = max(int(overlap), 0)
+    step = max(chunk_size - overlap, 1)
+    ranges = []
+    start = 0
+    while start < total_frames:
+        end = min(start + chunk_size, total_frames)
+        ranges.append((start, end))
+        if end >= total_frames:
+            break
+        start += step
+    return ranges
+
+
+def _build_chunk_observations(*, chunk_frames, observed_markers_dict, latent_labels, label_to_latent_id, device):
+    chunk_markers = []
+    chunk_visible = []
+    for frame_idx in chunk_frames:
+        frame_obs = observed_markers_dict[frame_idx]
+        if len(frame_obs) == 0:
+            raise ValueError(f"no available observed markers for frame {frame_idx}.")
+        frame_markers = torch.zeros(len(latent_labels), 3, dtype=torch.float32, device=device)
+        frame_visible = torch.zeros(len(latent_labels), dtype=torch.bool, device=device)
+        for label, marker in frame_obs.items():
+            latent_id = label_to_latent_id.get(label)
+            if latent_id is None:
+                continue
+            frame_markers[latent_id] = torch.as_tensor(marker, dtype=torch.float32, device=device)
+            frame_visible[latent_id] = True
+        if not bool(frame_visible.any()):
+            raise ValueError(f"no latent-aligned observed markers for frame {frame_idx}.")
+        chunk_markers.append(frame_markers)
+        chunk_visible.append(frame_visible)
+    return torch.stack(chunk_markers, dim=0), torch.stack(chunk_visible, dim=0)
+
+
+def _runtime_sequence_fit_options(cfg, runtime):
+    if TorchSequenceFitOptions is None:
+        raise RuntimeError("sequence fit options requested but torch sequence solver is unavailable")
+
+    valid_optimizers = {"lbfgs", "adam"}
+    optimizer = str(_runtime_get(runtime, "sequence_optimizer", "adam")).lower()
+    if optimizer not in valid_optimizers:
+        raise ValueError(f"Unsupported runtime optimizer for sequence: {optimizer}. Expected one of {sorted(valid_optimizers)}.")
+
+    default_max_iters = int(_runtime_get(runtime, "sequence_max_iters", int(cfg.opt_settings.maxiter)))
+    default_lr = float(_runtime_get(runtime, "sequence_lr", 1e-1))
+    return TorchSequenceFitOptions(
+        max_iters=default_max_iters,
+        lr=default_lr,
+        optimizer=optimizer,
+        history_size=int(_runtime_get(runtime, "sequence_history_size", 100)),
+        tolerance_grad=float(_runtime_get(runtime, "sequence_tolerance_grad", 1e-7)),
+        tolerance_change=float(_runtime_get(runtime, "sequence_tolerance_change", 1e-9)),
+        max_eval=_runtime_get(runtime, "sequence_max_eval", None),
+    )
+
+
+def _runtime_sequence_fit_weights(cfg, runtime, *, avg_visible_count, marker_count, anneal_factor):
+    if TorchSequenceFitWeights is None:
+        raise RuntimeError("sequence fit weights requested but torch sequence solver is unavailable")
+
+    weight_cfg = cfg.opt_settings.weights
+    return TorchSequenceFitWeights(
+        data=float(weight_cfg.stageii_wt_data) * (46 / max(int(avg_visible_count), 1)),
+        pose_body=float(weight_cfg.stageii_wt_poseB) * anneal_factor,
+        pose_hand=float(weight_cfg.stageii_wt_poseH) * anneal_factor,
+        pose_face=float(weight_cfg.stageii_wt_poseF) * anneal_factor,
+        expr=float(weight_cfg.stageii_wt_expr),
+        velocity=float(weight_cfg.stageii_wt_velo),
+        temporal_accel=float(_runtime_get(runtime, "sequence_temporal_accel", 0.0)),
+        delta_pose=float(_runtime_get(runtime, "sequence_delta_pose", 0.0)),
+        delta_trans=float(_runtime_get(runtime, "sequence_delta_trans", 0.0)),
+        delta_expr=float(_runtime_get(runtime, "sequence_delta_expr", 0.0)),
     )
 
 
@@ -383,10 +489,12 @@ def mosh_stageii_torch(
         "stageii_errs": {},
     }
 
-    selected_frames = range(
+    selected_frames = list(
+        range(
         cfg.mocap.start_fidx,
         len(mocap) if cfg.mocap.end_fidx == -1 else cfg.mocap.end_fidx,
         cfg.mocap.ds_rate,
+        )
     )
 
     current_latent_pose = torch.zeros(1, layout.latent_dim, dtype=torch.float32, device=device)
@@ -397,81 +505,179 @@ def mosh_stageii_torch(
         else None
     )
     prev_latent_pose = None
+    runtime = getattr(cfg, "runtime", None)
+    label_to_latent_id = {label: idx for idx, label in enumerate(latent_labels)}
+    sequence_chunk_size = max(int(_runtime_get(runtime, "sequence_chunk_size", 1) or 1), 1)
+    sequence_chunk_overlap = max(int(_runtime_get(runtime, "sequence_chunk_overlap", 0) or 0), 0)
 
-    for fidx, t in enumerate(selected_frames):
-        frame_obs = observed_markers_dict[t]
-        if len(frame_obs) == 0:
-            logger.error(f"no available observed markers for frame {t}. skipping the frame.")
-            continue
+    if sequence_chunk_size > 1:
+        if fit_stageii_sequence_torch is None:
+            raise RuntimeError("sequence_chunk_size requested but fit_stageii_sequence_torch is unavailable")
 
-        visible_ids = [lid for lid, label in enumerate(latent_labels) if label in frame_obs]
-        visible_labels = [latent_labels[lid] for lid in visible_ids]
-        markers_obs = torch.stack(
-            [torch.as_tensor(frame_obs[label], dtype=torch.float32, device=device) for label in visible_labels]
-        )
-        attachment_subset = _subset_attachment(marker_attachment, visible_ids)
+        sequence_options = _runtime_sequence_fit_options(cfg, runtime)
 
-        num_missing_markers = float(len(markers_latent) - len(visible_ids))
-        anneal_factor = 1.0
-        if num_missing_markers > 0:
-            anneal_factor += (num_missing_markers / len(markers_latent)) * cfg.opt_settings.weights.stageii_wt_annealing
+        for chunk_idx, (row_start, row_end) in enumerate(
+            _sequence_chunk_ranges(len(selected_frames), sequence_chunk_size, sequence_chunk_overlap)
+        ):
+            chunk_frames = selected_frames[row_start:row_end]
+            try:
+                chunk_markers_obs, chunk_visible = _build_chunk_observations(
+                    chunk_frames=chunk_frames,
+                    observed_markers_dict=observed_markers_dict,
+                    latent_labels=latent_labels,
+                    label_to_latent_id=label_to_latent_id,
+                    device=device,
+                )
+            except ValueError as exc:
+                logger.error(str(exc))
+                continue
 
-        weights = TorchFrameFitWeights(
-            data=cfg.opt_settings.weights.stageii_wt_data * (num_train_markers / max(markers_obs.shape[0], 1)),
-            pose_body=cfg.opt_settings.weights.stageii_wt_poseB * anneal_factor,
-            pose_hand=cfg.opt_settings.weights.stageii_wt_poseH * anneal_factor,
-            pose_face=cfg.opt_settings.weights.stageii_wt_poseF * anneal_factor,
-            expr=cfg.opt_settings.weights.stageii_wt_expr,
-            velocity=cfg.opt_settings.weights.stageii_wt_velo,
-        )
-        options = TorchFrameFitOptions(
-            rigid_iters=cfg.opt_settings.maxiter,
-            warmup_iters=cfg.opt_settings.maxiter,
-            refine_iters=cfg.opt_settings.maxiter,
-        )
+            visible_counts = chunk_visible.sum(dim=1).to(dtype=torch.float32)
+            avg_visible_count = max(int(round(float(visible_counts.mean().item()))), 1)
+            avg_missing_markers = float(len(markers_latent) - visible_counts.mean().item())
+            anneal_factor = 1.0
+            if avg_missing_markers > 0:
+                anneal_factor += (avg_missing_markers / len(markers_latent)) * cfg.opt_settings.weights.stageii_wt_annealing
 
-        if fidx == 0:
-            current_transl = _initial_translation(markers_obs, markers_latent_tensor[visible_ids])
-            warmup_scales = (10.0, 5.0, 1.0)
-            rigid_init = True
-        else:
-            warmup_scales = (1.0,)
-            rigid_init = False
+            sequence_weights = _runtime_sequence_fit_weights(
+                cfg,
+                runtime,
+                avg_visible_count=avg_visible_count,
+                marker_count=len(markers_latent),
+                anneal_factor=anneal_factor,
+            )
 
-        result = fit_stageii_frame_torch(
-            body_model=body_model,
-            betas=betas_tensor,
-            marker_attachment=attachment_subset,
-            marker_observations=markers_obs,
-            pose_prior=pose_prior,
-            layout=layout,
-            latent_pose_init=current_latent_pose,
-            transl_init=current_transl,
-            expression_init=current_expression,
-            hand_pca=hand_pca,
-            optimize_fingers=optimize_fingers,
-            optimize_face=optimize_face,
-            optimize_toes=bool(cfg.moshpp.optimize_toes),
-            velocity_reference=prev_latent_pose,
-            weights=weights,
-            options=options,
-            rigid_init=rigid_init,
-            warmup_pose_scales=warmup_scales,
-        )
+            chunk_latent_init = []
+            chunk_transl_init = []
+            chunk_expression_init = [] if optimize_face else None
+            for local_idx in range(len(chunk_frames)):
+                chunk_latent_init.append(current_latent_pose[0])
+                chunk_transl_init.append(
+                    _initial_translation(
+                        chunk_markers_obs[local_idx],
+                        markers_latent_tensor,
+                        visible_mask=chunk_visible[local_idx],
+                    )[0]
+                )
+                if optimize_face:
+                    expression_init = current_expression
+                    if expression_init is None:
+                        expression_init = torch.zeros(1, cfg.surface_model.num_expressions, dtype=torch.float32, device=device)
+                    chunk_expression_init.append(expression_init[0])
 
-        current_latent_pose = result.latent_pose.detach()
-        current_transl = result.transl.detach()
-        current_expression = result.expression.detach() if result.expression is not None else None
-        prev_latent_pose = result.latent_pose.detach()
+            result = fit_stageii_sequence_torch(
+                body_model=body_model,
+                wrapper=wrapper,
+                betas=betas_tensor,
+                marker_attachment=marker_attachment,
+                marker_observations=chunk_markers_obs,
+                pose_prior=pose_prior,
+                layout=layout,
+                latent_pose_init=torch.stack(chunk_latent_init, dim=0),
+                transl_init=torch.stack(chunk_transl_init, dim=0),
+                expression_init=torch.stack(chunk_expression_init, dim=0) if optimize_face else None,
+                hand_pca=hand_pca,
+                optimize_fingers=optimize_fingers,
+                optimize_face=optimize_face,
+                optimize_toes=bool(cfg.moshpp.optimize_toes),
+                visible_mask=chunk_visible,
+                weights=sequence_weights,
+                options=sequence_options,
+            )
 
-        for key, value in result.loss_terms.items():
-            perframe_data["stageii_errs"].setdefault(key, []).append(value)
+            current_latent_pose = torch.as_tensor(result.latent_pose[-1:]).detach()
+            current_transl = torch.as_tensor(result.transl[-1:]).detach()
+            current_expression = torch.as_tensor(result.expression[-1:]).detach() if result.expression is not None else None
+            prev_latent_pose = torch.as_tensor(result.latent_pose[-1:]).detach()
 
-        perframe_data["markers_sim"].append(result.predicted_markers.cpu().numpy().copy())
-        perframe_data["markers_obs"].append(markers_obs.cpu().numpy().copy())
-        perframe_data["labels_obs"].append(visible_labels)
-        perframe_data["fullpose"].append(result.fullpose.cpu().numpy()[0].copy())
-        perframe_data["trans"].append(result.transl.cpu().numpy()[0].copy())
+            keep_start = 0 if chunk_idx == 0 else min(sequence_chunk_overlap, row_end - row_start)
+            for local_idx in range(keep_start, row_end - row_start):
+                visible_labels = [latent_labels[idx] for idx in torch.nonzero(chunk_visible[local_idx], as_tuple=False).flatten().tolist()]
+                for key, value in result.loss_terms.items():
+                    if torch.is_tensor(value):
+                        perframe_data["stageii_errs"].setdefault(key, []).append(float(value[local_idx].item()))
+                    else:
+                        perframe_data["stageii_errs"].setdefault(key, []).append(float(value))
+                perframe_data["markers_sim"].append(result.predicted_markers[local_idx].detach().cpu().numpy().copy())
+                perframe_data["markers_obs"].append(chunk_markers_obs[local_idx].detach().cpu().numpy().copy())
+                perframe_data["labels_obs"].append(visible_labels)
+                perframe_data["fullpose"].append(result.fullpose[local_idx].detach().cpu().numpy().copy())
+                perframe_data["trans"].append(result.transl[local_idx].detach().cpu().numpy().copy())
+    else:
+        for fidx, t in enumerate(selected_frames):
+            frame_obs = observed_markers_dict[t]
+            if len(frame_obs) == 0:
+                logger.error(f"no available observed markers for frame {t}. skipping the frame.")
+                continue
+
+            visible_ids = [lid for lid, label in enumerate(latent_labels) if label in frame_obs]
+            visible_labels = [latent_labels[lid] for lid in visible_ids]
+            markers_obs = torch.stack(
+                [torch.as_tensor(frame_obs[label], dtype=torch.float32, device=device) for label in visible_labels]
+            )
+            attachment_subset = _subset_attachment(marker_attachment, visible_ids)
+
+            num_missing_markers = float(len(markers_latent) - len(visible_ids))
+            anneal_factor = 1.0
+            if num_missing_markers > 0:
+                anneal_factor += (num_missing_markers / len(markers_latent)) * cfg.opt_settings.weights.stageii_wt_annealing
+
+            weights = TorchFrameFitWeights(
+                data=cfg.opt_settings.weights.stageii_wt_data * (num_train_markers / max(markers_obs.shape[0], 1)),
+                pose_body=cfg.opt_settings.weights.stageii_wt_poseB * anneal_factor,
+                pose_hand=cfg.opt_settings.weights.stageii_wt_poseH * anneal_factor,
+                pose_face=cfg.opt_settings.weights.stageii_wt_poseF * anneal_factor,
+                expr=cfg.opt_settings.weights.stageii_wt_expr,
+                velocity=cfg.opt_settings.weights.stageii_wt_velo,
+            )
+            options = TorchFrameFitOptions(
+                rigid_iters=cfg.opt_settings.maxiter,
+                warmup_iters=cfg.opt_settings.maxiter,
+                refine_iters=cfg.opt_settings.maxiter,
+            )
+
+            if fidx == 0:
+                current_transl = _initial_translation(markers_obs, markers_latent_tensor[visible_ids])
+                warmup_scales = (10.0, 5.0, 1.0)
+                rigid_init = True
+            else:
+                warmup_scales = (1.0,)
+                rigid_init = False
+
+            result = fit_stageii_frame_torch(
+                body_model=body_model,
+                betas=betas_tensor,
+                marker_attachment=attachment_subset,
+                marker_observations=markers_obs,
+                pose_prior=pose_prior,
+                layout=layout,
+                latent_pose_init=current_latent_pose,
+                transl_init=current_transl,
+                expression_init=current_expression,
+                hand_pca=hand_pca,
+                optimize_fingers=optimize_fingers,
+                optimize_face=optimize_face,
+                optimize_toes=bool(cfg.moshpp.optimize_toes),
+                velocity_reference=prev_latent_pose,
+                weights=weights,
+                options=options,
+                rigid_init=rigid_init,
+                warmup_pose_scales=warmup_scales,
+            )
+
+            current_latent_pose = result.latent_pose.detach()
+            current_transl = result.transl.detach()
+            current_expression = result.expression.detach() if result.expression is not None else None
+            prev_latent_pose = result.latent_pose.detach()
+
+            for key, value in result.loss_terms.items():
+                perframe_data["stageii_errs"].setdefault(key, []).append(value)
+
+            perframe_data["markers_sim"].append(result.predicted_markers.cpu().numpy().copy())
+            perframe_data["markers_obs"].append(markers_obs.cpu().numpy().copy())
+            perframe_data["labels_obs"].append(visible_labels)
+            perframe_data["fullpose"].append(result.fullpose.cpu().numpy()[0].copy())
+            perframe_data["trans"].append(result.transl.cpu().numpy()[0].copy())
 
     stageii_debug_details = {
         "stageii_errs": {key: np.array(values) for key, values in perframe_data.pop("stageii_errs").items()},
