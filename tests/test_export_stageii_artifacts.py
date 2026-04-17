@@ -194,6 +194,17 @@ def test_export_stageii_artifacts_batch_resolves_model_path_per_stageii(monkeypa
     )
 
     calls = []
+    load_calls = []
+    loaded_models = {
+        str(male_model): object(),
+        str(female_model): object(),
+    }
+
+    monkeypatch.setattr(
+        export_stageii_artifacts.render_video,
+        "load_render_model",
+        lambda model_path: load_calls.append(model_path) or loaded_models[str(model_path)],
+    )
 
     def fake_export_stageii_artifacts(**kwargs):
         calls.append(kwargs)
@@ -219,12 +230,74 @@ def test_export_stageii_artifacts_batch_resolves_model_path_per_stageii(monkeypa
     )
 
     assert len(results) == 2
+    assert load_calls == [str(male_model), str(female_model)]
     assert [call["input_pkl"] for call in calls] == [str(swing_stageii), str(serve_stageii)]
     assert [call["model_path"] for call in calls] == [str(male_model), str(female_model)]
+    assert [call["model"] for call in calls] == [
+        loaded_models[str(male_model)],
+        loaded_models[str(female_model)],
+    ]
     assert all(call["fps"] == 15 for call in calls)
     assert all(call["width"] == 160 for call in calls)
     assert all(call["height"] == 120 for call in calls)
     assert all(call["arch"] == "cpu" for call in calls)
+
+
+def test_export_stageii_artifacts_batch_reuses_loaded_model_for_shared_model_path(
+    monkeypatch, tmp_path
+):
+    support_dir = tmp_path / "support"
+    shared_model = support_dir / "smplx" / "male" / "model.npz"
+    shared_model.parent.mkdir(parents=True, exist_ok=True)
+    shared_model.write_bytes(b"npz")
+
+    swing_stageii = tmp_path / "exports" / "subject01" / "swing_stageii.pkl"
+    serve_stageii = tmp_path / "exports" / "subject02" / "serve_stageii.pkl"
+    _write_stageii_pickle(
+        swing_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+    _write_stageii_pickle(
+        serve_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    load_calls = []
+    export_calls = []
+    preloaded_model = type("PreloadedModel", (), {"faces": np.array([[0, 1, 2]], dtype=np.int32)})()
+
+    monkeypatch.setattr(
+        export_stageii_artifacts.render_video,
+        "load_render_model",
+        lambda model_path: load_calls.append(model_path) or preloaded_model,
+    )
+
+    def fake_export_stageii_artifacts(**kwargs):
+        export_calls.append(kwargs)
+        return {
+            "obj_path": str(Path(kwargs["input_pkl"]).with_suffix(".obj")),
+            "pc2_path": str(Path(kwargs["input_pkl"]).with_suffix(".pc2")),
+            "video_path": str(Path(kwargs["input_pkl"]).with_suffix(".mp4")),
+        }
+
+    monkeypatch.setattr(
+        export_stageii_artifacts,
+        "export_stageii_artifacts",
+        fake_export_stageii_artifacts,
+    )
+
+    export_stageii_artifacts.export_stageii_artifacts_batch(
+        input_pkls=[swing_stageii, serve_stageii],
+        support_base_dir=support_dir,
+        arch="cpu",
+    )
+
+    assert load_calls == [str(shared_model)]
+    assert len(export_calls) == 2
+    assert [call["model_path"] for call in export_calls] == [str(shared_model), str(shared_model)]
+    assert [call["model"] for call in export_calls] == [preloaded_model, preloaded_model]
 
 
 def test_export_stageii_artifacts_main_supports_recursive_input_dir(monkeypatch, tmp_path):

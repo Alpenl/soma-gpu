@@ -195,6 +195,7 @@ def export_stageii_artifacts_batch(
         raise ValueError("No *_stageii.pkl files matched for artifact export.")
 
     results = []
+    model_cache = {}
     for input_pkl in input_pkls:
         try:
             resolved_model_path = resolve_stageii_model_path(
@@ -202,10 +203,15 @@ def export_stageii_artifacts_batch(
             )
         except (KeyError, ValueError) as exc:
             raise ValueError(f"{input_pkl}: {exc}") from exc
+        model = model_cache.get(resolved_model_path)
+        if model is None:
+            model = render_video.load_render_model(resolved_model_path)
+            model_cache[resolved_model_path] = model
         results.append(
             export_stageii_artifacts(
                 input_pkl=input_pkl,
                 model_path=resolved_model_path,
+                model=model,
                 fps=fps,
                 width=width,
                 height=height,
