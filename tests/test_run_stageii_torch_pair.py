@@ -309,6 +309,77 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
     assert payload["baseline"]["benchmark"]["artifact"]["report_path"] == "report.json"
 
 
+def test_run_stageii_torch_pair_main_forwards_lean_benchmark_flag_to_benchmark_runs(
+    tmp_path, monkeypatch
+):
+    captured = {"calls": []}
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        return {"benchmark": {"artifact": {"report_path": "report.json"}}, "stageii_path": "stageii.pkl"}
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--baseline-benchmark-output",
+            str(tmp_path / "baseline_benchmark.json"),
+            "--lean-benchmark",
+        ]
+    )
+
+    assert captured["calls"][0] == (
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-baseline",
+            "--output-suffix",
+            "_baseline",
+            "--expected-stageii-path",
+            str(tmp_path / "work" / "input" / "wolf001" / "capture_baseline_stageii.pkl"),
+            "--benchmark-output",
+            str(tmp_path / "baseline_benchmark.json"),
+            "--expected-benchmark-output",
+            str(tmp_path / "baseline_benchmark.json"),
+            "--lean-benchmark",
+        ],
+        False,
+    )
+    assert captured["calls"][1] == (
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-transvelo100-seedvelowindow",
+            "--output-suffix",
+            "_candidate",
+            "--expected-stageii-path",
+            str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"),
+            "--expected-benchmark-output",
+            str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_benchmark.json"),
+            "--lean-benchmark",
+            "--mesh-reference",
+            "stageii.pkl",
+        ],
+        False,
+    )
+
+
 def test_run_stageii_torch_pair_main_forwards_mesh_export_flags_to_both_runs(tmp_path, monkeypatch):
     captured = {"calls": []}
     mesh_output_dir = tmp_path / "mesh_exports"

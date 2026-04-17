@@ -248,6 +248,55 @@ def test_run_public_stageii_benchmark_includes_artifact_bundle_export_metric_whe
     assert report["speed"]["artifact_bundle_export_ms"] == artifact_bundle_metric
 
 
+def test_run_public_stageii_benchmark_lean_mode_skips_optional_speed_probes(monkeypatch):
+    calls = {
+        "preview": 0,
+        "mesh_export": 0,
+        "mp4_render": 0,
+        "artifact_bundle": 0,
+    }
+
+    def _unexpected_preview(*args, **kwargs):
+        calls["preview"] += 1
+        return {"mean": 1.0}
+
+    def _unexpected_mesh_export(*args, **kwargs):
+        calls["mesh_export"] += 1
+        return {"mean": 2.0}
+
+    def _unexpected_mp4_render(*args, **kwargs):
+        calls["mp4_render"] += 1
+        return {"mean": 3.0}
+
+    def _unexpected_artifact_bundle(*args, **kwargs):
+        calls["artifact_bundle"] += 1
+        return {"mean": 4.0}
+
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", _unexpected_preview)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", _unexpected_mesh_export)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", _unexpected_mp4_render)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", _unexpected_artifact_bundle)
+
+    report = run_public_stageii_benchmark(
+        ROOT / "support_data/tests/mosh_stageii.pkl",
+        warmup_runs=0,
+        measured_runs=1,
+        lean_benchmark=True,
+    )
+
+    assert calls == {
+        "preview": 0,
+        "mesh_export": 0,
+        "mp4_render": 0,
+        "artifact_bundle": 0,
+    }
+    assert report["speed"]["preview_vertex_decode_ms"] is None
+    assert report["speed"]["mesh_export_ms"] is None
+    assert report["speed"]["mp4_render_ms"] is None
+    assert report["speed"]["artifact_bundle_export_ms"] is None
+    assert report["speed"]["latency_ms"]["count"] == 1
+
+
 def test_run_public_stageii_benchmark_includes_quality_summary_when_available(monkeypatch):
     quality_summary = {
         "marker_residual_l2": {"count": 3, "mean": 1.0},
@@ -510,7 +559,7 @@ def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monke
     monkeypatch.setattr(
         benchmark_stageii_public,
         "run_public_stageii_benchmark",
-        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap: (
+        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap, lean_benchmark: (
             captured.update(
                 {
                     "sample_path": sample_path,
@@ -520,6 +569,7 @@ def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monke
                     "mesh_support_base_dir": mesh_support_base_dir,
                     "mesh_chunk_size": mesh_chunk_size,
                     "mesh_chunk_overlap": mesh_chunk_overlap,
+                    "lean_benchmark": lean_benchmark,
                 }
             )
             or {
@@ -566,6 +616,7 @@ def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monke
         "mesh_support_base_dir": "/tmp/support_files",
         "mesh_chunk_size": 64,
         "mesh_chunk_overlap": 8,
+        "lean_benchmark": False,
         "report_path": "candidate_benchmark.json",
     }
     output = json.loads(capsys.readouterr().out)
@@ -578,7 +629,7 @@ def test_benchmark_stageii_public_main_writes_default_report_next_to_input(monke
     monkeypatch.setattr(
         benchmark_stageii_public,
         "run_public_stageii_benchmark",
-        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap: (
+        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap, lean_benchmark: (
             captured.update(
                 {
                     "sample_path": sample_path,
@@ -588,6 +639,7 @@ def test_benchmark_stageii_public_main_writes_default_report_next_to_input(monke
                     "mesh_support_base_dir": mesh_support_base_dir,
                     "mesh_chunk_size": mesh_chunk_size,
                     "mesh_chunk_overlap": mesh_chunk_overlap,
+                    "lean_benchmark": lean_benchmark,
                 }
             )
             or {
@@ -626,6 +678,7 @@ def test_benchmark_stageii_public_main_writes_default_report_next_to_input(monke
         "mesh_support_base_dir": None,
         "mesh_chunk_size": None,
         "mesh_chunk_overlap": None,
+        "lean_benchmark": False,
         "report_path": "/tmp/work/input/wolf001/candidate_benchmark.json",
     }
     output = json.loads(capsys.readouterr().out)
@@ -640,7 +693,7 @@ def test_benchmark_stageii_public_main_defaults_mesh_support_base_dir_when_mesh_
     monkeypatch.setattr(
         benchmark_stageii_public,
         "run_public_stageii_benchmark",
-        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap: (
+        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap, lean_benchmark: (
             captured.update(
                 {
                     "sample_path": sample_path,
@@ -650,6 +703,7 @@ def test_benchmark_stageii_public_main_defaults_mesh_support_base_dir_when_mesh_
                     "mesh_support_base_dir": mesh_support_base_dir,
                     "mesh_chunk_size": mesh_chunk_size,
                     "mesh_chunk_overlap": mesh_chunk_overlap,
+                    "lean_benchmark": lean_benchmark,
                 }
             )
             or {
@@ -689,6 +743,55 @@ def test_benchmark_stageii_public_main_defaults_mesh_support_base_dir_when_mesh_
         "mesh_support_base_dir": "support_files",
         "mesh_chunk_size": None,
         "mesh_chunk_overlap": None,
+        "lean_benchmark": False,
+    }
+    assert json.loads(capsys.readouterr().out)["sample"]["path"] == "candidate_stageii.pkl"
+
+
+def test_benchmark_stageii_public_main_passes_lean_benchmark_flag(monkeypatch, capsys):
+    captured = {}
+
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap, lean_benchmark: (
+            captured.update(
+                {
+                    "sample_path": sample_path,
+                    "lean_benchmark": lean_benchmark,
+                }
+            )
+            or {
+                "sample": {"path": sample_path},
+                "quality": {"mesh_compare": None},
+                "artifact": {"report_path": None},
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "write_benchmark_report",
+        lambda report, output_path: {
+            **report,
+            "artifact": {"report_path": str(output_path)},
+        },
+    )
+
+    benchmark_stageii_public.main(
+        [
+            "--input",
+            "candidate_stageii.pkl",
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+            "--lean-benchmark",
+        ]
+    )
+
+    assert captured == {
+        "sample_path": "candidate_stageii.pkl",
+        "lean_benchmark": True,
     }
     assert json.loads(capsys.readouterr().out)["sample"]["path"] == "candidate_stageii.pkl"
 

@@ -64,6 +64,14 @@ def build_parser():
         default=None,
         help="Optional chunk overlap override paired with --mesh-chunk-size for mesh comparison.",
     )
+    parser.add_argument(
+        "--lean-benchmark",
+        action="store_true",
+        help=(
+            "Skip optional preview vertex decode, mesh export, mp4 render, and artifact bundle "
+            "speed probes; keep the core ingest latency, repeatability, and quality summaries."
+        ),
+    )
     return parser
 
 
@@ -97,6 +105,7 @@ def main(argv=None):
             mesh_support_base_dir=_mesh_support_base_dir(args),
             mesh_chunk_size=args.mesh_chunk_size,
             mesh_chunk_overlap=args.mesh_chunk_overlap,
+            lean_benchmark=args.lean_benchmark,
         )
 
         output_path = args.output or default_benchmark_output_path(args.input)

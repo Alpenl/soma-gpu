@@ -99,6 +99,14 @@ def build_parser():
         help="Measured runs forwarded to benchmarked runs when overriding the default.",
     )
     parser.add_argument(
+        "--lean-benchmark",
+        action="store_true",
+        help=(
+            "Forward lean benchmark mode to benchmarked runs so the active `.mcp -> mesh` loop "
+            "skips preview/mp4/artifact speed probes."
+        ),
+    )
+    parser.add_argument(
         "--mesh-support-base-dir",
         default=None,
         help="Optional support_files root used by mesh export and candidate mesh comparison; defaults to --support-base-dir.",
@@ -141,6 +149,8 @@ def _append_benchmark_args(runner_args, args, *, benchmark_output=None, expected
         runner_args.extend(["--warmup-runs", str(args.warmup_runs)])
     if args.measured_runs != 5:
         runner_args.extend(["--measured-runs", str(args.measured_runs)])
+    if args.lean_benchmark:
+        runner_args.append("--lean-benchmark")
 
 
 def _append_mesh_args(

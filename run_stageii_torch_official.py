@@ -101,6 +101,14 @@ def build_parser():
     )
     parser.add_argument("--warmup-runs", type=int, default=1, help="Warmup runs forwarded to the stageii benchmark.")
     parser.add_argument("--measured-runs", type=int, default=5, help="Measured runs forwarded to the stageii benchmark.")
+    parser.add_argument(
+        "--lean-benchmark",
+        action="store_true",
+        help=(
+            "Skip optional preview/mp4/artifact speed probes during benchmarking and keep the "
+            "core stageii latency/repeatability/quality summaries."
+        ),
+    )
     mesh_reference_group = parser.add_mutually_exclusive_group()
     mesh_reference_group.add_argument(
         "--mesh-reference",
@@ -197,6 +205,8 @@ def _validate_mesh_cli_args(parser, args):
         parser.error("--warmup-runs requires benchmark to be enabled")
     if args.measured_runs != 5 and args.skip_benchmark:
         parser.error("--measured-runs requires benchmark to be enabled")
+    if args.lean_benchmark and args.skip_benchmark:
+        parser.error("--lean-benchmark requires benchmark to be enabled")
     if args.mesh_reference is not None and args.skip_benchmark:
         parser.error("--mesh-reference requires benchmark to be enabled")
     if args.mesh_reference_output_suffix is not None and args.skip_benchmark:
@@ -457,6 +467,7 @@ def run(argv=None, *, emit_json=True):
                 mesh_support_base_dir=_mesh_support_base_dir(args),
                 mesh_chunk_size=args.mesh_chunk_size,
                 mesh_chunk_overlap=args.mesh_chunk_overlap,
+                lean_benchmark=args.lean_benchmark,
             )
             benchmark_output_path = _resolve_benchmark_output_path(
                 stageii_path,

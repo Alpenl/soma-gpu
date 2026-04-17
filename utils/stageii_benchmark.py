@@ -806,6 +806,7 @@ def run_public_stageii_benchmark(
     mesh_support_base_dir=None,
     mesh_chunk_size=None,
     mesh_chunk_overlap=None,
+    lean_benchmark=False,
 ):
     sample_path = Path(sample_path)
     _validate_mesh_reference_path(sample_path=sample_path, mesh_reference_path=mesh_reference_path)
@@ -830,34 +831,39 @@ def run_public_stageii_benchmark(
 
     repo_root = Path(__file__).resolve().parents[1]
     latency_summary = _summarize_latency_samples(latencies_ms)
-    preview_vertex_decode_summary = _benchmark_preview_vertex_decode(
-        sample_path,
-        baseline,
-        repo_root=repo_root,
-        warmup_runs=warmup_runs,
-        measured_runs=measured_runs,
-    )
-    mesh_export_summary = _benchmark_mesh_export(
-        sample_path,
-        baseline,
-        repo_root=repo_root,
-        warmup_runs=warmup_runs,
-        measured_runs=measured_runs,
-    )
-    mp4_render_summary = _benchmark_mp4_render(
-        sample_path,
-        baseline,
-        repo_root=repo_root,
-        warmup_runs=warmup_runs,
-        measured_runs=measured_runs,
-    )
-    artifact_bundle_export_summary = _benchmark_artifact_bundle_export(
-        sample_path,
-        baseline,
-        repo_root=repo_root,
-        warmup_runs=warmup_runs,
-        measured_runs=measured_runs,
-    )
+    preview_vertex_decode_summary = None
+    mesh_export_summary = None
+    mp4_render_summary = None
+    artifact_bundle_export_summary = None
+    if not lean_benchmark:
+        preview_vertex_decode_summary = _benchmark_preview_vertex_decode(
+            sample_path,
+            baseline,
+            repo_root=repo_root,
+            warmup_runs=warmup_runs,
+            measured_runs=measured_runs,
+        )
+        mesh_export_summary = _benchmark_mesh_export(
+            sample_path,
+            baseline,
+            repo_root=repo_root,
+            warmup_runs=warmup_runs,
+            measured_runs=measured_runs,
+        )
+        mp4_render_summary = _benchmark_mp4_render(
+            sample_path,
+            baseline,
+            repo_root=repo_root,
+            warmup_runs=warmup_runs,
+            measured_runs=measured_runs,
+        )
+        artifact_bundle_export_summary = _benchmark_artifact_bundle_export(
+            sample_path,
+            baseline,
+            repo_root=repo_root,
+            warmup_runs=warmup_runs,
+            measured_runs=measured_runs,
+        )
     candidate_quality = dict(_summarize_stageii_quality(sample_path, baseline))
     quality_summary = dict(candidate_quality)
     quality_summary["reference_stageii_quality"] = None
