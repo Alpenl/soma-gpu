@@ -154,7 +154,7 @@ def _build_baseline_runner_args(args):
     return runner_args
 
 
-def _build_candidate_runner_args(args):
+def _build_candidate_runner_args(args, *, mesh_reference_path=None):
     runner_args = _base_runner_args(args)
     runner_args.extend(["--preset", args.candidate_preset])
     runner_args.extend(["--output-suffix", args.candidate_output_suffix])
@@ -166,7 +166,10 @@ def _build_candidate_runner_args(args):
         benchmark_output=args.candidate_benchmark_output,
         include_mesh_reference=True,
     )
-    runner_args.extend(["--mesh-reference-output-suffix", args.baseline_output_suffix])
+    if mesh_reference_path is not None:
+        runner_args.extend(["--mesh-reference", mesh_reference_path])
+    else:
+        runner_args.extend(["--mesh-reference-output-suffix", args.baseline_output_suffix])
     return runner_args
 
 
@@ -181,8 +184,11 @@ def run(argv=None, *, emit_json=True):
         _build_baseline_runner_args(args),
         emit_json=False,
     )
+    baseline_stageii_path = baseline_payload.get("stageii_path")
+    if not baseline_stageii_path:
+        raise ValueError("baseline runner did not return stageii_path")
     candidate_payload = run_stageii_torch_official.run(
-        _build_candidate_runner_args(args),
+        _build_candidate_runner_args(args, mesh_reference_path=baseline_stageii_path),
         emit_json=False,
     )
 

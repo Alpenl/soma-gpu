@@ -183,7 +183,7 @@ python run_stageii_torch_pair.py \
 ````
 这个脚本会顺序调用现有 `run_stageii_torch_official.py` 两次：
 - baseline 侧默认使用 `--preset real-mcp-baseline --output-suffix _baseline`，并默认只产 `stageii.pkl`，不重复跑 standalone benchmark
-- candidate 侧默认使用 `--preset real-mcp-transvelo100-seedvelowindow --output-suffix _candidate`，并自动把 `--mesh-reference-output-suffix` 指到 baseline，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要
+- candidate 侧默认使用 `--preset real-mcp-transvelo100-seedvelowindow --output-suffix _candidate`，并自动把 baseline 那次真实返回的 `stageii_path` 显式传给 `--mesh-reference`，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要；即使 baseline 侧额外用了 `--baseline-cfg mocap.basename=...` 这类只影响路径命名的覆盖，也不会再被 candidate 侧的配置重推导错
 
 若要在同一条命令里继续做 sweep，可用：
 - `--candidate-cfg key=value`：只改 candidate

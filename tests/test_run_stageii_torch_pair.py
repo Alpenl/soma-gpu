@@ -83,8 +83,8 @@ def test_run_stageii_torch_pair_main_runs_baseline_then_candidate_with_shared_an
                 "surface_model.gender=male",
                 "--cfg",
                 "runtime.sequence_transl_velocity=120",
-                "--mesh-reference-output-suffix",
-                "_baseline",
+                "--mesh-reference",
+                str(tmp_path / "real-mcp-baseline_baseline_stageii.pkl"),
             ],
             False,
         ),
@@ -99,6 +99,89 @@ def test_run_stageii_torch_pair_main_runs_baseline_then_candidate_with_shared_an
             "stageii_path": str(
                 tmp_path / "real-mcp-transvelo100-seedvelowindow_candidate_stageii.pkl"
             ),
+        },
+    }
+
+
+def test_run_stageii_torch_pair_main_passes_returned_baseline_stageii_path_to_candidate(
+    tmp_path, monkeypatch
+):
+    captured = {"calls": []}
+    baseline_stageii = tmp_path / "manual_baseline_stageii.pkl"
+    candidate_stageii = tmp_path / "manual_candidate_stageii.pkl"
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        preset = argv[argv.index("--preset") + 1]
+        if preset == "real-mcp-baseline":
+            return {"benchmark": None, "stageii_path": str(baseline_stageii)}
+        return {
+            "benchmark": {"artifact": {"report_path": str(tmp_path / "candidate_benchmark.json")}},
+            "stageii_path": str(candidate_stageii),
+        }
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    payload = run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--baseline-cfg",
+            "mocap.basename=manual_baseline",
+            "--candidate-cfg",
+            "mocap.basename=manual_candidate",
+        ]
+    )
+
+    assert captured["calls"][0] == (
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-baseline",
+            "--output-suffix",
+            "_baseline",
+            "--cfg",
+            "mocap.basename=manual_baseline",
+            "--skip-benchmark",
+        ],
+        False,
+    )
+    assert captured["calls"][1] == (
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-transvelo100-seedvelowindow",
+            "--output-suffix",
+            "_candidate",
+            "--cfg",
+            "mocap.basename=manual_candidate",
+            "--mesh-reference",
+            str(baseline_stageii),
+        ],
+        False,
+    )
+    assert payload == {
+        "baseline": {
+            "benchmark": None,
+            "stageii_path": str(baseline_stageii),
+        },
+        "candidate": {
+            "benchmark": {"artifact": {"report_path": str(tmp_path / "candidate_benchmark.json")}},
+            "stageii_path": str(candidate_stageii),
         },
     }
 
@@ -158,8 +241,8 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
             "_candidate",
             "--benchmark-output",
             str(tmp_path / "candidate_benchmark.json"),
-            "--mesh-reference-output-suffix",
-            "_baseline",
+            "--mesh-reference",
+            "stageii.pkl",
         ],
         False,
     )
