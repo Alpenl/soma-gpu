@@ -20,6 +20,7 @@
 - R0004 活跃入口互链加固：[round-overview.md](./round-0004-entry-link-hardening/round-overview.md) / [summary.md](./round-0004-entry-link-hardening/summary.md) / [close.md](./round-0004-entry-link-hardening/close.md)
 - R0005 控制面回链补强：[round-overview.md](./round-0005-control-plane-backlinks/round-overview.md) / [summary.md](./round-0005-control-plane-backlinks/summary.md) / [close.md](./round-0005-control-plane-backlinks/close.md)
 - R0006 控制面总说明入口块补齐：[round-overview.md](./round-0006-control-plane-readme-backlink/round-overview.md) / [summary.md](./round-0006-control-plane-readme-backlink/summary.md) / [close.md](./round-0006-control-plane-readme-backlink/close.md)
+- R0007 Public benchmark baseline：[round-overview.md](./round-0007-benchmark-baseline/round-overview.md) / [summary.md](./round-0007-benchmark-baseline/summary.md) / [close.md](./round-0007-benchmark-baseline/close.md)
 - 新增 round 时，先更新 `MAIN.md` 的“每轮运行索引”，再把本节补齐到最新轮次。
 
 ## 1. 轮次命名与结构

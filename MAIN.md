@@ -7,7 +7,7 @@
 - 总说明（本项目的控制面总览）：[docs/codex-potter/README.md](./docs/codex-potter/README.md)
 - 工作流协议（每轮固定阶段与子代理约束）：[docs/codex-potter/governance/workflow-protocol.md](./docs/codex-potter/governance/workflow-protocol.md)
 - 轮次规范与当前轮目录：[docs/codex-potter/iterations/README.md](./docs/codex-potter/iterations/README.md)
-- 当前活跃 GPU 优化项目：`2026/04/17/1`（首轮目标：`round-0007-benchmark-baseline`）
+- 当前活跃 GPU 优化项目：`2026/04/17/1`（最新完成轮次：`round-0007-benchmark-baseline`；下一步：clean candidate + 扩 workload）
 - CodexPotter 标准续跑命令：`codex-potter resume 2026/04/17/1 --yolo --rounds 10`
 - CodexPotter runtime progress file（本地 gitignored）：`.codexpotter/projects/2026/04/17/1/MAIN.md`
 - 已归档初始化项目：`.codexpotter/projects/2026/04/16/1/MAIN.md`
@@ -59,6 +59,7 @@
 | R0004 | 2026-04-17 | 活跃入口互链加固 | `round-0003-control-plane-hardening` | `docs/codex-potter/iterations/round-0004-entry-link-hardening/` | 完成 |
 | R0005 | 2026-04-17 | 控制面回链补强 | `round-0004-entry-link-hardening` | `docs/codex-potter/iterations/round-0005-control-plane-backlinks/` | 完成 |
 | R0006 | 2026-04-17 | 控制面总说明入口块补齐 | `round-0005-control-plane-backlinks` | `docs/codex-potter/iterations/round-0006-control-plane-readme-backlink/` | 完成 |
+| R0007 | 2026-04-17 | Public benchmark baseline | `round-0006-control-plane-readme-backlink` | `docs/codex-potter/iterations/round-0007-benchmark-baseline/` | 完成 |
 
 后续每轮的标准产物目录：`docs/codex-potter/iterations/round-XXXX-<slug>/`。
 

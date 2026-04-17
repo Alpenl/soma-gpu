@@ -1,0 +1,312 @@
+import copy
+import hashlib
+import importlib.util
+import json
+import platform
+import pickle
+import shutil
+import statistics
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from time import perf_counter
+
+import numpy as np
+
+
+@dataclass
+class NormalizedStageIISample:
+    sample_path: Path
+    sample_format: str
+    gender: str
+    surface_model_type: str
+    mocap_frame_rate: float
+    mocap_time_length: int
+    poses: np.ndarray
+    trans: np.ndarray
+    betas: np.ndarray
+    markers_latent: np.ndarray
+    latent_labels: list[str]
+    markers_obs: np.ndarray
+    marker_labels: list[str]
+
+
+def _load_pickle_compat(sample_path):
+    sample_path = Path(sample_path)
+    with sample_path.open("rb") as handle:
+        try:
+            return pickle.load(handle)
+        except UnicodeDecodeError:
+            handle.seek(0)
+            return pickle.load(handle, encoding="latin1")
+
+
+def _safe_find_spec(module_name):
+    try:
+        return importlib.util.find_spec(module_name)
+    except (ImportError, ModuleNotFoundError, AttributeError, ValueError):
+        return None
+
+
+def _string_list(values):
+    if values is None:
+        return []
+    if isinstance(values, np.ndarray):
+        values = values.tolist()
+    return [str(value) for value in values]
+
+
+def _coerce_2d(array_like):
+    array = np.asarray(array_like, dtype=np.float32)
+    if array.ndim == 1:
+        return array[None, :]
+    return array
+
+
+def _coerce_3d(array_like):
+    array = np.asarray(array_like, dtype=np.float32)
+    if array.ndim == 2:
+        return array[None, :, :]
+    return array
+
+
+def _first_label_row(labels):
+    if labels is None:
+        return []
+    if isinstance(labels, np.ndarray):
+        if labels.ndim == 1:
+            return _string_list(labels)
+        if labels.ndim >= 2:
+            return _string_list(labels[0])
+    if isinstance(labels, (list, tuple)) and labels:
+        first = labels[0]
+        if isinstance(first, (list, tuple, np.ndarray)):
+            return _string_list(first)
+    return _string_list(labels)
+
+
+def _get_nested(mapping, first_key, second_key, default="unknown"):
+    try:
+        first = mapping[first_key]
+    except Exception:
+        return default
+    try:
+        return str(first[second_key])
+    except Exception:
+        return default
+
+
+def normalize_stageii_sample(sample_path):
+    sample_path = Path(sample_path)
+    data = _load_pickle_compat(sample_path)
+
+    if "fullpose" in data and "trans" in data:
+        stageii_debug = data.get("stageii_debug_details", {})
+        cfg = stageii_debug.get("cfg", {})
+        normalized = NormalizedStageIISample(
+            sample_path=sample_path,
+            sample_format="stageii_pkl",
+            gender=_get_nested(cfg, "surface_model", "gender", data.get("gender", "unknown")),
+            surface_model_type=_get_nested(
+                cfg, "surface_model", "type", data.get("surface_model_type", "unknown")
+            ),
+            mocap_frame_rate=float(stageii_debug.get("mocap_frame_rate", data.get("mocap_frame_rate", 0.0))),
+            mocap_time_length=int(stageii_debug.get("mocap_time_length", len(data["trans"]))),
+            poses=_coerce_2d(data["fullpose"]),
+            trans=_coerce_2d(data["trans"]),
+            betas=_coerce_2d(data["betas"]),
+            markers_latent=np.asarray(data["markers_latent"], dtype=np.float32),
+            latent_labels=_string_list(data["latent_labels"]),
+            markers_obs=_coerce_3d(stageii_debug.get("markers_obs", data.get("markers_obs"))),
+            marker_labels=_first_label_row(stageii_debug.get("labels_obs", data.get("labels_obs"))),
+        )
+    else:
+        cfg = data.get("ps", {})
+        normalized = NormalizedStageIISample(
+            sample_path=sample_path,
+            sample_format="legacy_stageii_pkl",
+            gender=str(cfg.get("gender", "unknown")),
+            surface_model_type=str(cfg.get("fitting_model", "unknown")),
+            mocap_frame_rate=float(data.get("mocap_framerate", 0.0)),
+            mocap_time_length=int(data.get("mocap_timelength", len(data["pose_est_fullposes"]))),
+            poses=_coerce_2d(data["pose_est_fullposes"]),
+            trans=_coerce_2d(data["pose_est_trans"]),
+            betas=_coerce_2d(data["shape_est_betas"]),
+            markers_latent=np.asarray(data["shape_est_lmrks"], dtype=np.float32),
+            latent_labels=_string_list(data["shape_est_lmlabels"]),
+            markers_obs=_coerce_3d(data["pose_est_obmrks"]),
+            marker_labels=_first_label_row(data["pose_est_mrk_labels"]),
+        )
+
+    if normalized.markers_obs.shape[0] != normalized.poses.shape[0]:
+        raise ValueError(
+            "markers_obs frame count does not match poses frame count: "
+            f"{normalized.markers_obs.shape[0]} != {normalized.poses.shape[0]}"
+        )
+    if normalized.trans.shape[0] != normalized.poses.shape[0]:
+        raise ValueError(
+            "trans frame count does not match poses frame count: "
+            f"{normalized.trans.shape[0]} != {normalized.poses.shape[0]}"
+        )
+
+    return normalized
+
+
+def _sha256_file(sample_path):
+    digest = hashlib.sha256()
+    with Path(sample_path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _max_abs_diff(lhs, rhs):
+    lhs = np.nan_to_num(np.asarray(lhs, dtype=np.float64), copy=False)
+    rhs = np.nan_to_num(np.asarray(rhs, dtype=np.float64), copy=False)
+    return float(np.max(np.abs(lhs - rhs)))
+
+
+def _numeric_arrays(sample):
+    return {
+        "poses": sample.poses,
+        "trans": sample.trans,
+        "betas": sample.betas,
+        "markers_latent": sample.markers_latent,
+        "markers_obs": sample.markers_obs,
+    }
+
+
+def _core_numeric_arrays(sample):
+    return {
+        "poses": sample.poses,
+        "trans": sample.trans,
+        "betas": sample.betas,
+        "markers_latent": sample.markers_latent,
+    }
+
+
+def _all_finite(sample):
+    return all(np.isfinite(array).all() for array in _core_numeric_arrays(sample).values())
+
+
+def _missing_mesh_model_assets(repo_root):
+    support_root = Path(repo_root) / "support_data"
+    return not any(support_root.glob("**/model.npz"))
+
+
+def _blocked_stages(repo_root):
+    blocked = []
+
+    if _safe_find_spec("body_visualizer.mesh") is None:
+        blocked.append(
+            {
+                "stage": "mosh_head_loader",
+                "reason": "body_visualizer.mesh is unavailable, so direct MoSh loader imports fail in this environment",
+            }
+        )
+    if _safe_find_spec("psbody") is None:
+        blocked.append(
+            {
+                "stage": "mesh_export",
+                "reason": "psbody is unavailable in the current Python environment",
+            }
+        )
+    if _missing_mesh_model_assets(repo_root):
+        blocked.append(
+            {
+                "stage": "mesh_export",
+                "reason": "the public repo does not include licensed SMPL-X model.npz assets needed for mesh export",
+            }
+        )
+    if shutil.which("blender") is None:
+        blocked.append(
+            {
+                "stage": "mp4_render",
+                "reason": "blender is not available on PATH",
+            }
+        )
+
+    return blocked
+
+
+def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5):
+    sample_path = Path(sample_path)
+    if warmup_runs < 0:
+        raise ValueError("warmup_runs must be >= 0")
+    if measured_runs <= 0:
+        raise ValueError("measured_runs must be > 0")
+
+    baseline = normalize_stageii_sample(sample_path)
+    for _ in range(warmup_runs):
+        normalize_stageii_sample(sample_path)
+
+    latencies_ms = []
+    repeatability_max = 0.0
+    for _ in range(measured_runs):
+        started_at = perf_counter()
+        current = normalize_stageii_sample(sample_path)
+        latencies_ms.append((perf_counter() - started_at) * 1000.0)
+
+        for key, baseline_array in _numeric_arrays(baseline).items():
+            repeatability_max = max(repeatability_max, _max_abs_diff(baseline_array, _numeric_arrays(current)[key]))
+
+    latency_mean = statistics.mean(latencies_ms)
+    latency_stdev = statistics.stdev(latencies_ms) if len(latencies_ms) > 1 else 0.0
+    repo_root = Path(__file__).resolve().parents[1]
+
+    return {
+        "sample": {
+            "path": str(sample_path),
+            "sha256": _sha256_file(sample_path),
+            "bytes": sample_path.stat().st_size,
+            "format": baseline.sample_format,
+            "surface_model_type": baseline.surface_model_type,
+            "gender": baseline.gender,
+        },
+        "workload": {
+            "frames": int(baseline.poses.shape[0]),
+            "pose_dim": int(baseline.poses.shape[1]),
+            "marker_count": int(baseline.markers_obs.shape[1]),
+            "latent_marker_count": int(baseline.markers_latent.shape[0]),
+            "mocap_frame_rate": baseline.mocap_frame_rate,
+            "mocap_time_length": baseline.mocap_time_length,
+            "warmup_runs": warmup_runs,
+            "measured_runs": measured_runs,
+        },
+        "speed": {
+            "latency_ms": {
+                "count": len(latencies_ms),
+                "mean": latency_mean,
+                "stdev": latency_stdev,
+                "min": min(latencies_ms),
+                "max": max(latencies_ms),
+            },
+            "throughput_ops_s": 1000.0 / latency_mean if latency_mean > 0 else 0.0,
+        },
+        "error": {
+            "repeatability": {
+                "max_abs_diff": repeatability_max,
+            },
+            "all_finite": _all_finite(baseline),
+            "markers_obs_nan_count": int((~np.isfinite(baseline.markers_obs)).sum()),
+        },
+        "artifact": {
+            "public_sample_present": True,
+            "report_path": None,
+            "blocked_stages": _blocked_stages(repo_root),
+        },
+        "engineering": {
+            "python_executable": sys.executable,
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+        },
+    }
+
+
+def write_benchmark_report(report, output_path):
+    output_path = Path(output_path)
+    payload = copy.deepcopy(report)
+    payload.setdefault("artifact", {})["report_path"] = str(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return payload
