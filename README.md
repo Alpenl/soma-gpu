@@ -207,8 +207,8 @@ python run_stageii_torch_pair.py \
 ````
 这个脚本会顺序调用现有 `run_stageii_torch_official.py` 两次：
 - baseline 侧默认使用 `--preset real-mcp-baseline --output-suffix _baseline`，并默认只产 `stageii.pkl`，不重复跑 standalone benchmark
-- candidate 侧默认使用 `--preset real-mcp-transvelo100-seedvelowindow --output-suffix _candidate`，并自动把 baseline 那次真实返回的 `stageii_path` 显式传给 `--mesh-reference`，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要；即使 baseline 侧额外用了 `--baseline-cfg mocap.basename=...` 这类只影响路径命名的覆盖，也不会再被 candidate 侧的配置重推导错
-- 如果想在同一套 pair 入口下复核中档版本，可显式加 `--candidate-preset real-mcp-transvelo32-seedvelowindow`；这样 baseline/candidate 的编排与 benchmark contract 不变，只把 candidate runtime 切到中档 translation candidate。
+- candidate 侧默认使用 `--preset real-mcp-transvelo32-seedvelowindow --output-suffix _candidate`，并自动把 baseline 那次真实返回的 `stageii_path` 显式传给 `--mesh-reference`，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要；即使 baseline 侧额外用了 `--baseline-cfg mocap.basename=...` 这类只影响路径命名的覆盖，也不会再被 candidate 侧的配置重推导错。这样默认主线会直接落在当前 real 300f 复核里更平衡的中档 Pareto 点，而不是默认走高权重 tradeoff。
+- 如果想在同一套 pair 入口下复核更激进的高权重版本，可显式加 `--candidate-preset real-mcp-transvelo100-seedvelowindow`；这样 baseline/candidate 的编排与 benchmark contract 不变，只把 candidate runtime 切到高权重 translation-friendly candidate。
 - 如果想在同一套 pair 入口下复核低权重版本，可显式加 `--candidate-preset real-mcp-transvelo10-seedvelowindow`；这样 baseline/candidate 的编排与 benchmark contract 不变，只把 candidate runtime 切到 low-risk candidate。
 - 若加了 `--export-mesh`，pair runner 会把同一套 mesh 导出参数同时透传给 baseline 和 candidate；由于两侧默认 `mocap.basename` suffix 不同，即使共用一个 `--mesh-output-dir`，OBJ/PC2 也会自动分名，不需要再手工分两个导出目录。若没开 `--export-mesh` 却传了 `--mesh-output-dir`，pair runner 现在会直接报错，而不是静默忽略。
 - 若加了 `--lean-benchmark`，pair runner 会把该标志透传给所有真正开启 benchmark 的 underlying single run：candidate 默认 benchmark 会启用，baseline 只有在显式给了 `--baseline-benchmark-output` 时才启用。这样 baseline/candidate 对照仍会保留核心 quality / mesh compare JSON，但不会再为非主线 preview/mp4/artifact speed 探针额外花时间。

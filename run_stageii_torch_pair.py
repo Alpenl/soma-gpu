@@ -7,7 +7,7 @@ from utils.script_utils import planned_stageii_output_path_from_overrides
 
 
 DEFAULT_BASELINE_PRESET = "real-mcp-baseline"
-DEFAULT_CANDIDATE_PRESET = "real-mcp-transvelo100-seedvelowindow"
+DEFAULT_CANDIDATE_PRESET = "real-mcp-transvelo32-seedvelowindow"
 PAIR_RUNNER_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
 
 
@@ -55,8 +55,8 @@ def build_parser():
         choices=sorted(run_stageii_torch_official.OFFICIAL_PRESETS),
         default=DEFAULT_CANDIDATE_PRESET,
         help=(
-            "Preset used for the candidate run. Defaults to the retained high-weight translation-friendly "
-            "candidate; use real-mcp-transvelo32-seedvelowindow for the mid-risk variant or "
+            "Preset used for the candidate run. Defaults to the retained mid-risk translation candidate; "
+            "use real-mcp-transvelo100-seedvelowindow for the higher-gain variant or "
             "real-mcp-transvelo10-seedvelowindow for the lower-risk variant."
         ),
     )

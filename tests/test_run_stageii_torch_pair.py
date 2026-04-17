@@ -78,7 +78,7 @@ def test_run_stageii_torch_pair_main_runs_baseline_then_candidate_with_shared_an
                 "--work-base-dir",
                 str(tmp_path / "work"),
                 "--preset",
-                "real-mcp-transvelo100-seedvelowindow",
+                "real-mcp-transvelo32-seedvelowindow",
                 "--output-suffix",
                 "_candidate",
                 "--expected-stageii-path",
@@ -103,7 +103,7 @@ def test_run_stageii_torch_pair_main_runs_baseline_then_candidate_with_shared_an
         "candidate": {
             "benchmark": {"artifact": {"report_path": str(tmp_path / "_candidate.json")}},
             "stageii_path": str(
-                tmp_path / "real-mcp-transvelo100-seedvelowindow_candidate_stageii.pkl"
+                tmp_path / "real-mcp-transvelo32-seedvelowindow_candidate_stageii.pkl"
             ),
         },
     }
@@ -172,7 +172,7 @@ def test_run_stageii_torch_pair_main_passes_returned_baseline_stageii_path_to_ca
             "--work-base-dir",
             str(tmp_path / "work"),
             "--preset",
-            "real-mcp-transvelo100-seedvelowindow",
+            "real-mcp-transvelo32-seedvelowindow",
             "--output-suffix",
             "_candidate",
             "--expected-stageii-path",
@@ -340,7 +340,7 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
             "--work-base-dir",
             str(tmp_path / "work"),
             "--preset",
-            "real-mcp-transvelo100-seedvelowindow",
+            "real-mcp-transvelo32-seedvelowindow",
             "--output-suffix",
             "_candidate",
             "--expected-stageii-path",
@@ -519,7 +519,7 @@ def test_run_stageii_torch_pair_main_forwards_lean_benchmark_flag_to_benchmark_r
             "--work-base-dir",
             str(tmp_path / "work"),
             "--preset",
-            "real-mcp-transvelo100-seedvelowindow",
+            "real-mcp-transvelo32-seedvelowindow",
             "--output-suffix",
             "_candidate",
             "--expected-stageii-path",
@@ -607,7 +607,7 @@ def test_run_stageii_torch_pair_main_forwards_mesh_export_flags_to_both_runs(tmp
                 "--work-base-dir",
                 str(tmp_path / "work"),
                 "--preset",
-                "real-mcp-transvelo100-seedvelowindow",
+                "real-mcp-transvelo32-seedvelowindow",
                 "--output-suffix",
                 "_candidate",
                 "--expected-stageii-path",
@@ -634,8 +634,8 @@ def test_run_stageii_torch_pair_main_forwards_mesh_export_flags_to_both_runs(tmp
         "pc2_path": str(mesh_output_dir / "real-mcp-baseline_baseline.pc2"),
     }
     assert payload["candidate"]["mesh_export"] == {
-        "obj_path": str(mesh_output_dir / "real-mcp-transvelo100-seedvelowindow_candidate.obj"),
-        "pc2_path": str(mesh_output_dir / "real-mcp-transvelo100-seedvelowindow_candidate.pc2"),
+        "obj_path": str(mesh_output_dir / "real-mcp-transvelo32-seedvelowindow_candidate.obj"),
+        "pc2_path": str(mesh_output_dir / "real-mcp-transvelo32-seedvelowindow_candidate.pc2"),
     }
 
 
