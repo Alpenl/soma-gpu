@@ -3,7 +3,7 @@ from pathlib import Path
 
 import render_video
 from utils.mesh_io import save_obj_mesh, writePC2
-from utils.script_utils import default_stageii_output_paths
+from utils.script_utils import default_stageii_output_paths, resolve_stageii_model_path
 
 
 def build_parser():
@@ -17,8 +17,13 @@ def build_parser():
     )
     parser.add_argument(
         "--model-path",
-        required=True,
-        help="Path to the SMPL-X model .npz or .pkl file.",
+        default=None,
+        help="Optional path to the SMPL-X model .npz or .pkl file. Auto-resolved when omitted.",
+    )
+    parser.add_argument(
+        "--support-base-dir",
+        default=None,
+        help="Optional support_files root used to relocate stageii model paths.",
     )
     parser.add_argument(
         "--obj-out",
@@ -59,9 +64,16 @@ def export_stageii_meshes(input_pkl, model_path=None, *, model=None, vertices=No
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    try:
+        resolved_model_path = args.model_path or resolve_stageii_model_path(
+            args.input_pkl,
+            support_base_dir=args.support_base_dir,
+        )
+    except (KeyError, ValueError) as exc:
+        parser.error(str(exc))
     export_stageii_meshes(
         input_pkl=args.input_pkl,
-        model_path=args.model_path,
+        model_path=resolved_model_path,
         obj_out=args.obj_out,
         pc2_out=args.pc2_out,
     )

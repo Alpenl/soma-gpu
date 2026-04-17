@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -13,6 +14,28 @@ from utils.mesh_io import load_obj_mesh, readPC2
 from utils.script_utils import default_stageii_output_paths
 
 SUPPORT_ROOT = ROOT / "support_files"
+
+
+def _write_stageii_pickle(path, *, model_path, surface_model_type="smplx", gender="male"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.zeros((2, 165), dtype=np.float32),
+                "betas": np.zeros(400, dtype=np.float32),
+                "trans": np.zeros((2, 3), dtype=np.float32),
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": surface_model_type,
+                            "fname": str(model_path),
+                            "gender": gender,
+                        }
+                    }
+                },
+            }
+        )
+    )
 
 
 def test_export_stageii_meshes_supports_legacy_stageii_inputs_and_model_pkl_path(tmp_path):
@@ -170,3 +193,62 @@ def test_export_stageii_meshes_reuses_predecoded_vertices_without_loading_again(
     assert np.array_equal(captured["obj"][0], predecoded_vertices[0])
     assert np.array_equal(captured["obj"][1], preloaded_model.faces)
     assert captured["pc2"] is predecoded_vertices
+
+
+def test_save_smplx_verts_main_resolves_model_path_from_stageii_and_support_base_dir(
+    monkeypatch, tmp_path
+):
+    support_dir = tmp_path / "support"
+    support_model = support_dir / "smplx" / "male" / "model.npz"
+    support_model.parent.mkdir(parents=True, exist_ok=True)
+    support_model.write_bytes(b"npz")
+
+    input_path = tmp_path / "tiny_stageii.pkl"
+    _write_stageii_pickle(
+        input_path,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    captured = {}
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "export_stageii_meshes",
+        lambda **kwargs: captured.update(kwargs) or ("out.obj", "out.pc2"),
+    )
+
+    save_smplx_verts.main(
+        [
+            "--input-pkl",
+            str(input_path),
+            "--support-base-dir",
+            str(support_dir),
+        ]
+    )
+
+    assert captured["input_pkl"] == str(input_path)
+    assert captured["model_path"] == str(support_model)
+
+
+def test_save_smplx_verts_main_errors_when_model_path_cannot_be_resolved(tmp_path):
+    input_path = tmp_path / "broken_stageii.pkl"
+    input_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.zeros((2, 165), dtype=np.float32),
+                "betas": np.zeros(400, dtype=np.float32),
+                "trans": np.zeros((2, 3), dtype=np.float32),
+            }
+        )
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        save_smplx_verts.main(
+            [
+                "--input-pkl",
+                str(input_path),
+            ]
+        )
+
+    assert excinfo.value.code == 2
