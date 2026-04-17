@@ -1141,6 +1141,41 @@ def test_benchmark_stageii_public_main_rejects_output_matching_mesh_reference(mo
     assert "benchmark output resolves to mesh reference path" in capsys.readouterr().err
 
 
+def test_benchmark_stageii_public_main_errors_when_benchmark_writer_returns_drifted_report_path(
+    tmp_path, monkeypatch, capsys
+):
+    expected_output = tmp_path / "candidate_benchmark.json"
+
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: {
+            "sample": {"path": "candidate_stageii.pkl"},
+            "artifact": {"report_path": None},
+        },
+    )
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "write_benchmark_report",
+        lambda report, output_path: {
+            **report,
+            "artifact": {"report_path": str(tmp_path / "drifted_benchmark.json")},
+        },
+    )
+
+    with pytest.raises(SystemExit):
+        benchmark_stageii_public.main(
+            [
+                "--input",
+                "candidate_stageii.pkl",
+                "--output",
+                str(expected_output),
+            ]
+        )
+
+    assert "benchmark payload report_path drifted from requested output path" in capsys.readouterr().err
+
+
 def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_new_format(
     tmp_path,
 ):

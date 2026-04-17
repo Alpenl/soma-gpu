@@ -1,5 +1,6 @@
 import argparse
 import json
+from pathlib import Path
 
 from utils.stageii_benchmark import (
     default_benchmark_output_path,
@@ -103,6 +104,20 @@ def _mesh_support_base_dir(args):
     return args.mesh_support_base_dir or "support_files"
 
 
+def _normalized_path(path):
+    return Path(path).expanduser().resolve(strict=False)
+
+
+def _validate_returned_output_path(path, *, requested_path):
+    if not path:
+        raise ValueError("benchmark payload report_path is missing")
+    if _normalized_path(path) != _normalized_path(requested_path):
+        raise ValueError(
+            "benchmark payload report_path drifted from requested output path: "
+            f"expected {requested_path} but got {path}"
+        )
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -127,6 +142,12 @@ def main(argv=None):
             lean_benchmark=args.lean_benchmark,
         )
         payload = write_benchmark_report(report, output_path)
+        report_path = None
+        if isinstance(payload, dict):
+            artifact = payload.get("artifact")
+            if isinstance(artifact, dict):
+                report_path = artifact.get("report_path")
+        _validate_returned_output_path(report_path, requested_path=output_path)
     except BENCHMARK_CLI_ERROR_TYPES as exc:
         parser.error(str(exc))
     print(json.dumps(payload, indent=2, sort_keys=True))
