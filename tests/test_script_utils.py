@@ -8,6 +8,7 @@ if str(ROOT) not in sys.path:
 
 from utils.script_utils import (
     codec_for_video_path,
+    default_stageii_artifact_paths,
     default_stageii_output_paths,
     list_stageii_pickles,
     resolve_support_base_dir,
@@ -36,6 +37,22 @@ def test_default_stageii_output_paths_fall_back_to_plain_stem():
 
     assert obj_out == "/tmp/demo.obj"
     assert pc2_out == "/tmp/demo.pc2"
+
+
+def test_default_stageii_artifact_paths_replace_stageii_suffix():
+    obj_out, pc2_out, video_out = default_stageii_artifact_paths("/tmp/demo_stageii.pkl")
+
+    assert obj_out == "/tmp/demo_stageii.obj"
+    assert pc2_out == "/tmp/demo_stageii.pc2"
+    assert video_out == "/tmp/demo_stageii.mp4"
+
+
+def test_default_stageii_artifact_paths_fall_back_to_plain_stem():
+    obj_out, pc2_out, video_out = default_stageii_artifact_paths("/tmp/demo.pkl")
+
+    assert obj_out == "/tmp/demo.obj"
+    assert pc2_out == "/tmp/demo.pc2"
+    assert video_out == "/tmp/demo_stageii.mp4"
 
 
 def test_list_stageii_pickles_returns_sorted_matches(tmp_path):

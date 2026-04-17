@@ -420,6 +420,57 @@ def _benchmark_mp4_render(sample_path, baseline, *, repo_root, warmup_runs, meas
     return _summarize_latency_samples(latency_samples)
 
 
+def _benchmark_artifact_bundle_export(sample_path, baseline, *, repo_root, warmup_runs, measured_runs):
+    model_path = _preview_render_model_path(repo_root, gender=baseline.gender)
+    if model_path is None:
+        return None
+
+    try:
+        import export_stageii_artifacts
+        import render_video
+    except (ImportError, ModuleNotFoundError):
+        return None
+
+    try:
+        model = render_video.load_render_model(model_path)
+        vertices = render_video.load_vertices(sample_path, model)
+    except (FileNotFoundError, ImportError, ModuleNotFoundError):
+        return None
+
+    def _export_once():
+        with TemporaryDirectory() as temp_dir:
+            temp_dir = Path(temp_dir)
+            suppressed = io.StringIO()
+            with redirect_stdout(suppressed), redirect_stderr(suppressed):
+                result = export_stageii_artifacts.export_stageii_artifacts(
+                    input_pkl=sample_path,
+                    model_path=model_path,
+                    model=model,
+                    vertices=vertices,
+                    output_dir=temp_dir,
+                    show_progress=False,
+                    **PREVIEW_RENDER_BENCHMARK_WORKLOAD,
+                )
+            for key in ("obj_path", "pc2_path", "video_path"):
+                artifact_path = Path(result[key])
+                if not artifact_path.exists() or artifact_path.stat().st_size == 0:
+                    raise FileNotFoundError(f"artifact bundle export did not create expected output: {result}")
+
+    try:
+        for _ in range(warmup_runs):
+            _export_once()
+    except (FileNotFoundError, ImportError, ModuleNotFoundError):
+        return None
+
+    latency_samples = []
+    for _ in range(measured_runs):
+        started_at = perf_counter()
+        _export_once()
+        latency_samples.append((perf_counter() - started_at) * 1000.0)
+
+    return _summarize_latency_samples(latency_samples)
+
+
 def _blocked_stages(repo_root):
     blocked = []
 
@@ -495,6 +546,13 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
         warmup_runs=warmup_runs,
         measured_runs=measured_runs,
     )
+    artifact_bundle_export_summary = _benchmark_artifact_bundle_export(
+        sample_path,
+        baseline,
+        repo_root=repo_root,
+        warmup_runs=warmup_runs,
+        measured_runs=measured_runs,
+    )
 
     return {
         "sample": {
@@ -522,6 +580,7 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
             "preview_vertex_decode_ms": preview_vertex_decode_summary,
             "mesh_export_ms": mesh_export_summary,
             "mp4_render_ms": mp4_render_summary,
+            "artifact_bundle_export_ms": artifact_bundle_export_summary,
         },
         "error": {
             "repeatability": {

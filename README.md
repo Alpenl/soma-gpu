@@ -76,3 +76,10 @@ ROOT
 2. 切回soma的环境，运行`npy2c3d.py`，将npy文件转换为c3d文件
 3. 运行soma的`convert_tennis.py`，会自动运行soma和mosh++，得到最终的smplx结果，储存在`ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl`  
 关于pkl文件内容解析，可参考`save_smplx_verts.py`
+4. 如需把 `*_stageii.pkl` 直接导出为 mesh 和 preview 视频，可运行：
+````
+python export_stageii_artifacts.py \
+  --input-pkl ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl \
+  --model-path support_files/smplx/[gender]/model.npz
+````
+若只需要 OBJ/PC2，可继续使用 `save_smplx_verts.py`；若只需要 preview MP4，可使用 `render_video.py`。

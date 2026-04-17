@@ -37,12 +37,13 @@ def load_smpl_vertices(pkl_path, model):
     return render_video.load_vertices(pkl_path, model)
 
 
-def export_stageii_meshes(input_pkl, model_path=None, *, model=None, obj_out=None, pc2_out=None):
+def export_stageii_meshes(input_pkl, model_path=None, *, model=None, vertices=None, obj_out=None, pc2_out=None):
     if model is None:
         if model_path is None:
             raise ValueError("model_path is required when model is not provided")
         model = render_video.load_render_model(model_path)
-    vertices = load_smpl_vertices(input_pkl, model)
+    if vertices is None:
+        vertices = load_smpl_vertices(input_pkl, model)
     default_obj_out, default_pc2_out = default_stageii_output_paths(str(input_pkl))
 
     obj_path = str(obj_out or default_obj_out)

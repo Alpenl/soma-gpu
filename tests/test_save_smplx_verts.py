@@ -126,3 +126,47 @@ def test_export_stageii_meshes_reuses_preloaded_model_without_loading_again(monk
     assert captured["model"] is preloaded_model
     assert obj_out.exists()
     assert pc2_out.exists()
+
+
+def test_export_stageii_meshes_reuses_predecoded_vertices_without_loading_again(monkeypatch, tmp_path):
+    input_path = tmp_path / "tiny_stageii.pkl"
+    input_path.write_bytes(b"placeholder")
+
+    preloaded_model = type("PreloadedModel", (), {"faces": np.array([[0, 1, 2]], dtype=np.int32)})()
+    predecoded_vertices = np.ones((2, 3, 3), dtype=np.float32)
+    captured = {}
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "load_smpl_vertices",
+        lambda pkl_path, model: (_ for _ in ()).throw(AssertionError("should not decode vertices")),
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "save_obj_mesh",
+        lambda mesh_path, verts, faces: (
+            captured.__setitem__("obj", (verts, faces)),
+            Path(mesh_path).write_text("obj"),
+        )[-1],
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "writePC2",
+        lambda pc2_path, vertices: (
+            captured.__setitem__("pc2", vertices),
+            Path(pc2_path).write_bytes(b"pc2"),
+        )[-1],
+    )
+
+    result = save_smplx_verts.export_stageii_meshes(
+        input_pkl=input_path,
+        model=preloaded_model,
+        vertices=predecoded_vertices,
+        obj_out=tmp_path / "predecoded.obj",
+        pc2_out=tmp_path / "predecoded.pc2",
+    )
+
+    assert result == (str(tmp_path / "predecoded.obj"), str(tmp_path / "predecoded.pc2"))
+    assert np.array_equal(captured["obj"][0], predecoded_vertices[0])
+    assert np.array_equal(captured["obj"][1], preloaded_model.faces)
+    assert captured["pc2"] is predecoded_vertices

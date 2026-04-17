@@ -16,6 +16,15 @@ def default_stageii_output_paths(stageii_pkl_path):
     return stem + ".obj", stem + ".pc2"
 
 
+def default_stageii_artifact_paths(stageii_pkl_path, *, video_suffix="_stageii.mp4"):
+    obj_out, pc2_out = default_stageii_output_paths(stageii_pkl_path)
+    if stageii_pkl_path.endswith("_stageii.pkl"):
+        video_out = stageii_pkl_path[: -len("_stageii.pkl")] + video_suffix
+    else:
+        video_out = osp.splitext(stageii_pkl_path)[0] + video_suffix
+    return obj_out, pc2_out, video_out
+
+
 def list_stageii_pickles(input_dir, suffix="_stageii.pkl"):
     pattern = osp.join(input_dir, "*" + suffix)
     return sorted(glob(pattern))
