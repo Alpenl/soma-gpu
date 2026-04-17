@@ -74,9 +74,16 @@ ROOT
 打开Maya，右下角script窗口，将`fbx_convert.py`复制进去运行，需要更改中间的`data_dir`路径为你的`ROOT`路径（见上一节）
 结果会保存在`ROOT/mocap_raw/[session]/[subject]/[seq].npy`和`[seq]_racket.npy`
 2. 切回soma的环境，运行`npy2c3d.py`，将npy文件转换为c3d文件
-3. 运行soma的`convert_tennis.py`，会自动运行soma和mosh++，得到最终的smplx结果，储存在`ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl`  
+3. 运行soma的`convert_tennis.py`，会自动运行soma和mosh++，得到最终的smplx结果，储存在`ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl`。如需在主流程里直接继续导出 mesh 和 preview 视频，可追加 `--export-artifacts`：
+````
+python convert_tennis.py \
+  --dataset [session] \
+  --mocap-base-dir ROOT/mocap_raw \
+  --soma-work-base-dir ROOT \
+  --export-artifacts
+````
 关于pkl文件内容解析，可参考`save_smplx_verts.py`
-4. 如需把 `*_stageii.pkl` 直接导出为 mesh 和 preview 视频，可运行：
+4. 若只想对已有 `*_stageii.pkl` 单独补跑导出，也可运行：
 ````
 python export_stageii_artifacts.py \
   --input-pkl ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl \

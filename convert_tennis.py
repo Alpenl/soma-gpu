@@ -1,5 +1,7 @@
 import argparse
 import os.path as osp
+import pickle
+from pathlib import Path
 
 from utils.script_utils import resolve_support_base_dir
 
@@ -74,7 +76,109 @@ def build_parser():
         action="store_true",
         help="Skip the MoSh++ fitting pass.",
     )
+    parser.add_argument(
+        "--export-artifacts",
+        action="store_true",
+        help="After SOMA/MoSh++, export OBJ, PC2, and preview MP4 for discovered stageii pickles.",
+    )
+    parser.add_argument(
+        "--export-fps",
+        type=int,
+        default=30,
+        help="Frames per second used by stageii artifact preview rendering.",
+    )
+    parser.add_argument(
+        "--export-width",
+        type=int,
+        default=512,
+        help="Output width used by stageii artifact preview rendering.",
+    )
+    parser.add_argument(
+        "--export-height",
+        type=int,
+        default=512,
+        help="Output height used by stageii artifact preview rendering.",
+    )
+    parser.add_argument(
+        "--export-arch",
+        default="gpu",
+        help="Taichi backend used by stageii artifact preview rendering.",
+    )
+    parser.add_argument(
+        "--export-camera-preset",
+        default="frontal",
+        help="Camera preset forwarded to export_stageii_artifacts.py.",
+    )
     return parser
+
+
+def _load_pickle_compat(path):
+    with Path(path).open("rb") as handle:
+        try:
+            return pickle.load(handle)
+        except UnicodeDecodeError:
+            handle.seek(0)
+            return pickle.load(handle, encoding="latin1")
+
+
+def _matches_fname_filter(path, fname_filter):
+    if not fname_filter:
+        return True
+    path = str(path)
+    return any(token in path for token in fname_filter)
+
+
+def _discover_stageii_pickles(work_base_dir, dataset, *, fname_filter=None):
+    dataset_root = Path(work_base_dir) / dataset
+    if not dataset_root.exists():
+        return []
+    return [
+        str(path)
+        for path in sorted(dataset_root.rglob("*_stageii.pkl"))
+        if _matches_fname_filter(path, fname_filter)
+    ]
+
+
+def _stageii_model_path(stageii_pkl):
+    stageii_data = _load_pickle_compat(stageii_pkl)
+    cfg = stageii_data.get("stageii_debug_details", {}).get("cfg")
+    if cfg is None:
+        raise KeyError(f"{stageii_pkl} does not include stageii_debug_details.cfg")
+    try:
+        model_path = cfg["surface_model"]["fname"]
+    except Exception as exc:
+        raise KeyError(f"{stageii_pkl} does not include cfg.surface_model.fname") from exc
+    if not model_path:
+        raise ValueError(f"{stageii_pkl} resolved an empty cfg.surface_model.fname")
+    return str(model_path)
+
+
+def export_stageii_artifacts_for_dataset(
+    *,
+    work_base_dir,
+    dataset,
+    fname_filter=None,
+    fps=30,
+    width=512,
+    height=512,
+    arch="gpu",
+    camera_preset="frontal",
+):
+    import export_stageii_artifacts
+
+    results = []
+    for stageii_pkl in _discover_stageii_pickles(work_base_dir, dataset, fname_filter=fname_filter):
+        result = export_stageii_artifacts.export_stageii_artifacts(
+            input_pkl=stageii_pkl,
+            model_path=_stageii_model_path(stageii_pkl),
+            fps=fps,
+            width=width,
+            height=height,
+            arch=arch,
+            camera_preset=camera_preset,
+        )
+        results.append(result)
+    return results
 
 
 def main(argv=None):
@@ -128,6 +232,18 @@ def main(argv=None):
             mocap_ext=args.mocap_ext,
             soma_work_base_dir=args.soma_work_base_dir,
             parallel_cfg=parallel_cfg,
+        )
+
+    if args.export_artifacts:
+        export_stageii_artifacts_for_dataset(
+            work_base_dir=args.soma_work_base_dir,
+            dataset=args.dataset,
+            fname_filter=args.fname_filter,
+            fps=args.export_fps,
+            width=args.export_width,
+            height=args.export_height,
+            arch=args.export_arch,
+            camera_preset=args.export_camera_preset,
         )
 
 
