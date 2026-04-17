@@ -472,6 +472,7 @@ def _runtime_sequence_fit_weights(cfg, runtime, *, avg_visible_count, marker_cou
         pose_face=float(weight_cfg.stageii_wt_poseF) * anneal_factor,
         expr=float(weight_cfg.stageii_wt_expr),
         velocity=float(weight_cfg.stageii_wt_velo),
+        transl_velocity=float(_runtime_get(runtime, "sequence_transl_velocity", 0.0)),
         temporal_accel=float(_runtime_get(runtime, "sequence_temporal_accel", 0.0)),
         delta_pose=float(_runtime_get(runtime, "sequence_delta_pose", 0.0)),
         delta_trans=float(_runtime_get(runtime, "sequence_delta_trans", 0.0)),
@@ -707,10 +708,14 @@ def mosh_stageii_torch(
         else None
     )
     prev_latent_pose = None
+    prev_transl = None
     label_to_latent_id = {label: idx for idx, label in enumerate(latent_labels)}
     sequence_chunk_size = max(int(_runtime_get(runtime, "sequence_chunk_size", 1) or 1), 1)
     sequence_chunk_overlap = max(int(_runtime_get(runtime, "sequence_chunk_overlap", 0) or 0), 0)
     sequence_boundary_velocity_reference = bool(_runtime_get(runtime, "sequence_boundary_velocity_reference", False))
+    sequence_boundary_transl_velocity_reference = bool(
+        _runtime_get(runtime, "sequence_boundary_transl_velocity_reference", False)
+    )
     compile_evaluator = bool(_runtime_get(runtime, "compile_evaluator", False))
     compile_mode = str(_runtime_get(runtime, "compile_mode", "default"))
     compile_fullgraph = bool(_runtime_get(runtime, "compile_fullgraph", False))
@@ -897,6 +902,7 @@ def mosh_stageii_torch(
                 optimize_face=optimize_face,
                 optimize_toes=bool(cfg.moshpp.optimize_toes),
                 velocity_reference=prev_latent_pose if sequence_boundary_velocity_reference else None,
+                transl_velocity_reference=prev_transl if sequence_boundary_transl_velocity_reference else None,
                 visible_mask=chunk_visible,
                 weights=sequence_weights,
                 options=sequence_options,
@@ -907,6 +913,7 @@ def mosh_stageii_torch(
             current_transl = torch.as_tensor(result.transl[-1:]).detach()
             current_expression = torch.as_tensor(result.expression[-1:]).detach() if result.expression is not None else None
             prev_latent_pose = torch.as_tensor(result.latent_pose[-1:]).detach()
+            prev_transl = torch.as_tensor(result.transl[-1:]).detach()
             if sequence_chunk_overlap > 0:
                 tail_count = min(sequence_chunk_overlap, result.latent_pose.shape[0])
                 previous_chunk_latent_tail = torch.as_tensor(result.latent_pose[-tail_count:]).detach()

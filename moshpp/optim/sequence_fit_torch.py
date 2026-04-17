@@ -19,6 +19,7 @@ class TorchSequenceFitWeights:
     pose_face: float
     expr: float
     velocity: float
+    transl_velocity: float = 0.0
     temporal_accel: float = 0.0
     delta_pose: float = 0.0
     delta_trans: float = 0.0
@@ -78,6 +79,7 @@ def _coerce_sequence_weights(weights):
         pose_face=float(weights.pose_face),
         expr=float(weights.expr),
         velocity=float(weights.velocity),
+        transl_velocity=float(getattr(weights, "transl_velocity", 0.0)),
         temporal_accel=float(getattr(weights, "temporal_accel", 0.0)),
         delta_pose=float(getattr(weights, "delta_pose", 0.0)),
         delta_trans=float(getattr(weights, "delta_trans", 0.0)),
@@ -190,6 +192,7 @@ def fit_stageii_sequence_torch(
     optimize_face=False,
     optimize_toes=False,
     velocity_reference=None,
+    transl_velocity_reference=None,
     visible_mask=None,
     marker_data_weights=None,
     evaluator=None,
@@ -250,6 +253,16 @@ def fit_stageii_sequence_torch(
         marker_data_weights = torch.as_tensor(marker_data_weights, dtype=torch.float32, device=device)
     if velocity_reference is not None:
         velocity_reference = torch.as_tensor(velocity_reference, dtype=torch.float32, device=device)
+    transl_velocity_reference = _coerce_optional_reference(
+        transl_velocity_reference,
+        device=device,
+        dtype=torch.float32,
+        feature_shape=(3,),
+        num_frames=num_frames,
+        name="transl_velocity_reference",
+    )
+    if transl_velocity_reference is not None:
+        transl_velocity_reference = transl_velocity_reference.detach().clone()
 
     latent_pose_reference = _coerce_optional_reference(
         latent_pose_reference,
@@ -325,6 +338,7 @@ def fit_stageii_sequence_torch(
             marker_data_weights=marker_data_weights,
             weights=weights,
             velocity_reference=velocity_reference,
+            transl_velocity_reference=transl_velocity_reference,
             latent_pose_reference=latent_pose_reference,
             transl_reference=transl_reference,
             expression_reference=expression_reference,
@@ -345,6 +359,7 @@ def fit_stageii_sequence_torch(
         marker_data_weights=marker_data_weights,
         weights=weights,
         velocity_reference=velocity_reference,
+        transl_velocity_reference=transl_velocity_reference,
         latent_pose_reference=latent_pose_reference,
         transl_reference=transl_reference,
         expression_reference=expression_reference,

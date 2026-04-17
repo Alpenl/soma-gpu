@@ -1340,8 +1340,10 @@ def test_mosh_stageii_torch_sequence_solver_receives_boundary_references_from_pr
                 "sequence_optimizer": "adam",
                 "sequence_seed_refine_iters": 1,
                 "sequence_boundary_velocity_reference": True,
+                "sequence_boundary_transl_velocity_reference": True,
                 "sequence_delta_pose": 3.0,
                 "sequence_delta_trans": 5.0,
+                "sequence_transl_velocity": 7.0,
             },
         }
     )
@@ -1371,9 +1373,13 @@ def test_mosh_stageii_torch_sequence_solver_receives_boundary_references_from_pr
         chunk_idx = len(recorded["sequence_kwargs"])
         recorded["sequence_kwargs"].append(
             {
+                "weights_transl_velocity": float(getattr(kwargs["weights"], "transl_velocity", 0.0)),
                 "velocity_reference": None
                 if kwargs.get("velocity_reference") is None
                 else torch.as_tensor(kwargs["velocity_reference"], dtype=torch.float32).clone(),
+                "transl_velocity_reference": None
+                if kwargs.get("transl_velocity_reference") is None
+                else torch.as_tensor(kwargs["transl_velocity_reference"], dtype=torch.float32).clone(),
                 "latent_pose_reference": None
                 if kwargs.get("latent_pose_reference") is None
                 else torch.as_tensor(kwargs["latent_pose_reference"], dtype=torch.float32).clone(),
@@ -1403,6 +1409,7 @@ def test_mosh_stageii_torch_sequence_solver_receives_boundary_references_from_pr
                 "poseF": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
                 "expr": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
                 "velo": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "veloT": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
                 "accel": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
             },
         )
@@ -1429,6 +1436,12 @@ def test_mosh_stageii_torch_sequence_solver_receives_boundary_references_from_pr
     assert torch.allclose(
         second_chunk["velocity_reference"][:, :1],
         torch.tensor([[101.0]], dtype=torch.float32),
+        atol=0.0,
+    )
+    assert second_chunk["weights_transl_velocity"] == pytest.approx(7.0)
+    assert torch.allclose(
+        second_chunk["transl_velocity_reference"],
+        torch.tensor([[201.0, 201.0, 201.0]], dtype=torch.float32),
         atol=0.0,
     )
     assert torch.allclose(

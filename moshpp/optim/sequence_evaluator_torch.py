@@ -107,6 +107,7 @@ class StageIISequenceEvaluator(torch.nn.Module):
         marker_data_weights,
         weights,
         velocity_reference,
+        transl_velocity_reference=None,
         latent_pose_reference=None,
         transl_reference=None,
         expression_reference=None,
@@ -154,6 +155,27 @@ class StageIISequenceEvaluator(torch.nn.Module):
                 diffs = latent_pose[1:] - latent_pose[:-1]
                 velocity_term[1:] = torch.sum((diffs * velocity_weight) ** 2, dim=1)
 
+        transl_velocity_term = latent_pose.new_zeros((latent_pose.shape[0],))
+        transl_velocity_weight = float(getattr(weights, "transl_velocity", 0.0))
+        if transl_velocity_weight != 0.0:
+            if transl_velocity_reference is not None:
+                transl_velocity_reference = _coerce_velocity_reference(transl_velocity_reference, transl)
+                if transl_velocity_reference.shape[0] == 1:
+                    transl_velocity_term[0] = torch.sum(
+                        ((transl[0] - transl_velocity_reference[0]) * transl_velocity_weight) ** 2
+                    )
+                    if transl.shape[0] >= 2:
+                        diffs = transl[1:] - transl[:-1]
+                        transl_velocity_term[1:] = torch.sum((diffs * transl_velocity_weight) ** 2, dim=1)
+                else:
+                    transl_velocity_term = torch.sum(
+                        ((transl - transl_velocity_reference) * transl_velocity_weight) ** 2,
+                        dim=1,
+                    )
+            elif transl.shape[0] >= 2:
+                diffs = transl[1:] - transl[:-1]
+                transl_velocity_term[1:] = torch.sum((diffs * transl_velocity_weight) ** 2, dim=1)
+
         accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
         temporal_accel = float(getattr(weights, "temporal_accel", 0.0))
         if temporal_accel != 0.0 and transl.shape[0] >= 3:
@@ -167,6 +189,7 @@ class StageIISequenceEvaluator(torch.nn.Module):
             "poseF": face_term,
             "expr": expr_term,
             "velo": velocity_term,
+            "veloT": transl_velocity_term,
             "accel": accel_term,
         }
 
@@ -227,6 +250,7 @@ def evaluate_stageii_sequence(
     marker_data_weights,
     weights,
     velocity_reference,
+    transl_velocity_reference=None,
     latent_pose_reference=None,
     transl_reference=None,
     expression_reference=None,
@@ -242,6 +266,7 @@ def evaluate_stageii_sequence(
         marker_data_weights=marker_data_weights,
         weights=weights,
         velocity_reference=velocity_reference,
+        transl_velocity_reference=transl_velocity_reference,
         latent_pose_reference=latent_pose_reference,
         transl_reference=transl_reference,
         expression_reference=expression_reference,

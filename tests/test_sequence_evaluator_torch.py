@@ -111,7 +111,7 @@ def test_evaluate_stageii_sequence_returns_expected_shapes_and_near_zero_data_te
     assert result.predicted_markers.shape == marker_observations.shape
     assert result.body_output.vertices.shape == marker_observations.shape
     assert result.fullpose.shape == (marker_observations.shape[0], 165)
-    assert set(result.loss_terms) == {"data", "poseB", "poseH", "poseF", "expr", "velo", "accel"}
+    assert set(result.loss_terms) == {"data", "poseB", "poseH", "poseF", "expr", "velo", "veloT", "accel"}
     for value in result.loss_terms.values():
         assert value.shape == (marker_observations.shape[0],)
     assert float(result.total) >= 0.0
@@ -228,6 +228,67 @@ def test_evaluate_stageii_sequence_velocity_reference_adds_boundary_term_without
     )
 
     assert torch.allclose(result.loss_terms["velo"], expected)
+
+
+def test_evaluate_stageii_sequence_transl_velocity_reference_adds_boundary_term_without_disabling_internal_diffs():
+    module = _load_sequence_evaluator_module()
+    canonical_markers, marker_attachment, layout, _, _ = _make_problem(num_frames=4)
+    evaluator = module.build_stageii_sequence_evaluator(
+        wrapper=TranslOnlyWrapper(canonical_markers),
+        layout=layout,
+        hand_pca=None,
+        pose_prior=ZeroPosePrior(63),
+        optimize_fingers=False,
+        optimize_face=False,
+    )
+
+    transl = torch.tensor(
+        [
+            [1.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+            [6.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    marker_observations = canonical_markers.unsqueeze(0) + transl[:, None, :]
+    weights = SimpleNamespace(
+        data=0.0,
+        pose_body=0.0,
+        pose_hand=0.0,
+        pose_face=0.0,
+        expr=0.0,
+        velocity=0.0,
+        transl_velocity=2.0,
+        temporal_accel=0.0,
+    )
+
+    result = module.evaluate_stageii_sequence(
+        evaluator=evaluator,
+        latent_pose=torch.zeros(marker_observations.shape[0], layout.latent_dim),
+        transl=transl,
+        expression=None,
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        visible_mask=torch.ones(marker_observations.shape[:2], dtype=torch.bool),
+        marker_data_weights=None,
+        weights=weights,
+        velocity_reference=None,
+        transl_velocity_reference=torch.zeros(1, 3),
+    )
+
+    expected = torch.tensor(
+        [
+            (1.0 * weights.transl_velocity) ** 2,
+            ((3.0 - 1.0) * weights.transl_velocity) ** 2,
+            ((6.0 - 3.0) * weights.transl_velocity) ** 2,
+            ((10.0 - 6.0) * weights.transl_velocity) ** 2,
+        ],
+        dtype=torch.float32,
+    )
+
+    assert torch.allclose(result.loss_terms["veloT"], expected)
 
 
 def test_evaluate_stageii_sequence_delta_terms_match_manual_l2_with_seed_broadcast():
