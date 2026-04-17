@@ -48,7 +48,7 @@ OFFICIAL_PRESETS = {
 }
 
 BENCHMARK_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
-OFFICIAL_RUN_CLI_ERROR_TYPES = (ValueError, OSError, ImportError, ModuleNotFoundError)
+OFFICIAL_RUN_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
 MESH_EXPORT_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
 
 

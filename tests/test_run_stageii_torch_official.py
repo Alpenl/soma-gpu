@@ -1354,6 +1354,23 @@ def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_runt
     assert "mocap load failed" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_errors_when_prepare_cfg_raises_key_error(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: (_ for _ in ()).throw(KeyError("missing cfg.surface_model.fname"))
+        ),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(_required_official_runner_args(tmp_path))
+
+    assert "missing cfg.surface_model.fname" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_import_error(
     tmp_path, monkeypatch, capsys
 ):
