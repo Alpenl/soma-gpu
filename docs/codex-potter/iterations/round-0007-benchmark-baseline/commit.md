@@ -8,7 +8,7 @@ commits:
   planned:
     - "docs: add round-0007 public benchmark baseline"
   actual:
-    - "pending-round-close"
+    - "e67cc13 docs: add round-0007 public benchmark baseline"
 ---
 
 # 本轮提交记录（Commit Log）
@@ -23,12 +23,12 @@ commits:
 ## 1. 提交策略
 
 - 计划拆分：一个提交收敛 public benchmark harness、round-0007 八件套和索引更新
-- 实际拆分：待 round close 时写入 actual hash
-- 是否与计划一致：预计一致
+- 实际拆分：单提交完成
+- 是否与计划一致：一致
 
 ## 2. 实际提交
 
-1. `pending-round-close`
+1. `e67cc13` `docs: add round-0007 public benchmark baseline`
    - 作用：新增 public stageii benchmark baseline、scorecard、R0007 索引和候选结论
    - 主要文件：
      - `benchmark_stageii_public.py`

@@ -6,7 +6,7 @@ round:
 repo:
   branch: "main"
   commits:
-    - "pending-round-close"
+    - "e67cc13 docs: add round-0007 public benchmark baseline"
 artifacts:
   docs:
     - "round-overview.md"

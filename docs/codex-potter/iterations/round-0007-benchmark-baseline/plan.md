@@ -6,7 +6,7 @@ round:
 repo:
   branch: "main"
   base_commit: "52f07b31f0e77d4170bd0026514b68c64d1adf01"
-  head_commit: "pending-round-close"
+  head_commit: "e67cc13"
 roles:
   orchestrator: "main-session"
   workers:
