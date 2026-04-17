@@ -249,6 +249,97 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
     assert payload["baseline"]["benchmark"]["artifact"]["report_path"] == "report.json"
 
 
+def test_run_stageii_torch_pair_main_forwards_mesh_export_flags_to_both_runs(tmp_path, monkeypatch):
+    captured = {"calls": []}
+    mesh_output_dir = tmp_path / "mesh_exports"
+    mesh_support_dir = tmp_path / "mesh_support"
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        preset = argv[argv.index("--preset") + 1]
+        suffix = argv[argv.index("--output-suffix") + 1]
+        return {
+            "benchmark": None if "--skip-benchmark" in argv else {"artifact": {"report_path": "candidate.json"}},
+            "mesh_export": {
+                "obj_path": str(mesh_output_dir / f"{preset}{suffix}.obj"),
+                "pc2_path": str(mesh_output_dir / f"{preset}{suffix}.pc2"),
+            },
+            "stageii_path": str(tmp_path / f"{preset}{suffix}_stageii.pkl"),
+        }
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    payload = run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--export-mesh",
+            "--mesh-output-dir",
+            str(mesh_output_dir),
+            "--mesh-support-base-dir",
+            str(mesh_support_dir),
+        ]
+    )
+
+    assert captured["calls"] == [
+        (
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--preset",
+                "real-mcp-baseline",
+                "--output-suffix",
+                "_baseline",
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(mesh_output_dir),
+                "--mesh-support-base-dir",
+                str(mesh_support_dir),
+                "--skip-benchmark",
+            ],
+            False,
+        ),
+        (
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--preset",
+                "real-mcp-transvelo100-seedvelowindow",
+                "--output-suffix",
+                "_candidate",
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(mesh_output_dir),
+                "--mesh-support-base-dir",
+                str(mesh_support_dir),
+                "--mesh-reference",
+                str(tmp_path / "real-mcp-baseline_baseline_stageii.pkl"),
+            ],
+            False,
+        ),
+    ]
+    assert payload["baseline"]["mesh_export"] == {
+        "obj_path": str(mesh_output_dir / "real-mcp-baseline_baseline.obj"),
+        "pc2_path": str(mesh_output_dir / "real-mcp-baseline_baseline.pc2"),
+    }
+    assert payload["candidate"]["mesh_export"] == {
+        "obj_path": str(mesh_output_dir / "real-mcp-transvelo100-seedvelowindow_candidate.obj"),
+        "pc2_path": str(mesh_output_dir / "real-mcp-transvelo100-seedvelowindow_candidate.pc2"),
+    }
+
+
 def test_run_stageii_torch_pair_main_rejects_matching_output_suffixes():
     with pytest.raises(SystemExit):
         run_stageii_torch_pair.main(

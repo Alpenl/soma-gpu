@@ -454,6 +454,151 @@ def test_run_stageii_torch_official_main_appends_output_suffix_to_cfg_basename(t
     }
 
 
+def test_run_stageii_torch_official_main_can_export_mesh_outputs(tmp_path, monkeypatch):
+    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
+    mesh_output_dir = tmp_path / "mesh_exports"
+    mesh_support_dir = tmp_path / "mesh_support"
+    resolved_model_path = mesh_support_dir / "smplx" / "male" / "model.npz"
+    captured = {}
+
+    def fake_prepare_cfg(**kwargs):
+        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+
+    def fake_run_moshpp_once(cfg):
+        Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True)
+        Path(cfg.dirs.stageii_fname).write_bytes(b"stageii")
+
+    def fake_resolve_stageii_model_path(stageii_pkl, *, support_base_dir=None):
+        captured["resolve_model"] = {
+            "stageii_pkl": stageii_pkl,
+            "support_base_dir": support_base_dir,
+        }
+        return str(resolved_model_path)
+
+    def fake_export_stageii_meshes(
+        input_pkl,
+        model_path=None,
+        *,
+        model=None,
+        vertices=None,
+        obj_out=None,
+        pc2_out=None,
+    ):
+        captured["export_meshes"] = {
+            "input_pkl": input_pkl,
+            "model_path": model_path,
+            "model": model,
+            "vertices": vertices,
+            "obj_out": obj_out,
+            "pc2_out": pc2_out,
+        }
+        return obj_out, pc2_out
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(run_stageii_torch_official, "run_moshpp_once", fake_run_moshpp_once)
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "resolve_stageii_model_path",
+        fake_resolve_stageii_model_path,
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "export_stageii_meshes",
+        fake_export_stageii_meshes,
+    )
+
+    payload = run_stageii_torch_official.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--skip-benchmark",
+            "--export-mesh",
+            "--mesh-output-dir",
+            str(mesh_output_dir),
+            "--mesh-support-base-dir",
+            str(mesh_support_dir),
+        ]
+    )
+
+    assert captured["resolve_model"] == {
+        "stageii_pkl": str(stageii_path),
+        "support_base_dir": str(mesh_support_dir),
+    }
+    assert captured["export_meshes"] == {
+        "input_pkl": str(stageii_path),
+        "model_path": str(resolved_model_path),
+        "model": None,
+        "vertices": None,
+        "obj_out": str(mesh_output_dir / "candidate_stageii.obj"),
+        "pc2_out": str(mesh_output_dir / "candidate_stageii.pc2"),
+    }
+    assert payload == {
+        "benchmark": None,
+        "mesh_export": {
+            "obj_path": str(mesh_output_dir / "candidate_stageii.obj"),
+            "pc2_path": str(mesh_output_dir / "candidate_stageii.pc2"),
+        },
+        "stageii_path": str(stageii_path),
+    }
+
+
+def test_run_stageii_torch_official_main_errors_when_mesh_export_model_path_cannot_be_resolved(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "resolve_stageii_model_path",
+        lambda *args, **kwargs: (_ for _ in ()).throw(KeyError("missing cfg.surface_model.fname")),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--skip-benchmark",
+                "--export-mesh",
+            ]
+        )
+
+    assert "missing cfg.surface_model.fname" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_can_skip_benchmark(tmp_path, monkeypatch, capsys):
     stageii_path = tmp_path / "candidate_stageii.pkl"
 

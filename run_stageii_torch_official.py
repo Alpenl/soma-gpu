@@ -3,11 +3,13 @@ import json
 from pathlib import Path
 
 from moshpp.mosh_head import MoSh, run_moshpp_once
+from save_smplx_verts import export_stageii_meshes
 from utils.stageii_benchmark import (
     default_benchmark_output_path,
     run_public_stageii_benchmark,
     write_benchmark_report,
 )
+from utils.script_utils import default_stageii_output_paths, resolve_stageii_model_path
 
 
 REAL_MCP_BASELINE_PRESET = {
@@ -34,7 +36,7 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description=(
             "Run the official single-sequence MoSh entrypoint with repeatable dotlist "
-            "overrides, then optionally benchmark the produced stageii.pkl."
+            "overrides, then optionally export mesh outputs and benchmark the produced stageii.pkl."
         )
     )
     parser.add_argument("--mocap-fname", required=True, help="Input .c3d or .mcp sequence path.")
@@ -70,6 +72,16 @@ def build_parser():
         ),
     )
     parser.add_argument(
+        "--export-mesh",
+        action="store_true",
+        help="Export OBJ/PC2 from the produced stageii.pkl after the official run finishes.",
+    )
+    parser.add_argument(
+        "--mesh-output-dir",
+        default=None,
+        help="Optional directory used for exported OBJ/PC2 when --export-mesh is enabled.",
+    )
+    parser.add_argument(
         "--skip-benchmark",
         action="store_true",
         help="Only run the official entrypoint and report the produced stageii path.",
@@ -98,7 +110,7 @@ def build_parser():
     parser.add_argument(
         "--mesh-support-base-dir",
         default=None,
-        help="Optional support_files root used by mesh comparison; defaults to --support-base-dir.",
+        help="Optional support_files root used by mesh export/comparison; defaults to --support-base-dir.",
     )
     parser.add_argument("--mesh-chunk-size", type=int, default=None, help="Optional mesh comparison chunk-size override.")
     parser.add_argument(
@@ -164,6 +176,37 @@ def _resolve_mesh_reference_path(parser, args):
     return str(reference_cfg.dirs.stageii_fname)
 
 
+def _mesh_support_base_dir(args):
+    return args.mesh_support_base_dir or args.support_base_dir
+
+
+def _resolve_mesh_export_paths(stageii_path, *, output_dir=None):
+    obj_out, pc2_out = default_stageii_output_paths(str(stageii_path))
+    if output_dir is None:
+        return obj_out, pc2_out
+
+    output_dir = Path(output_dir)
+    return str(output_dir / Path(obj_out).name), str(output_dir / Path(pc2_out).name)
+
+
+def _export_meshes(stageii_path, args):
+    model_path = resolve_stageii_model_path(
+        str(stageii_path),
+        support_base_dir=_mesh_support_base_dir(args),
+    )
+    obj_out, pc2_out = _resolve_mesh_export_paths(stageii_path, output_dir=args.mesh_output_dir)
+    obj_path, pc2_path = export_stageii_meshes(
+        str(stageii_path),
+        model_path=model_path,
+        obj_out=obj_out,
+        pc2_out=pc2_out,
+    )
+    return {
+        "obj_path": obj_path,
+        "pc2_path": pc2_path,
+    }
+
+
 def run(argv=None, *, emit_json=True):
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -181,6 +224,12 @@ def run(argv=None, *, emit_json=True):
         "benchmark": None,
     }
 
+    if args.export_mesh:
+        try:
+            payload["mesh_export"] = _export_meshes(stageii_path, args)
+        except (KeyError, ValueError) as exc:
+            parser.error(str(exc))
+
     if not args.skip_benchmark:
         mesh_reference_path = _resolve_mesh_reference_path(parser, args)
         report = run_public_stageii_benchmark(
@@ -188,7 +237,7 @@ def run(argv=None, *, emit_json=True):
             warmup_runs=args.warmup_runs,
             measured_runs=args.measured_runs,
             mesh_reference_path=mesh_reference_path,
-            mesh_support_base_dir=args.mesh_support_base_dir or args.support_base_dir,
+            mesh_support_base_dir=_mesh_support_base_dir(args),
             mesh_chunk_size=args.mesh_chunk_size,
             mesh_chunk_overlap=args.mesh_chunk_overlap,
         )

@@ -64,6 +64,16 @@ def build_parser():
         help="Suffix appended to the candidate mocap.basename so its outputs do not collide with the baseline.",
     )
     parser.add_argument(
+        "--export-mesh",
+        action="store_true",
+        help="Forward mesh export to both baseline and candidate runs.",
+    )
+    parser.add_argument(
+        "--mesh-output-dir",
+        default=None,
+        help="Optional shared output directory for baseline/candidate OBJ/PC2 exports.",
+    )
+    parser.add_argument(
         "--baseline-benchmark-output",
         default=None,
         help="Optional JSON output path for a standalone baseline benchmark. By default the baseline run skips benchmarking.",
@@ -88,7 +98,7 @@ def build_parser():
     parser.add_argument(
         "--mesh-support-base-dir",
         default=None,
-        help="Optional support_files root used by candidate mesh comparison; defaults to --support-base-dir.",
+        help="Optional support_files root used by mesh export and candidate mesh comparison; defaults to --support-base-dir.",
     )
     parser.add_argument("--mesh-chunk-size", type=int, default=None, help="Optional mesh comparison chunk-size override.")
     parser.add_argument(
@@ -126,10 +136,17 @@ def _append_benchmark_args(runner_args, args, *, benchmark_output=None, include_
         runner_args.extend(["--warmup-runs", str(args.warmup_runs)])
     if args.measured_runs != 5:
         runner_args.extend(["--measured-runs", str(args.measured_runs)])
+
+
+def _append_mesh_args(runner_args, args, *, include_mesh_reference=False):
+    if args.export_mesh:
+        runner_args.append("--export-mesh")
+        if args.mesh_output_dir is not None:
+            runner_args.extend(["--mesh-output-dir", args.mesh_output_dir])
+    if args.mesh_support_base_dir is not None and (args.export_mesh or include_mesh_reference):
+        runner_args.extend(["--mesh-support-base-dir", args.mesh_support_base_dir])
     if not include_mesh_reference:
         return
-    if args.mesh_support_base_dir is not None:
-        runner_args.extend(["--mesh-support-base-dir", args.mesh_support_base_dir])
     if args.mesh_chunk_size is not None:
         runner_args.extend(["--mesh-chunk-size", str(args.mesh_chunk_size)])
     if args.mesh_chunk_overlap is not None:
@@ -142,6 +159,7 @@ def _build_baseline_runner_args(args):
     runner_args.extend(["--output-suffix", args.baseline_output_suffix])
     _append_cfg_args(runner_args, args.cfg)
     _append_cfg_args(runner_args, args.baseline_cfg)
+    _append_mesh_args(runner_args, args, include_mesh_reference=False)
     if args.baseline_benchmark_output is None:
         runner_args.append("--skip-benchmark")
     else:
@@ -160,6 +178,7 @@ def _build_candidate_runner_args(args, *, mesh_reference_path=None):
     runner_args.extend(["--output-suffix", args.candidate_output_suffix])
     _append_cfg_args(runner_args, args.cfg)
     _append_cfg_args(runner_args, args.candidate_cfg)
+    _append_mesh_args(runner_args, args, include_mesh_reference=True)
     _append_benchmark_args(
         runner_args,
         args,
