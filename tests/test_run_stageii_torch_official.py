@@ -552,3 +552,34 @@ def test_run_stageii_torch_official_parser_rejects_explicit_mesh_reference_and_o
                 "_baseline",
             ]
         )
+
+
+def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_with_explicit_stageii_override(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--cfg",
+                f"dirs.stageii_fname={tmp_path / 'manual_candidate_stageii.pkl'}",
+                "--mesh-reference-output-suffix",
+                "_baseline",
+            ]
+        )

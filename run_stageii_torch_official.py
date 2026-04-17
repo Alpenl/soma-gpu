@@ -111,15 +111,7 @@ def build_parser():
 
 
 def _cfg_overrides(parser, args, *, output_suffix=None):
-    overrides = dict(OFFICIAL_PRESETS.get(args.preset, {}))
-    for entry in args.cfg:
-        if "=" not in entry:
-            parser.error(f"--cfg entries must be KEY=VALUE, got: {entry}")
-        key, value = entry.split("=", 1)
-        if not key:
-            parser.error(f"--cfg entries must include a non-empty key, got: {entry}")
-        overrides[key] = value
-
+    overrides = _collect_cfg_overrides(parser, args)
     suffix = args.output_suffix if output_suffix is None else output_suffix
     if suffix:
         basename = overrides.get("mocap.basename")
@@ -132,6 +124,28 @@ def _cfg_overrides(parser, args, *, output_suffix=None):
     overrides["dirs.work_base_dir"] = args.work_base_dir
     overrides["runtime.backend"] = args.backend
     return overrides
+
+
+def _collect_cfg_overrides(parser, args):
+    overrides = dict(OFFICIAL_PRESETS.get(args.preset, {}))
+    for entry in args.cfg:
+        if "=" not in entry:
+            parser.error(f"--cfg entries must be KEY=VALUE, got: {entry}")
+        key, value = entry.split("=", 1)
+        if not key:
+            parser.error(f"--cfg entries must include a non-empty key, got: {entry}")
+        overrides[key] = value
+    return overrides
+
+
+def _validate_mesh_reference_output_suffix(parser, args):
+    if args.mesh_reference_output_suffix is None:
+        return
+    if "dirs.stageii_fname" in _collect_cfg_overrides(parser, args):
+        parser.error(
+            "--mesh-reference-output-suffix cannot be used when --cfg/preset overrides dirs.stageii_fname; "
+            "pass --mesh-reference explicitly instead"
+        )
 
 
 def _resolve_mesh_reference_path(parser, args):
@@ -153,6 +167,7 @@ def _resolve_mesh_reference_path(parser, args):
 def run(argv=None, *, emit_json=True):
     parser = build_parser()
     args = parser.parse_args(argv)
+    _validate_mesh_reference_output_suffix(parser, args)
 
     cfg = MoSh.prepare_cfg(**_cfg_overrides(parser, args))
     run_moshpp_once(cfg)

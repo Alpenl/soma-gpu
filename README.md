@@ -171,7 +171,7 @@ python run_stageii_torch_official.py \
   --cfg surface_model.gender=male \
   --benchmark-output ROOT/benchmarks/[seq]_candidate_vs_baseline.json
 ````
-`--mesh-reference-output-suffix` 会按同一套 `preset < --cfg < dedicated args` 解析逻辑重新推导 baseline 的 `cfg.dirs.stageii_fname`，因此适合“baseline/candidate 共用一个 work dir，只靠 basename suffix 分名”的主线复现；如果 baseline 根本不在同一命名规则下，再继续显式传 `--mesh-reference`。
+`--mesh-reference-output-suffix` 会按同一套 `preset < --cfg < dedicated args` 解析逻辑重新推导 baseline 的 `cfg.dirs.stageii_fname`，因此适合“baseline/candidate 共用一个 work dir，只靠 basename suffix 分名”的主线复现；如果 baseline 根本不在同一命名规则下，再继续显式传 `--mesh-reference`。现在当你同时通过 `--cfg dirs.stageii_fname=...` 显式改了输出路径时，runner 会直接拒绝 `--mesh-reference-output-suffix`，避免再按错误的 basename 规则去推导 baseline 路径。
 
 如果当前主线就是“先跑 corrected baseline，再跑一个候选并立刻做 stageii / mesh 对照”，可以直接改用成对入口：
 ````
