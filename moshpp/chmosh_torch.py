@@ -593,6 +593,14 @@ def _build_sequence_seed_cache(
     )
 
 
+def _splice_chunk_overlap_reference(base_reference, previous_tail, overlap_count):
+    if base_reference is None or previous_tail is None or overlap_count <= 0:
+        return base_reference
+    reference = base_reference.detach().clone()
+    reference[:overlap_count] = previous_tail[-overlap_count:].detach().clone()
+    return reference
+
+
 def mosh_stageii_torch(
     mocap_fname: str,
     cfg,
@@ -702,6 +710,7 @@ def mosh_stageii_torch(
     label_to_latent_id = {label: idx for idx, label in enumerate(latent_labels)}
     sequence_chunk_size = max(int(_runtime_get(runtime, "sequence_chunk_size", 1) or 1), 1)
     sequence_chunk_overlap = max(int(_runtime_get(runtime, "sequence_chunk_overlap", 0) or 0), 0)
+    sequence_boundary_velocity_reference = bool(_runtime_get(runtime, "sequence_boundary_velocity_reference", False))
     compile_evaluator = bool(_runtime_get(runtime, "compile_evaluator", False))
     compile_mode = str(_runtime_get(runtime, "compile_mode", "default"))
     compile_fullgraph = bool(_runtime_get(runtime, "compile_fullgraph", False))
@@ -740,6 +749,9 @@ def mosh_stageii_torch(
         sequence_options = _runtime_sequence_fit_options(cfg, runtime)
         sequence_seed_options = _runtime_sequence_seed_options(sequence_options, runtime)
         sequence_seed_cache = None
+        previous_chunk_latent_tail = None
+        previous_chunk_transl_tail = None
+        previous_chunk_expression_tail = None
         if sequence_seed_options is not None:
             try:
                 sequence_markers_obs, sequence_visible = _build_chunk_observations(
@@ -805,6 +817,7 @@ def mosh_stageii_torch(
                 marker_count=len(markers_latent),
                 anneal_factor=anneal_factor,
             )
+            chunk_overlap_count = 0 if chunk_idx == 0 else min(sequence_chunk_overlap, row_end - row_start)
 
             if sequence_seed_cache is None:
                 chunk_latent_init = []
@@ -837,6 +850,34 @@ def mosh_stageii_torch(
                     else None
                 )
 
+            chunk_latent_reference = chunk_latent_init
+            chunk_transl_reference = chunk_transl_init
+            chunk_expression_reference = chunk_expression_init
+            if chunk_overlap_count > 0:
+                if float(getattr(sequence_weights, "delta_pose", 0.0)) != 0.0 and previous_chunk_latent_tail is not None:
+                    chunk_latent_reference = _splice_chunk_overlap_reference(
+                        chunk_latent_init,
+                        previous_chunk_latent_tail,
+                        chunk_overlap_count,
+                    )
+                if float(getattr(sequence_weights, "delta_trans", 0.0)) != 0.0 and previous_chunk_transl_tail is not None:
+                    chunk_transl_reference = _splice_chunk_overlap_reference(
+                        chunk_transl_init,
+                        previous_chunk_transl_tail,
+                        chunk_overlap_count,
+                    )
+                if (
+                    optimize_face
+                    and float(getattr(sequence_weights, "delta_expr", 0.0)) != 0.0
+                    and chunk_expression_init is not None
+                    and previous_chunk_expression_tail is not None
+                ):
+                    chunk_expression_reference = _splice_chunk_overlap_reference(
+                        chunk_expression_init,
+                        previous_chunk_expression_tail,
+                        chunk_overlap_count,
+                    )
+
             result = fit_stageii_sequence_torch(
                 body_model=body_model,
                 wrapper=wrapper,
@@ -848,10 +889,14 @@ def mosh_stageii_torch(
                 latent_pose_init=chunk_latent_init,
                 transl_init=chunk_transl_init,
                 expression_init=chunk_expression_init,
+                latent_pose_reference=chunk_latent_reference,
+                transl_reference=chunk_transl_reference,
+                expression_reference=chunk_expression_reference,
                 hand_pca=hand_pca,
                 optimize_fingers=optimize_fingers,
                 optimize_face=optimize_face,
                 optimize_toes=bool(cfg.moshpp.optimize_toes),
+                velocity_reference=prev_latent_pose if sequence_boundary_velocity_reference else None,
                 visible_mask=chunk_visible,
                 weights=sequence_weights,
                 options=sequence_options,
@@ -862,6 +907,15 @@ def mosh_stageii_torch(
             current_transl = torch.as_tensor(result.transl[-1:]).detach()
             current_expression = torch.as_tensor(result.expression[-1:]).detach() if result.expression is not None else None
             prev_latent_pose = torch.as_tensor(result.latent_pose[-1:]).detach()
+            if sequence_chunk_overlap > 0:
+                tail_count = min(sequence_chunk_overlap, result.latent_pose.shape[0])
+                previous_chunk_latent_tail = torch.as_tensor(result.latent_pose[-tail_count:]).detach()
+                previous_chunk_transl_tail = torch.as_tensor(result.transl[-tail_count:]).detach()
+                previous_chunk_expression_tail = (
+                    torch.as_tensor(result.expression[-tail_count:]).detach()
+                    if result.expression is not None
+                    else None
+                )
 
             keep_start = 0 if chunk_idx == 0 else min(sequence_chunk_overlap, row_end - row_start)
             for local_idx in range(keep_start, row_end - row_start):

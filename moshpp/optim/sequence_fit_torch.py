@@ -85,6 +85,24 @@ def _coerce_sequence_weights(weights):
     )
 
 
+def _coerce_optional_reference(reference, *, device, dtype, feature_shape, num_frames, name):
+    if reference is None:
+        return None
+    reference = torch.as_tensor(reference, dtype=dtype, device=device)
+    if len(feature_shape) == 0:
+        if reference.ndim == 1 and reference.shape[0] in (1, num_frames):
+            return reference
+        if reference.ndim == 2 and reference.shape[0] in (1, num_frames) and reference.shape[1] == 0:
+            return reference
+    elif reference.ndim == len(feature_shape) and reference.shape == feature_shape:
+        return reference.reshape(1, *feature_shape)
+    elif reference.ndim == len(feature_shape) + 1 and reference.shape[0] in (1, num_frames) and reference.shape[1:] == feature_shape:
+        return reference
+    raise ValueError(
+        f"{name} must have shape {feature_shape}, (1, *{feature_shape}), or ({num_frames}, *{feature_shape}), got {tuple(reference.shape)}"
+    )
+
+
 def _run_adam(*, params, closure_fn, max_iters, lr):
     if max_iters <= 0:
         return
@@ -165,6 +183,9 @@ def fit_stageii_sequence_torch(
     hand_pca=None,
     fullpose_init=None,
     expression_init=None,
+    latent_pose_reference=None,
+    transl_reference=None,
+    expression_reference=None,
     optimize_fingers=False,
     optimize_face=False,
     optimize_toes=False,
@@ -213,13 +234,11 @@ def fit_stageii_sequence_torch(
     if transl_init.shape != (num_frames, 3):
         raise ValueError(f"transl_init must have shape {(num_frames, 3)}, got {tuple(transl_init.shape)}")
 
-    expression_reference = None
     expression_param = None
     if expression_init is not None:
         expression_init = torch.as_tensor(expression_init, dtype=torch.float32, device=device)
         if expression_init.shape[0] != num_frames:
             raise ValueError(f"expression_init must have leading dimension {num_frames}, got {tuple(expression_init.shape)}")
-        expression_reference = expression_init.detach().clone()
         expression_param = expression_init.detach().clone().requires_grad_(True)
 
     options = _coerce_sequence_options(options)
@@ -232,8 +251,48 @@ def fit_stageii_sequence_torch(
     if velocity_reference is not None:
         velocity_reference = torch.as_tensor(velocity_reference, dtype=torch.float32, device=device)
 
-    latent_pose_reference = latent_pose_init.detach().clone()
-    transl_reference = transl_init.detach().clone()
+    latent_pose_reference = _coerce_optional_reference(
+        latent_pose_reference,
+        device=device,
+        dtype=torch.float32,
+        feature_shape=(layout.latent_dim,),
+        num_frames=num_frames,
+        name="latent_pose_reference",
+    )
+    if latent_pose_reference is None:
+        latent_pose_reference = latent_pose_init.detach().clone()
+    else:
+        latent_pose_reference = latent_pose_reference.detach().clone()
+
+    transl_reference = _coerce_optional_reference(
+        transl_reference,
+        device=device,
+        dtype=torch.float32,
+        feature_shape=(3,),
+        num_frames=num_frames,
+        name="transl_reference",
+    )
+    if transl_reference is None:
+        transl_reference = transl_init.detach().clone()
+    else:
+        transl_reference = transl_reference.detach().clone()
+
+    if expression_param is not None:
+        expression_reference = _coerce_optional_reference(
+            expression_reference,
+            device=device,
+            dtype=torch.float32,
+            feature_shape=tuple(expression_param.shape[1:]),
+            num_frames=num_frames,
+            name="expression_reference",
+        )
+        if expression_reference is None:
+            expression_reference = expression_init.detach().clone()
+        else:
+            expression_reference = expression_reference.detach().clone()
+    else:
+        expression_reference = None
+
     latent_pose_param = latent_pose_init.detach().clone().requires_grad_(True)
     transl_param = transl_init.detach().clone().requires_grad_(True)
 

@@ -62,6 +62,19 @@ def _coerce_sequence_reference(reference, like):
     )
 
 
+def _coerce_velocity_reference(reference, like):
+    if reference is None:
+        return None
+    reference = torch.as_tensor(reference, dtype=like.dtype, device=like.device)
+    if reference.ndim == like.ndim - 1 and reference.shape == like.shape[1:]:
+        return reference[None]
+    if reference.ndim == like.ndim and reference.shape[0] in (1, like.shape[0]) and reference.shape[1:] == like.shape[1:]:
+        return reference
+    raise ValueError(
+        f"velocity_reference must have trailing shape {tuple(like.shape[1:])} with leading dim 1 or {like.shape[0]}, got {tuple(reference.shape)}"
+    )
+
+
 class StageIISequenceEvaluator(torch.nn.Module):
     def __init__(
         self,
@@ -126,14 +139,20 @@ class StageIISequenceEvaluator(torch.nn.Module):
                 expr_term = torch.sum((expression * weights.expr) ** 2, dim=1)
 
         velocity_term = latent_pose.new_zeros((latent_pose.shape[0],))
-        if velocity_reference is not None:
-            velocity_reference = torch.as_tensor(velocity_reference, dtype=latent_pose.dtype, device=latent_pose.device)
-            if velocity_reference.ndim == 2 and velocity_reference.shape[0] == 1:
-                velocity_reference = velocity_reference.expand(latent_pose.shape[0], -1)
-            velocity_term = torch.sum(((latent_pose - velocity_reference) * weights.velocity) ** 2, dim=1)
-        elif float(getattr(weights, "velocity", 0.0)) != 0.0 and latent_pose.shape[0] >= 2:
-            diffs = latent_pose[1:] - latent_pose[:-1]
-            velocity_term[1:] = torch.sum((diffs * weights.velocity) ** 2, dim=1)
+        velocity_weight = float(getattr(weights, "velocity", 0.0))
+        if velocity_weight != 0.0:
+            if velocity_reference is not None:
+                velocity_reference = _coerce_velocity_reference(velocity_reference, latent_pose)
+                if velocity_reference.shape[0] == 1:
+                    velocity_term[0] = torch.sum(((latent_pose[0] - velocity_reference[0]) * velocity_weight) ** 2)
+                    if latent_pose.shape[0] >= 2:
+                        diffs = latent_pose[1:] - latent_pose[:-1]
+                        velocity_term[1:] = torch.sum((diffs * velocity_weight) ** 2, dim=1)
+                else:
+                    velocity_term = torch.sum(((latent_pose - velocity_reference) * velocity_weight) ** 2, dim=1)
+            elif latent_pose.shape[0] >= 2:
+                diffs = latent_pose[1:] - latent_pose[:-1]
+                velocity_term[1:] = torch.sum((diffs * velocity_weight) ** 2, dim=1)
 
         accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
         temporal_accel = float(getattr(weights, "temporal_accel", 0.0))

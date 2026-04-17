@@ -179,6 +179,57 @@ def test_evaluate_stageii_sequence_temporal_accel_penalizes_curved_translation_m
     assert torch.sum(curved_eval.loss_terms["accel"]) > torch.sum(linear_eval.loss_terms["accel"])
 
 
+def test_evaluate_stageii_sequence_velocity_reference_adds_boundary_term_without_disabling_internal_diffs():
+    module = _load_sequence_evaluator_module()
+    canonical_markers, marker_attachment, layout, transl, marker_observations = _make_problem(num_frames=4)
+    evaluator = module.build_stageii_sequence_evaluator(
+        wrapper=TranslOnlyWrapper(canonical_markers),
+        layout=layout,
+        hand_pca=None,
+        pose_prior=ZeroPosePrior(63),
+        optimize_fingers=False,
+        optimize_face=False,
+    )
+
+    latent_pose = torch.zeros(marker_observations.shape[0], layout.latent_dim)
+    latent_pose[:, 0] = torch.tensor([1.0, 3.0, 6.0, 10.0], dtype=torch.float32)
+    weights = SimpleNamespace(
+        data=0.0,
+        pose_body=0.0,
+        pose_hand=0.0,
+        pose_face=0.0,
+        expr=0.0,
+        velocity=2.0,
+        temporal_accel=0.0,
+    )
+
+    result = module.evaluate_stageii_sequence(
+        evaluator=evaluator,
+        latent_pose=latent_pose,
+        transl=transl,
+        expression=None,
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        visible_mask=torch.ones(marker_observations.shape[:2], dtype=torch.bool),
+        marker_data_weights=None,
+        weights=weights,
+        velocity_reference=torch.zeros(1, layout.latent_dim),
+    )
+
+    expected = torch.tensor(
+        [
+            (1.0 * weights.velocity) ** 2,
+            ((3.0 - 1.0) * weights.velocity) ** 2,
+            ((6.0 - 3.0) * weights.velocity) ** 2,
+            ((10.0 - 6.0) * weights.velocity) ** 2,
+        ],
+        dtype=torch.float32,
+    )
+
+    assert torch.allclose(result.loss_terms["velo"], expected)
+
+
 def test_evaluate_stageii_sequence_delta_terms_match_manual_l2_with_seed_broadcast():
     module = _load_sequence_evaluator_module()
     canonical_markers, marker_attachment, layout, transl, marker_observations = _make_problem(num_frames=3)
