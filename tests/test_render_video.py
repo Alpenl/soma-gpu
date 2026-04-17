@@ -194,3 +194,29 @@ def test_render_stageii_preview_writes_mp4_without_taichi_scene_deprecation(tmp_
     assert output_path.exists()
     assert output_path.stat().st_size > 0
     assert not any("Instantiating ti.ui.Scene directly is deprecated" in str(warning.message) for warning in caught)
+
+
+def test_render_vertices_to_video_writes_mp4_without_taichi_scene_deprecation(tmp_path):
+    pytest.importorskip("cv2")
+    pytest.importorskip("taichi")
+
+    model = render_video.load_render_model(SUPPORT_ROOT / "smplx" / "male" / "model.npz")
+    vertices = render_video.load_vertices(ROOT / "support_data" / "tests" / "mosh_stageii.pkl", model)[:2]
+    output_path = tmp_path / "tiny_vertices.mp4"
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = render_video.render_vertices_to_video(
+            vertices=vertices,
+            faces=model.faces,
+            output_path=output_path,
+            width=128,
+            height=128,
+            fps=5,
+            arch="cpu",
+        )
+
+    assert result == str(output_path)
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+    assert not any("Instantiating ti.ui.Scene directly is deprecated" in str(warning.message) for warning in caught)

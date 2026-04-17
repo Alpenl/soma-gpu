@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +47,7 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     monkeypatch.setattr(stageii_benchmark, "perf_counter", lambda: next(perf_counter_points))
     monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
     monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
 
     report = run_public_stageii_benchmark(
         ROOT / "support_data/tests/mosh_stageii.pkl",
@@ -63,6 +65,8 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert report["speed"]["latency_ms"]["p99"] == pytest.approx(196.0)
     assert report["speed"]["preview_vertex_decode_ms"] is None
     assert report["speed"]["mesh_export_ms"] is None
+    assert report["speed"]["mp4_render_ms"] is None
+    assert report["workload"]["preview_render_workload"] == stageii_benchmark.PREVIEW_RENDER_BENCHMARK_WORKLOAD
     assert report["error"]["repeatability"]["max_abs_diff"] == 0.0
     assert report["error"]["all_finite"] is True
 
@@ -132,6 +136,37 @@ def test_run_public_stageii_benchmark_includes_mesh_export_metric_when_available
     assert report["speed"]["mesh_export_ms"] == mesh_export_metric
 
 
+def test_run_public_stageii_benchmark_includes_mp4_render_metric_when_available(monkeypatch):
+    mp4_render_metric = {
+        "count": 2,
+        "samples": [30.0, 42.0],
+        "mean": 36.0,
+        "stdev": pytest.approx(8.48528137423857),
+        "min": 30.0,
+        "max": 42.0,
+        "p50": 36.0,
+        "p90": 40.8,
+        "p99": 41.88,
+    }
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_benchmark_mp4_render",
+        lambda *args, **kwargs: mp4_render_metric,
+        raising=False,
+    )
+
+    report = run_public_stageii_benchmark(
+        ROOT / "support_data/tests/mosh_stageii.pkl",
+        warmup_runs=0,
+        measured_runs=1,
+    )
+
+    assert report["speed"]["mp4_render_ms"] == mp4_render_metric
+    assert report["workload"]["preview_render_workload"] == stageii_benchmark.PREVIEW_RENDER_BENCHMARK_WORKLOAD
+
+
 def test_benchmark_preview_vertex_decode_propagates_unexpected_render_failures(monkeypatch):
     baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
     fake_render_video = type(
@@ -189,6 +224,38 @@ def test_benchmark_mesh_export_propagates_unexpected_export_failures(monkeypatch
         )
 
 
+def test_benchmark_mp4_render_propagates_unexpected_render_failures(monkeypatch):
+    baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
+    preloaded_model = type("FakeModel", (), {"faces": np.asarray([[0, 1, 2]], dtype=np.int32)})()
+    fake_render_video = type(
+        "FakeRenderVideo",
+        (),
+        {
+            "load_render_model": staticmethod(lambda model_path: preloaded_model),
+            "load_vertices": staticmethod(lambda sample_path, model: np.zeros((2, 3, 3), dtype=np.float32)),
+            "render_vertices_to_video": staticmethod(
+                lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+            ),
+        },
+    )
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_preview_render_model_path",
+        lambda repo_root, *, gender: ROOT / "support_files/smplx/male/model.npz",
+    )
+    monkeypatch.setitem(sys.modules, "render_video", fake_render_video)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        stageii_benchmark._benchmark_mp4_render(
+            ROOT / "support_data/tests/mosh_stageii.pkl",
+            baseline,
+            repo_root=ROOT,
+            warmup_runs=0,
+            measured_runs=1,
+        )
+
+
 def test_benchmark_mesh_export_loads_model_once_and_reuses_it(monkeypatch):
     baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
     load_calls = []
@@ -236,6 +303,52 @@ def test_benchmark_mesh_export_loads_model_once_and_reuses_it(monkeypatch):
     assert summary["count"] == 2
     assert len(load_calls) == 1
     assert export_models == [preloaded_model, preloaded_model, preloaded_model]
+
+
+def test_benchmark_mp4_render_loads_render_inputs_once_and_reuses_them(monkeypatch):
+    baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
+    load_calls = []
+    vertex_calls = []
+    render_calls = []
+    preloaded_model = type("FakeModel", (), {"faces": np.asarray([[0, 1, 2]], dtype=np.int32)})()
+    predecoded_vertices = np.zeros((2, 3, 3), dtype=np.float32)
+
+    fake_render_video = type(
+        "FakeRenderVideo",
+        (),
+        {
+            "load_render_model": staticmethod(lambda model_path: load_calls.append(model_path) or preloaded_model),
+            "load_vertices": staticmethod(
+                lambda sample_path, model: vertex_calls.append((sample_path, model)) or predecoded_vertices
+            ),
+            "render_vertices_to_video": staticmethod(
+                lambda *, vertices, faces, output_path, **kwargs: render_calls.append((vertices, faces, kwargs))
+                or Path(output_path).write_bytes(b"mp4")
+            ),
+        },
+    )
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_preview_render_model_path",
+        lambda repo_root, *, gender: ROOT / "support_files/smplx/male/model.npz",
+    )
+    monkeypatch.setitem(sys.modules, "render_video", fake_render_video)
+
+    summary = stageii_benchmark._benchmark_mp4_render(
+        ROOT / "support_data/tests/mosh_stageii.pkl",
+        baseline,
+        repo_root=ROOT,
+        warmup_runs=1,
+        measured_runs=2,
+    )
+
+    assert summary["count"] == 2
+    assert len(load_calls) == 1
+    assert vertex_calls == [(ROOT / "support_data/tests/mosh_stageii.pkl", preloaded_model)]
+    assert len(render_calls) == 3
+    assert all(vertices is predecoded_vertices for vertices, _, _ in render_calls)
+    assert all(np.array_equal(faces, preloaded_model.faces) for _, faces, _ in render_calls)
 
 
 def test_blocked_stages_use_preview_render_stack_and_support_files_assets(tmp_path, monkeypatch):

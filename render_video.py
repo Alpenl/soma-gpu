@@ -1,4 +1,5 @@
 import argparse
+import os
 import inspect
 import os.path as osp
 import pickle
@@ -355,70 +356,186 @@ def _build_mesh_indices(ti, faces):
     return indices
 
 
-def render_preview_jobs(args):
-    import cv2
-    import numpy as np
-    import taichi as ti
-    from tqdm import tqdm
+def _configure_taichi_env():
+    os.environ.setdefault("TI_ENABLE_PYBUF", "0")
 
-    if not hasattr(ti, args.arch):
-        raise ValueError("Unsupported Taichi arch: {}".format(args.arch))
 
-    ti.init(arch=getattr(ti, args.arch), debug=False)
-
-    model = load_render_model(args.model_path)
-    camera_cfg = resolve_camera_config(args)
-
-    window = ti.ui.Window("SOMA Preview Renderer", (args.width, args.height), show_window=False)
+def _create_preview_renderer(ti, *, num_vertices, faces, width, height):
+    window = ti.ui.Window("SOMA Preview Renderer", (width, height), show_window=False)
     canvas = window.get_canvas()
     canvas.set_background_color((1, 1, 1))
     scene = window.get_scene()
     camera = ti.ui.Camera()
+    particle_vertices = ti.Vector.field(3, dtype=ti.f32, shape=num_vertices)
+    indices = _build_mesh_indices(ti, np.asarray(faces, dtype=np.int32))
+    return SimpleNamespace(
+        window=window,
+        canvas=canvas,
+        scene=scene,
+        camera=camera,
+        particle_vertices=particle_vertices,
+        indices=indices,
+    )
 
-    particle_vertices = ti.Vector.field(3, dtype=ti.f32, shape=model.v_template.shape[0])
-    indices = _build_mesh_indices(ti, model.faces)
 
-    for pkl_path, video_path in build_preview_jobs(args):
-        if osp.exists(video_path) and not args.force:
-            continue
+def _write_vertices_video(
+    *,
+    cv2,
+    renderer,
+    vertices,
+    output_path,
+    fps,
+    width,
+    height,
+    camera_cfg,
+    progress_label,
+    show_progress,
+):
+    from tqdm import tqdm
 
-        vertices = load_vertices(pkl_path, model)
-        video_writer = cv2.VideoWriter(
-            video_path,
-            cv2.VideoWriter_fourcc(*codec_for_video_path(video_path)),
-            args.fps,
-            (args.width, args.height),
-        )
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    video_writer = cv2.VideoWriter(
+        str(output_path),
+        cv2.VideoWriter_fourcc(*codec_for_video_path(str(output_path))),
+        fps,
+        (width, height),
+    )
 
-        for frame_vertices in tqdm(vertices, desc=osp.basename(pkl_path)):
-            particle_vertices.from_numpy(frame_vertices)
+    try:
+        for frame_vertices in tqdm(vertices, desc=progress_label, disable=not show_progress):
+            renderer.particle_vertices.from_numpy(np.asarray(frame_vertices, dtype=np.float32))
 
-            camera.position(camera_cfg.camera_x, camera_cfg.camera_y, camera_cfg.camera_z)
-            camera.lookat(camera_cfg.lookat_x, camera_cfg.lookat_y, camera_cfg.lookat_z)
-            camera.up(camera_cfg.up_x, camera_cfg.up_y, camera_cfg.up_z)
-            scene.set_camera(camera)
-            scene.point_light(
+            renderer.camera.position(camera_cfg.camera_x, camera_cfg.camera_y, camera_cfg.camera_z)
+            renderer.camera.lookat(camera_cfg.lookat_x, camera_cfg.lookat_y, camera_cfg.lookat_z)
+            renderer.camera.up(camera_cfg.up_x, camera_cfg.up_y, camera_cfg.up_z)
+            renderer.scene.set_camera(renderer.camera)
+            renderer.scene.point_light(
                 pos=(camera_cfg.camera_x, camera_cfg.camera_y, 0.0),
                 color=(1.0, 1.0, 1.0),
             )
-            scene.ambient_light((0.5, 0.5, 0.5))
-            scene.mesh(
-                particle_vertices,
-                indices=indices,
+            renderer.scene.ambient_light((0.5, 0.5, 0.5))
+            renderer.scene.mesh(
+                renderer.particle_vertices,
+                indices=renderer.indices,
                 two_sided=True,
                 show_wireframe=False,
             )
 
-            canvas.scene(scene)
-            image = window.get_image_buffer_as_numpy()
-            image = cv2.cvtColor(
-                (image[:, :, :3] * 255).astype(np.uint8), cv2.COLOR_RGB2BGR
-            )
+            renderer.canvas.scene(renderer.scene)
+            image = renderer.window.get_image_buffer_as_numpy()
+            image = cv2.cvtColor((image[:, :, :3] * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
             image = np.transpose(image, (1, 0, 2))
             image = np.flip(image, axis=0)
             video_writer.write(image)
-
+    finally:
         video_writer.release()
+
+
+def render_vertices_to_video(
+    *,
+    vertices,
+    faces,
+    output_path,
+    fps=30,
+    width=512,
+    height=512,
+    arch="gpu",
+    camera_preset="frontal",
+    show_progress=True,
+    **camera_overrides,
+):
+    import cv2
+
+    _configure_taichi_env()
+    import taichi as ti
+
+    if not hasattr(ti, arch):
+        raise ValueError("Unsupported Taichi arch: {}".format(arch))
+
+    if hasattr(ti, "reset"):
+        ti.reset()
+    ti.init(arch=getattr(ti, arch), debug=False, log_level=ti.ERROR)
+
+    vertices = np.asarray(vertices, dtype=np.float32)
+    camera_args = SimpleNamespace(camera_preset=camera_preset, **{field: None for field in CAMERA_FIELDS})
+    for field in CAMERA_FIELDS:
+        if field in camera_overrides:
+            setattr(camera_args, field, camera_overrides[field])
+    camera_cfg = resolve_camera_config(camera_args)
+    renderer = _create_preview_renderer(
+        ti,
+        num_vertices=vertices.shape[1],
+        faces=faces,
+        width=width,
+        height=height,
+    )
+
+    try:
+        _write_vertices_video(
+            cv2=cv2,
+            renderer=renderer,
+            vertices=vertices,
+            output_path=output_path,
+            fps=fps,
+            width=width,
+            height=height,
+            camera_cfg=camera_cfg,
+            progress_label=Path(output_path).name,
+            show_progress=show_progress,
+        )
+    finally:
+        if hasattr(renderer.window, "destroy"):
+            renderer.window.destroy()
+
+    return str(output_path)
+
+
+def render_preview_jobs(args):
+    import cv2
+
+    _configure_taichi_env()
+    import taichi as ti
+
+    if not hasattr(ti, args.arch):
+        raise ValueError("Unsupported Taichi arch: {}".format(args.arch))
+
+    if hasattr(ti, "reset"):
+        ti.reset()
+    ti.init(arch=getattr(ti, args.arch), debug=False, log_level=ti.ERROR)
+
+    model = getattr(args, "model", None) or load_render_model(args.model_path)
+    camera_cfg = resolve_camera_config(args)
+    renderer = _create_preview_renderer(
+        ti,
+        num_vertices=model.v_template.shape[0],
+        faces=model.faces,
+        width=args.width,
+        height=args.height,
+    )
+    show_progress = getattr(args, "show_progress", True)
+
+    try:
+        for pkl_path, video_path in build_preview_jobs(args):
+            if osp.exists(video_path) and not args.force:
+                continue
+
+            vertices = load_vertices(pkl_path, model)
+            _write_vertices_video(
+                cv2=cv2,
+                renderer=renderer,
+                vertices=vertices,
+                output_path=video_path,
+                fps=args.fps,
+                width=args.width,
+                height=args.height,
+                camera_cfg=camera_cfg,
+                progress_label=osp.basename(pkl_path),
+                show_progress=show_progress,
+            )
+    finally:
+        if hasattr(renderer.window, "destroy"):
+            renderer.window.destroy()
 
 
 def render_stageii_preview(

@@ -1,17 +1,27 @@
 import copy
 import hashlib
 import importlib.util
+import io
 import json
 import platform
 import pickle
 import statistics
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
 
 import numpy as np
+
+
+PREVIEW_RENDER_BENCHMARK_WORKLOAD = {
+    "arch": "cpu",
+    "fps": 30,
+    "width": 128,
+    "height": 128,
+}
 
 
 @dataclass
@@ -363,6 +373,53 @@ def _benchmark_mesh_export(sample_path, baseline, *, repo_root, warmup_runs, mea
     return _summarize_latency_samples(latency_samples)
 
 
+def _benchmark_mp4_render(sample_path, baseline, *, repo_root, warmup_runs, measured_runs):
+    model_path = _preview_render_model_path(repo_root, gender=baseline.gender)
+    if model_path is None:
+        return None
+
+    try:
+        import render_video
+    except (ImportError, ModuleNotFoundError):
+        return None
+
+    try:
+        model = render_video.load_render_model(model_path)
+        vertices = render_video.load_vertices(sample_path, model)
+    except (FileNotFoundError, ImportError, ModuleNotFoundError):
+        return None
+
+    def _render_once():
+        with TemporaryDirectory() as temp_dir:
+            temp_dir = Path(temp_dir)
+            video_path = temp_dir / "benchmark_stageii.mp4"
+            suppressed = io.StringIO()
+            with redirect_stdout(suppressed), redirect_stderr(suppressed):
+                render_video.render_vertices_to_video(
+                    vertices=vertices,
+                    faces=model.faces,
+                    output_path=video_path,
+                    show_progress=False,
+                    **PREVIEW_RENDER_BENCHMARK_WORKLOAD,
+                )
+            if not video_path.exists() or video_path.stat().st_size == 0:
+                raise FileNotFoundError("preview render did not create a non-empty mp4 output")
+
+    try:
+        for _ in range(warmup_runs):
+            _render_once()
+    except (FileNotFoundError, ImportError, ModuleNotFoundError):
+        return None
+
+    latency_samples = []
+    for _ in range(measured_runs):
+        started_at = perf_counter()
+        _render_once()
+        latency_samples.append((perf_counter() - started_at) * 1000.0)
+
+    return _summarize_latency_samples(latency_samples)
+
+
 def _blocked_stages(repo_root):
     blocked = []
 
@@ -431,6 +488,13 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
         warmup_runs=warmup_runs,
         measured_runs=measured_runs,
     )
+    mp4_render_summary = _benchmark_mp4_render(
+        sample_path,
+        baseline,
+        repo_root=repo_root,
+        warmup_runs=warmup_runs,
+        measured_runs=measured_runs,
+    )
 
     return {
         "sample": {
@@ -448,6 +512,7 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
             "latent_marker_count": int(baseline.markers_latent.shape[0]),
             "mocap_frame_rate": baseline.mocap_frame_rate,
             "mocap_time_length": baseline.mocap_time_length,
+            "preview_render_workload": copy.deepcopy(PREVIEW_RENDER_BENCHMARK_WORKLOAD),
             "warmup_runs": warmup_runs,
             "measured_runs": measured_runs,
         },
@@ -456,6 +521,7 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
             "throughput_ops_s": 1000.0 / latency_summary["mean"] if latency_summary["mean"] > 0 else 0.0,
             "preview_vertex_decode_ms": preview_vertex_decode_summary,
             "mesh_export_ms": mesh_export_summary,
+            "mp4_render_ms": mp4_render_summary,
         },
         "error": {
             "repeatability": {
