@@ -4,6 +4,7 @@ from pathlib import Path
 import render_video
 import save_smplx_verts
 from utils.script_utils import (
+    batch_output_dir_for_input,
     default_stageii_artifact_paths,
     discover_stageii_pickles_in_dir,
     format_stageii_match_error,
@@ -191,6 +192,8 @@ def export_stageii_artifacts_batch(
     *,
     input_pkls,
     support_base_dir=None,
+    output_dir=None,
+    input_root=None,
     fps=30,
     width=512,
     height=512,
@@ -224,6 +227,11 @@ def export_stageii_artifacts_batch(
                 input_pkl=input_pkl,
                 model_path=resolved_model_path,
                 model=model,
+                output_dir=batch_output_dir_for_input(
+                    input_pkl,
+                    output_dir=output_dir,
+                    input_root=input_root,
+                ),
                 fps=fps,
                 width=width,
                 height=height,
@@ -240,8 +248,6 @@ def _batch_only_args_error(args):
     unsupported_args = []
     if args.model_path is not None:
         unsupported_args.append("--model-path")
-    if args.output_dir is not None:
-        unsupported_args.append("--output-dir")
     if args.obj_out is not None:
         unsupported_args.append("--obj-out")
     if args.pc2_out is not None:
@@ -280,6 +286,8 @@ def main(argv=None):
             export_stageii_artifacts_batch(
                 input_pkls=input_pkls,
                 support_base_dir=args.support_base_dir,
+                output_dir=args.output_dir,
+                input_root=args.input_dir,
                 fps=args.fps,
                 width=args.width,
                 height=args.height,

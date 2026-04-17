@@ -290,6 +290,51 @@ def test_convert_mosh_errors_when_export_artifacts_model_load_fails(
     assert len(mosh_calls) == 1
 
 
+def test_convert_mosh_passes_export_output_dir_to_batch_helper(monkeypatch, tmp_path):
+    dataset = "demo_ds"
+    work_dir = tmp_path / "work"
+    mocap_base_dir = tmp_path / "mocap"
+    support_dir = tmp_path / "support"
+    export_output_dir = tmp_path / "artifacts"
+    mocap_path = mocap_base_dir / dataset / "subject05" / "swing.mcp"
+
+    batch_calls = []
+    mosh_calls = []
+    _install_fake_mosh_manual_module(monkeypatch, mosh_calls)
+
+    export_module = types.ModuleType("export_stageii_artifacts")
+    export_module.export_stageii_artifacts_batch = lambda **kwargs: batch_calls.append(kwargs) or []
+    monkeypatch.setitem(sys.modules, "export_stageii_artifacts", export_module)
+
+    mocap_path.parent.mkdir(parents=True, exist_ok=True)
+    mocap_path.write_bytes(b"mcp")
+    _write_stageii_pickle(
+        work_dir / "mosh_results" / dataset / "subject05" / "swing_stageii.pkl",
+        model_path=support_dir / "smplx" / "male" / "model.npz",
+    )
+
+    convert_mosh.main(
+        [
+            "--dataset",
+            dataset,
+            "--mocap-base-dir",
+            str(mocap_base_dir),
+            "--work-base-dir",
+            str(work_dir),
+            "--support-base-dir",
+            str(support_dir),
+            "--export-artifacts",
+            "--export-output-dir",
+            str(export_output_dir),
+        ]
+    )
+
+    assert len(mosh_calls) == 1
+    assert len(batch_calls) == 1
+    assert batch_calls[0]["output_dir"] == str(export_output_dir)
+    assert batch_calls[0]["input_root"] == str(work_dir / "mosh_results" / dataset)
+
+
 def test_convert_mosh_errors_when_no_c3d_or_mcp_inputs_match(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         convert_mosh.main(

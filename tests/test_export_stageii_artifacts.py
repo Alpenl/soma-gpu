@@ -300,6 +300,60 @@ def test_export_stageii_artifacts_batch_reuses_loaded_model_for_shared_model_pat
     assert [call["model"] for call in export_calls] == [preloaded_model, preloaded_model]
 
 
+def test_export_stageii_artifacts_batch_mirrors_output_dir_relative_to_input_root(
+    monkeypatch, tmp_path
+):
+    support_dir = tmp_path / "support"
+    shared_model = support_dir / "smplx" / "male" / "model.npz"
+    shared_model.parent.mkdir(parents=True, exist_ok=True)
+    shared_model.write_bytes(b"npz")
+
+    input_root = tmp_path / "exports"
+    swing_stageii = input_root / "subject01" / "swing_stageii.pkl"
+    serve_stageii = input_root / "subject02" / "serve_stageii.pkl"
+    _write_stageii_pickle(
+        swing_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+    _write_stageii_pickle(
+        serve_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    export_calls = []
+    preloaded_model = type("PreloadedModel", (), {"faces": np.array([[0, 1, 2]], dtype=np.int32)})()
+
+    monkeypatch.setattr(
+        export_stageii_artifacts.render_video,
+        "load_render_model",
+        lambda model_path: preloaded_model,
+    )
+    monkeypatch.setattr(
+        export_stageii_artifacts,
+        "export_stageii_artifacts",
+        lambda **kwargs: export_calls.append(kwargs) or {
+            "obj_path": str(Path(kwargs["input_pkl"]).with_suffix(".obj")),
+            "pc2_path": str(Path(kwargs["input_pkl"]).with_suffix(".pc2")),
+            "video_path": str(Path(kwargs["input_pkl"]).with_suffix(".mp4")),
+        },
+    )
+
+    export_stageii_artifacts.export_stageii_artifacts_batch(
+        input_pkls=[swing_stageii, serve_stageii],
+        support_base_dir=support_dir,
+        output_dir=tmp_path / "artifacts",
+        input_root=input_root,
+        arch="cpu",
+    )
+
+    assert [call["output_dir"] for call in export_calls] == [
+        str(tmp_path / "artifacts" / "subject01"),
+        str(tmp_path / "artifacts" / "subject02"),
+    ]
+
+
 def test_export_stageii_artifacts_main_supports_recursive_input_dir(monkeypatch, tmp_path):
     support_dir = tmp_path / "support"
     matching_stageii = tmp_path / "exports" / "subject01" / "swing_stageii.pkl"
@@ -333,6 +387,8 @@ def test_export_stageii_artifacts_main_supports_recursive_input_dir(monkeypatch,
             str(tmp_path / "exports"),
             "--support-base-dir",
             str(support_dir),
+            "--output-dir",
+            str(tmp_path / "artifact-bundle"),
             "--fname-filter",
             "swing",
             "--fps",
@@ -342,6 +398,8 @@ def test_export_stageii_artifacts_main_supports_recursive_input_dir(monkeypatch,
 
     assert captured["input_pkls"] == [str(matching_stageii)]
     assert captured["support_base_dir"] == str(support_dir)
+    assert captured["output_dir"] == str(tmp_path / "artifact-bundle")
+    assert captured["input_root"] == str(tmp_path / "exports")
     assert captured["fps"] == 15
 
 

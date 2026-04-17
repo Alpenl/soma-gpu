@@ -291,6 +291,49 @@ def test_convert_tennis_errors_when_export_artifacts_model_load_fails(
     assert [call["run_tasks"] for call in run_calls] == [["soma"]]
 
 
+def test_convert_tennis_passes_export_output_dir_to_batch_helper(monkeypatch, tmp_path):
+    dataset = "demo_ds"
+    work_dir = tmp_path / "work"
+    mocap_base_dir = tmp_path / "mocap"
+    support_dir = tmp_path / "support"
+    export_output_dir = tmp_path / "artifacts"
+    batch_calls = []
+    run_calls = []
+    _install_fake_run_soma_module(monkeypatch, run_calls)
+
+    export_module = types.ModuleType("export_stageii_artifacts")
+    export_module.export_stageii_artifacts_batch = lambda **kwargs: batch_calls.append(kwargs) or []
+    monkeypatch.setitem(sys.modules, "export_stageii_artifacts", export_module)
+
+    _write_mocap_file(mocap_base_dir / dataset / "subject05" / "swing.c3d")
+    _write_stageii_pickle(
+        work_dir / dataset / "subject05" / "swing_stageii.pkl",
+        model_path=support_dir / "smplx" / "male" / "model.npz",
+    )
+
+    convert_tennis.main(
+        [
+            "--dataset",
+            dataset,
+            "--mocap-base-dir",
+            str(mocap_base_dir),
+            "--soma-work-base-dir",
+            str(work_dir),
+            "--support-base-dir",
+            str(support_dir),
+            "--skip-mosh",
+            "--export-artifacts",
+            "--export-output-dir",
+            str(export_output_dir),
+        ]
+    )
+
+    assert [call["run_tasks"] for call in run_calls] == [["soma"]]
+    assert len(batch_calls) == 1
+    assert batch_calls[0]["output_dir"] == str(export_output_dir)
+    assert batch_calls[0]["input_root"] == str(work_dir / dataset)
+
+
 def test_convert_tennis_errors_when_no_c3d_or_mcp_inputs_match_before_importing_soma(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         convert_tennis.main(

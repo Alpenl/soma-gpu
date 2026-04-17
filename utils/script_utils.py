@@ -27,6 +27,22 @@ def default_stageii_artifact_paths(stageii_pkl_path, *, video_suffix="_stageii.m
     return obj_out, pc2_out, video_out
 
 
+def batch_output_dir_for_input(input_path, *, output_dir=None, input_root=None):
+    if output_dir is None:
+        return None
+    output_dir = Path(output_dir)
+    if input_root is None:
+        return str(output_dir)
+
+    input_parent = Path(input_path).parent
+    input_root = Path(input_root)
+    try:
+        relative_parent = input_parent.relative_to(input_root)
+    except ValueError as exc:
+        raise ValueError(f"{input_path} is not under input_root={input_root}") from exc
+    return str(output_dir / relative_parent)
+
+
 def list_stageii_pickles(input_dir, suffix="_stageii.pkl"):
     pattern = osp.join(input_dir, "*" + suffix)
     return sorted(glob(pattern))

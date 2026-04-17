@@ -115,6 +115,11 @@ def build_parser():
         default="frontal",
         help="Camera preset forwarded to export_stageii_artifacts.py.",
     )
+    parser.add_argument(
+        "--export-output-dir",
+        default=None,
+        help="Optional root directory used to mirror batch stageii artifacts outside the dataset tree.",
+    )
     return parser
 
 
@@ -179,6 +184,7 @@ def export_stageii_artifacts_for_dataset(
     work_base_dir,
     dataset,
     support_base_dir=None,
+    output_dir=None,
     fname_filter=None,
     fps=30,
     width=512,
@@ -201,6 +207,8 @@ def export_stageii_artifacts_for_dataset(
     return export_stageii_artifacts.export_stageii_artifacts_batch(
         input_pkls=stageii_pickles,
         support_base_dir=support_base_dir,
+        output_dir=output_dir,
+        input_root=str(Path(work_base_dir) / dataset),
         fps=fps,
         width=width,
         height=height,
@@ -297,6 +305,7 @@ def main(argv=None):
                 work_base_dir=args.soma_work_base_dir,
                 dataset=args.dataset,
                 support_base_dir=support_base_dir,
+                output_dir=args.export_output_dir,
                 fname_filter=args.fname_filter,
                 fps=args.export_fps,
                 width=args.export_width,
