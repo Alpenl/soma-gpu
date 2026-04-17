@@ -898,6 +898,207 @@ def test_run_stageii_torch_official_main_errors_when_prepared_stageii_path_drift
     assert "prepared stageii output path drifted from expected plan" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_errors_when_benchmark_output_drifts_from_expected_contract(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
+    expected_benchmark_output = tmp_path / "benchmarks" / "capture_candidate_benchmark.json"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: {"sample": {"path": str(stageii_path)}, "quality": {}},
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "write_benchmark_report",
+        lambda *args, **kwargs: pytest.fail("write_benchmark_report should not run when benchmark output drifts"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--expected-benchmark-output",
+                str(expected_benchmark_output),
+            ]
+        )
+
+    assert "resolved benchmark output path drifted from expected plan" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_errors_when_mesh_export_paths_drift_from_expected_contract(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
+    mesh_output_dir = tmp_path / "mesh_exports"
+    mesh_support_dir = tmp_path / "mesh_support"
+    resolved_model_path = mesh_support_dir / "smplx" / "male" / "model.npz"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "resolve_stageii_model_path",
+        lambda *args, **kwargs: str(resolved_model_path),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "export_stageii_meshes",
+        lambda *args, **kwargs: pytest.fail("export_stageii_meshes should not run when mesh paths drift"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--skip-benchmark",
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(mesh_output_dir),
+                "--mesh-support-base-dir",
+                str(mesh_support_dir),
+                "--expected-mesh-obj-path",
+                str(mesh_output_dir / "unexpected.obj"),
+                "--expected-mesh-pc2-path",
+                str(mesh_output_dir / "capture_candidate_stageii.pc2"),
+            ]
+        )
+
+    assert "resolved mesh export obj path drifted from expected plan" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_errors_when_benchmark_writer_returns_drifted_report_path(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: {"sample": {"path": str(stageii_path)}, "quality": {}},
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "write_benchmark_report",
+        lambda report, output_path: {
+            **report,
+            "artifact": {"report_path": str(tmp_path / "drifted_benchmark.json")},
+        },
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(_required_official_runner_args(tmp_path))
+
+    assert "benchmark payload report_path drifted from requested output path" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_errors_when_mesh_export_returns_drifted_paths(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
+    mesh_output_dir = tmp_path / "mesh_exports"
+    mesh_support_dir = tmp_path / "mesh_support"
+    resolved_model_path = mesh_support_dir / "smplx" / "male" / "model.npz"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "resolve_stageii_model_path",
+        lambda *args, **kwargs: str(resolved_model_path),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "export_stageii_meshes",
+        lambda *args, **kwargs: (
+            str(mesh_output_dir / "drifted.obj"),
+            str(mesh_output_dir / "capture_candidate_stageii.pc2"),
+        ),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--skip-benchmark",
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(mesh_output_dir),
+                "--mesh-support-base-dir",
+                str(mesh_support_dir),
+            ]
+        )
+
+    assert "mesh export payload obj_path drifted from requested output path" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_runtime_error(
     tmp_path, monkeypatch, capsys
 ):

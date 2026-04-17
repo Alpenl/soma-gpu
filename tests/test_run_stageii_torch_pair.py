@@ -87,6 +87,8 @@ def test_run_stageii_torch_pair_main_runs_baseline_then_candidate_with_shared_an
                 "surface_model.gender=male",
                 "--cfg",
                 "runtime.sequence_transl_velocity=120",
+                "--expected-benchmark-output",
+                str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_benchmark.json"),
                 "--mesh-reference",
                 str(tmp_path / "real-mcp-baseline_baseline_stageii.pkl"),
             ],
@@ -177,6 +179,8 @@ def test_run_stageii_torch_pair_main_passes_returned_baseline_stageii_path_to_ca
             str(tmp_path / "work" / "input" / "wolf001" / "manual_candidate_candidate_stageii.pkl"),
             "--cfg",
             "mocap.basename=manual_candidate",
+            "--expected-benchmark-output",
+            str(tmp_path / "work" / "input" / "wolf001" / "manual_candidate_candidate_benchmark.json"),
             "--mesh-reference",
             str(baseline_stageii),
         ],
@@ -229,6 +233,9 @@ def test_run_stageii_torch_pair_main_passes_expected_stageii_paths_to_underlying
     assert candidate_argv[candidate_argv.index("--expected-stageii-path") + 1] == str(
         tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
     )
+    assert candidate_argv[candidate_argv.index("--expected-benchmark-output") + 1] == str(
+        tmp_path / "work" / "input" / "wolf001" / "capture_candidate_benchmark.json"
+    )
 
 
 def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_path, monkeypatch):
@@ -271,6 +278,8 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
             str(tmp_path / "work" / "input" / "wolf001" / "capture_baseline_stageii.pkl"),
             "--benchmark-output",
             str(tmp_path / "baseline_benchmark.json"),
+            "--expected-benchmark-output",
+            str(tmp_path / "baseline_benchmark.json"),
         ],
         False,
     )
@@ -289,6 +298,8 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
             "--expected-stageii-path",
             str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"),
             "--benchmark-output",
+            str(tmp_path / "candidate_benchmark.json"),
+            "--expected-benchmark-output",
             str(tmp_path / "candidate_benchmark.json"),
             "--mesh-reference",
             "stageii.pkl",
@@ -352,6 +363,10 @@ def test_run_stageii_torch_pair_main_forwards_mesh_export_flags_to_both_runs(tmp
                 "--export-mesh",
                 "--mesh-output-dir",
                 str(mesh_output_dir),
+                "--expected-mesh-obj-path",
+                str(mesh_output_dir / "capture_baseline_stageii.obj"),
+                "--expected-mesh-pc2-path",
+                str(mesh_output_dir / "capture_baseline_stageii.pc2"),
                 "--mesh-support-base-dir",
                 str(mesh_support_dir),
                 "--skip-benchmark",
@@ -375,8 +390,14 @@ def test_run_stageii_torch_pair_main_forwards_mesh_export_flags_to_both_runs(tmp
                 "--export-mesh",
                 "--mesh-output-dir",
                 str(mesh_output_dir),
+                "--expected-mesh-obj-path",
+                str(mesh_output_dir / "capture_candidate_stageii.obj"),
+                "--expected-mesh-pc2-path",
+                str(mesh_output_dir / "capture_candidate_stageii.pc2"),
                 "--mesh-support-base-dir",
                 str(mesh_support_dir),
+                "--expected-benchmark-output",
+                str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_benchmark.json"),
                 "--mesh-reference",
                 str(tmp_path / "real-mcp-baseline_baseline_stageii.pkl"),
             ],

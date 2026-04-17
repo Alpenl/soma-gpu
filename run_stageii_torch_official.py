@@ -132,6 +132,21 @@ def build_parser():
         default=None,
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--expected-benchmark-output",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--expected-mesh-obj-path",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--expected-mesh-pc2-path",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     return parser
 
 
@@ -251,6 +266,26 @@ def _validate_expected_stageii_path(stageii_path, *, expected_stageii_path=None)
         )
 
 
+def _validate_expected_output_path(path, *, expected_path=None, label):
+    if expected_path is None:
+        return
+    if _normalized_path(path) != _normalized_path(expected_path):
+        raise ValueError(
+            f"resolved {label} path drifted from expected plan: "
+            f"expected {expected_path} but got {path}"
+        )
+
+
+def _validate_returned_output_path(path, *, requested_path, label):
+    if not path:
+        raise ValueError(f"{label} is missing from helper return payload")
+    if _normalized_path(path) != _normalized_path(requested_path):
+        raise ValueError(
+            f"{label} drifted from requested output path: "
+            f"expected {requested_path} but got {path}"
+        )
+
+
 def _resolve_mesh_export_paths(stageii_path, *, output_dir=None):
     obj_out, pc2_out = default_stageii_output_paths(str(stageii_path))
     if output_dir is None:
@@ -260,17 +295,43 @@ def _resolve_mesh_export_paths(stageii_path, *, output_dir=None):
     return str(output_dir / Path(obj_out).name), str(output_dir / Path(pc2_out).name)
 
 
+def _resolve_benchmark_output_path(stageii_path, *, output_path=None):
+    if output_path is not None:
+        return Path(str(output_path))
+    return Path(default_benchmark_output_path(stageii_path))
+
+
 def _export_meshes(stageii_path, args):
     model_path = resolve_stageii_model_path(
         str(stageii_path),
         support_base_dir=_mesh_support_base_dir(args),
     )
     obj_out, pc2_out = _resolve_mesh_export_paths(stageii_path, output_dir=args.mesh_output_dir)
+    _validate_expected_output_path(
+        obj_out,
+        expected_path=args.expected_mesh_obj_path,
+        label="mesh export obj",
+    )
+    _validate_expected_output_path(
+        pc2_out,
+        expected_path=args.expected_mesh_pc2_path,
+        label="mesh export pc2",
+    )
     obj_path, pc2_path = export_stageii_meshes(
         str(stageii_path),
         model_path=model_path,
         obj_out=obj_out,
         pc2_out=pc2_out,
+    )
+    _validate_returned_output_path(
+        obj_path,
+        requested_path=obj_out,
+        label="mesh export payload obj_path",
+    )
+    _validate_returned_output_path(
+        pc2_path,
+        requested_path=pc2_out,
+        label="mesh export payload pc2_path",
     )
     return {
         "obj_path": obj_path,
@@ -324,8 +385,26 @@ def run(argv=None, *, emit_json=True):
                 mesh_chunk_size=args.mesh_chunk_size,
                 mesh_chunk_overlap=args.mesh_chunk_overlap,
             )
-            benchmark_output_path = args.benchmark_output or default_benchmark_output_path(stageii_path)
+            benchmark_output_path = _resolve_benchmark_output_path(
+                stageii_path,
+                output_path=args.benchmark_output,
+            )
+            _validate_expected_output_path(
+                benchmark_output_path,
+                expected_path=args.expected_benchmark_output,
+                label="benchmark output",
+            )
             report = write_benchmark_report(report, str(benchmark_output_path))
+            report_path = None
+            if isinstance(report, dict):
+                artifact = report.get("artifact")
+                if isinstance(artifact, dict):
+                    report_path = artifact.get("report_path")
+            _validate_returned_output_path(
+                report_path,
+                requested_path=benchmark_output_path,
+                label="benchmark payload report_path",
+            )
             payload["benchmark"] = report
         except BENCHMARK_CLI_ERROR_TYPES as exc:
             parser.error(str(exc))

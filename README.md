@@ -157,6 +157,8 @@ python run_stageii_torch_official.py \
 若不显式传 `--benchmark-output`，runner 也会默认把报告写到同目录下的 `*_benchmark.json`：例如 `foo_stageii.pkl -> foo_benchmark.json`。`--benchmark-output` 现在只用于覆盖这个默认落点，而不是决定“是否写盘”。
 若 benchmark 这段本身因为 mesh compare 参数不合法、reference 路径/模型解析失败等原因出错，single runner 现在也会把异常收口成 CLI error，避免直接抛 Python 栈。
 若 official-run 段本身因为 `MoSh.prepare_cfg(...)` 配置错误、`run_moshpp_once(cfg)` 运行期文件错误，或最终没有真正产出预期的 `stageii.pkl` 而失败，single runner 现在也会直接以 CLI error 退出，而不是把原始 `ValueError` / `OSError` / `FileNotFoundError` 栈追踪打到终端。
+当 single runner 被 pair runner 静默复用时，它现在除了校验 hidden 的 `--expected-stageii-path` 之外，也会校验 hidden 的 `--expected-benchmark-output`、`--expected-mesh-obj-path`、`--expected-mesh-pc2-path`。这些 internal contract 会在真正写 benchmark JSON 或导出 OBJ/PC2 前生效；如果底层实际落点和 pair runner 的 planned 路径漂开，命令会在写盘前直接报错，避免 candidate 输出覆盖 baseline 产物。
+single runner 现在还会继续校验 helper 返回 payload 本身：`export_stageii_meshes(...)` 返回的 `obj_path/pc2_path`，以及 `write_benchmark_report(...)` 返回的 `artifact.report_path`，都必须仍然等于它刚刚请求写盘的路径。这样下游拿到的 JSON/path payload 不会和实际写盘目标脱钩。
 若显式传了 `--skip-benchmark`，single runner 现在也会同步拒绝所有 benchmark-only 参数：例如 `--benchmark-output`、`--warmup-runs`、`--measured-runs`、`--mesh-reference` / `--mesh-reference-output-suffix`、`--mesh-chunk-*`。这样不会再出现“命令看起来要求了 compare/report，但其实整段 benchmark 被跳过”的 silent no-op。
 若 benchmark 仍开启，但你没有提供 `--mesh-reference` / `--mesh-reference-output-suffix`，single runner 现在也会拒绝纯 mesh-compare 参数：`--mesh-chunk-size`、`--mesh-chunk-overlap`，以及在既不导 mesh、也不做 mesh compare 时单独传入的 `--mesh-support-base-dir`。即使已经提供了 mesh reference，`--mesh-chunk-overlap` 现在也必须和 `--mesh-chunk-size` 成对出现。这样不会再把 overlap-only 配置拖到更深层 mesh helper 才报错。
 
@@ -200,6 +202,12 @@ python run_stageii_torch_pair.py \
 - 若开启了 `--export-mesh --mesh-output-dir`，pair runner 现在还会继续检查 baseline/candidate 推导出的 OBJ/PC2 落点是否会同名；即使两侧 `stageii.pkl` 在不同目录，只要 basename 一样、最终会把导出写进同一个 OBJ/PC2 路径，也会直接报错，避免 mesh 主线复核时把 baseline 导出物悄悄被 candidate 覆盖。
 - 若 baseline 也开启了 standalone benchmark，pair runner 现在还会比较 baseline/candidate 最终的 benchmark JSON 落点；只要 `--baseline-benchmark-output` 与 candidate 的显式或默认 `*_benchmark.json` 路径相同，命令也会直接报错，避免 pair 复核报告互相覆盖。
 - 即使静态预检没有命中，pair runner 现在也会在 baseline 真正跑完后，再把 baseline payload 里实际返回的 `stageii_path`、`mesh_export.obj/pc2`、以及 baseline benchmark `report_path` 与 candidate 的计划落点做一次二次比对；如果 underlying single runner 的真实落点和静态预判漂移到会覆盖 candidate，命令会在 candidate 启动前直接中止，而不是继续把 baseline 产物覆盖掉。
+- 除了上面的 baseline-actual 二次比对，pair runner 现在也会把 planned benchmark / mesh 输出路径连同 `stageii.pkl` 计划路径一起，作为 hidden internal arg 下推给 underlying single runner：
+  - `--expected-stageii-path`
+  - `--expected-benchmark-output`
+  - `--expected-mesh-obj-path`
+  - `--expected-mesh-pc2-path`
+  这样若 single runner 在真正写 benchmark JSON / OBJ / PC2 前发现输出路径已经偏离 pair runner 的静态计划，就会在覆盖发生前直接失败，而不是等 pair runner 事后从 payload 才发现。
 - pair runner 现在还会把请求过的产物当作强 contract：
   - 开了 `--export-mesh`，baseline/candidate 两侧都必须从 underlying single runner 返回 `mesh_export.obj_path` 与 `mesh_export.pc2_path`
   - baseline 显式开了 standalone benchmark 或 candidate 默认 benchmark 路径缺失 `benchmark.artifact.report_path` 时，也会直接报错

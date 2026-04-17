@@ -132,20 +132,33 @@ def _append_cfg_args(runner_args, cfg_entries):
         runner_args.extend(["--cfg", entry])
 
 
-def _append_benchmark_args(runner_args, args, *, benchmark_output=None, include_mesh_reference=False):
+def _append_benchmark_args(runner_args, args, *, benchmark_output=None, expected_benchmark_output=None):
     if benchmark_output is not None:
         runner_args.extend(["--benchmark-output", benchmark_output])
+    if expected_benchmark_output is not None:
+        runner_args.extend(["--expected-benchmark-output", str(expected_benchmark_output)])
     if args.warmup_runs != 1:
         runner_args.extend(["--warmup-runs", str(args.warmup_runs)])
     if args.measured_runs != 5:
         runner_args.extend(["--measured-runs", str(args.measured_runs)])
 
 
-def _append_mesh_args(runner_args, args, *, include_mesh_reference=False):
+def _append_mesh_args(
+    runner_args,
+    args,
+    *,
+    include_mesh_reference=False,
+    expected_mesh_obj_path=None,
+    expected_mesh_pc2_path=None,
+):
     if args.export_mesh:
         runner_args.append("--export-mesh")
         if args.mesh_output_dir is not None:
             runner_args.extend(["--mesh-output-dir", args.mesh_output_dir])
+        if expected_mesh_obj_path is not None:
+            runner_args.extend(["--expected-mesh-obj-path", str(expected_mesh_obj_path)])
+        if expected_mesh_pc2_path is not None:
+            runner_args.extend(["--expected-mesh-pc2-path", str(expected_mesh_pc2_path)])
     if args.mesh_support_base_dir is not None and (args.export_mesh or include_mesh_reference):
         runner_args.extend(["--mesh-support-base-dir", args.mesh_support_base_dir])
     if not include_mesh_reference:
@@ -156,7 +169,14 @@ def _append_mesh_args(runner_args, args, *, include_mesh_reference=False):
         runner_args.extend(["--mesh-chunk-overlap", str(args.mesh_chunk_overlap)])
 
 
-def _build_baseline_runner_args(args, *, expected_stageii_path=None):
+def _build_baseline_runner_args(
+    args,
+    *,
+    expected_stageii_path=None,
+    expected_benchmark_output=None,
+    expected_mesh_obj_path=None,
+    expected_mesh_pc2_path=None,
+):
     runner_args = _base_runner_args(args)
     runner_args.extend(["--preset", args.baseline_preset])
     runner_args.extend(["--output-suffix", args.baseline_output_suffix])
@@ -164,7 +184,13 @@ def _build_baseline_runner_args(args, *, expected_stageii_path=None):
         runner_args.extend(["--expected-stageii-path", str(expected_stageii_path)])
     _append_cfg_args(runner_args, args.cfg)
     _append_cfg_args(runner_args, args.baseline_cfg)
-    _append_mesh_args(runner_args, args, include_mesh_reference=False)
+    _append_mesh_args(
+        runner_args,
+        args,
+        include_mesh_reference=False,
+        expected_mesh_obj_path=expected_mesh_obj_path,
+        expected_mesh_pc2_path=expected_mesh_pc2_path,
+    )
     if args.baseline_benchmark_output is None:
         runner_args.append("--skip-benchmark")
     else:
@@ -172,12 +198,20 @@ def _build_baseline_runner_args(args, *, expected_stageii_path=None):
             runner_args,
             args,
             benchmark_output=args.baseline_benchmark_output,
-            include_mesh_reference=False,
+            expected_benchmark_output=expected_benchmark_output,
         )
     return runner_args
 
 
-def _build_candidate_runner_args(args, *, mesh_reference_path=None, expected_stageii_path=None):
+def _build_candidate_runner_args(
+    args,
+    *,
+    mesh_reference_path=None,
+    expected_stageii_path=None,
+    expected_benchmark_output=None,
+    expected_mesh_obj_path=None,
+    expected_mesh_pc2_path=None,
+):
     runner_args = _base_runner_args(args)
     runner_args.extend(["--preset", args.candidate_preset])
     runner_args.extend(["--output-suffix", args.candidate_output_suffix])
@@ -185,12 +219,18 @@ def _build_candidate_runner_args(args, *, mesh_reference_path=None, expected_sta
         runner_args.extend(["--expected-stageii-path", str(expected_stageii_path)])
     _append_cfg_args(runner_args, args.cfg)
     _append_cfg_args(runner_args, args.candidate_cfg)
-    _append_mesh_args(runner_args, args, include_mesh_reference=True)
+    _append_mesh_args(
+        runner_args,
+        args,
+        include_mesh_reference=True,
+        expected_mesh_obj_path=expected_mesh_obj_path,
+        expected_mesh_pc2_path=expected_mesh_pc2_path,
+    )
     _append_benchmark_args(
         runner_args,
         args,
         benchmark_output=args.candidate_benchmark_output,
-        include_mesh_reference=True,
+        expected_benchmark_output=expected_benchmark_output,
     )
     if mesh_reference_path is not None:
         runner_args.extend(["--mesh-reference", mesh_reference_path])
@@ -290,10 +330,9 @@ def _planned_mesh_output_paths(args, *, stageii_path):
     )
 
 
-def _planned_candidate_benchmark_output_path(args, *, candidate_stageii_path):
+def _planned_benchmark_output_path(*, explicit_output=None, stageii_path):
     return Path(
-        args.candidate_benchmark_output
-        or run_stageii_torch_official.default_benchmark_output_path(candidate_stageii_path)
+        explicit_output or run_stageii_torch_official.default_benchmark_output_path(stageii_path)
     )
 
 
@@ -301,9 +340,9 @@ def _validate_distinct_benchmark_output_paths(parser, args, *, candidate_stageii
     if args.baseline_benchmark_output is None:
         return
     baseline_benchmark_output = Path(args.baseline_benchmark_output)
-    candidate_benchmark_output = _planned_candidate_benchmark_output_path(
-        args,
-        candidate_stageii_path=candidate_stageii_path,
+    candidate_benchmark_output = _planned_benchmark_output_path(
+        explicit_output=args.candidate_benchmark_output,
+        stageii_path=candidate_stageii_path,
     )
     if _normalized_path(baseline_benchmark_output) == _normalized_path(candidate_benchmark_output):
         parser.error(
@@ -388,9 +427,9 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
             baseline_payload,
             label="baseline",
         )
-        candidate_benchmark_output = _planned_candidate_benchmark_output_path(
-            args,
-            candidate_stageii_path=candidate_stageii_path,
+        candidate_benchmark_output = _planned_benchmark_output_path(
+            explicit_output=args.candidate_benchmark_output,
+            stageii_path=candidate_stageii_path,
         )
         if _normalized_path(baseline_benchmark_output) == _normalized_path(candidate_benchmark_output):
             parser.error(
@@ -411,6 +450,27 @@ def run(argv=None, *, emit_json=True):
 
     try:
         baseline_stageii_path, candidate_stageii_path = _planned_stageii_output_paths(parser, args)
+        baseline_mesh_obj_path = baseline_mesh_pc2_path = None
+        candidate_mesh_obj_path = candidate_mesh_pc2_path = None
+        if args.export_mesh:
+            baseline_mesh_obj_path, baseline_mesh_pc2_path = _planned_mesh_output_paths(
+                args,
+                stageii_path=baseline_stageii_path,
+            )
+            candidate_mesh_obj_path, candidate_mesh_pc2_path = _planned_mesh_output_paths(
+                args,
+                stageii_path=candidate_stageii_path,
+            )
+        baseline_benchmark_output = None
+        if args.baseline_benchmark_output is not None:
+            baseline_benchmark_output = _planned_benchmark_output_path(
+                explicit_output=args.baseline_benchmark_output,
+                stageii_path=baseline_stageii_path,
+            )
+        candidate_benchmark_output = _planned_benchmark_output_path(
+            explicit_output=args.candidate_benchmark_output,
+            stageii_path=candidate_stageii_path,
+        )
         _validate_distinct_stageii_output_paths(
             parser,
             baseline_stageii_path=baseline_stageii_path,
@@ -431,6 +491,9 @@ def run(argv=None, *, emit_json=True):
             _build_baseline_runner_args(
                 args,
                 expected_stageii_path=baseline_stageii_path,
+                expected_benchmark_output=baseline_benchmark_output,
+                expected_mesh_obj_path=baseline_mesh_obj_path,
+                expected_mesh_pc2_path=baseline_mesh_pc2_path,
             ),
             emit_json=False,
         )
@@ -445,6 +508,9 @@ def run(argv=None, *, emit_json=True):
                 args,
                 mesh_reference_path=baseline_stageii_path,
                 expected_stageii_path=candidate_stageii_path,
+                expected_benchmark_output=candidate_benchmark_output,
+                expected_mesh_obj_path=candidate_mesh_obj_path,
+                expected_mesh_pc2_path=candidate_mesh_pc2_path,
             ),
             emit_json=False,
         )
