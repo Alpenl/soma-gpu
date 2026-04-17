@@ -1,0 +1,251 @@
+import importlib
+import importlib.util
+import sys
+from pathlib import Path
+
+import torch
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from moshpp.optim.frame_fit_torch import make_stageii_latent_layout
+from moshpp.transformed_lm_torch import build_marker_attachment
+
+
+def _load_sequence_fit_module():
+    try:
+        spec = importlib.util.find_spec("moshpp.optim.sequence_fit_torch")
+    except ModuleNotFoundError:
+        spec = None
+    assert spec is not None, "moshpp.optim.sequence_fit_torch is not available on main yet"
+    return importlib.import_module("moshpp.optim.sequence_fit_torch")
+
+
+class DummyBodyOutput:
+    def __init__(self, vertices, joints):
+        self.vertices = vertices
+        self.joints = joints
+
+
+class TranslOnlyBodyModel:
+    def __init__(self, canonical_vertices):
+        self.canonical_vertices = canonical_vertices
+
+    def __call__(self, **kwargs):
+        transl = kwargs["transl"]
+        vertices = self.canonical_vertices.unsqueeze(0) + transl[:, None, :]
+        joints = torch.zeros(transl.shape[0], 3, 3, dtype=vertices.dtype, device=vertices.device)
+        return DummyBodyOutput(vertices=vertices, joints=joints)
+
+
+class ZeroPosePrior:
+    def __init__(self, dim):
+        self.means = torch.zeros(1, dim)
+
+    def __call__(self, x):
+        return torch.zeros(x.shape[0], x.shape[1] + 1, dtype=x.dtype, device=x.device)
+
+
+def _make_minimal_problem(num_frames=6):
+    canonical_markers = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    marker_attachment = build_marker_attachment(canonical_markers, canonical_markers)
+    layout = make_stageii_latent_layout(
+        surface_model_type="smplx",
+        dof_per_hand=24,
+        optimize_fingers=False,
+        optimize_face=False,
+    )
+    true_transl = torch.stack(
+        [torch.tensor([0.05 * t, -0.03 * t, 0.02 * t], dtype=torch.float32) for t in range(num_frames)],
+        dim=0,
+    )
+    marker_observations = canonical_markers.unsqueeze(0) + true_transl[:, None, :]
+    return canonical_markers, marker_attachment, layout, true_transl, marker_observations
+
+
+def test_fit_stageii_sequence_torch_recovers_translation_on_synthetic_sequence():
+    module = _load_sequence_fit_module()
+    canonical_markers, marker_attachment, layout, true_transl, marker_observations = _make_minimal_problem(num_frames=8)
+
+    result = module.fit_stageii_sequence_torch(
+        body_model=TranslOnlyBodyModel(canonical_markers),
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        pose_prior=ZeroPosePrior(63),
+        layout=layout,
+        latent_pose_init=torch.zeros(marker_observations.shape[0], layout.latent_dim),
+        transl_init=torch.zeros(marker_observations.shape[0], 3),
+        weights=module.TorchSequenceFitWeights(
+            data=1.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+            temporal_accel=0.0,
+        ),
+        options=module.TorchSequenceFitOptions(max_iters=250, lr=0.08, optimizer="adam"),
+    )
+
+    assert result.transl.shape == true_transl.shape
+    assert result.predicted_markers.shape == marker_observations.shape
+    assert torch.allclose(result.transl, true_transl, atol=2e-2)
+    assert torch.allclose(result.predicted_markers, marker_observations, atol=2e-2)
+
+
+def test_fit_stageii_sequence_torch_respects_visible_mask_and_marker_data_weights():
+    module = _load_sequence_fit_module()
+    canonical_markers, marker_attachment, layout, true_transl, marker_observations = _make_minimal_problem(num_frames=2)
+
+    outlier = torch.tensor([12.0, 12.0, 12.0], dtype=torch.float32)
+    marker_observations = marker_observations.clone()
+    marker_observations[0, -1] = outlier
+    marker_observations[1, -2] = outlier
+
+    visible_mask = torch.ones(marker_observations.shape[:2], dtype=torch.bool)
+    visible_mask[0, -1] = False
+    marker_data_weights = torch.ones(marker_observations.shape[:2], dtype=torch.float32)
+    marker_data_weights[1, -2] = 0.0
+
+    result = module.fit_stageii_sequence_torch(
+        body_model=TranslOnlyBodyModel(canonical_markers),
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        visible_mask=visible_mask,
+        marker_data_weights=marker_data_weights,
+        pose_prior=ZeroPosePrior(63),
+        layout=layout,
+        latent_pose_init=torch.zeros(marker_observations.shape[0], layout.latent_dim),
+        transl_init=torch.zeros(marker_observations.shape[0], 3),
+        weights=module.TorchSequenceFitWeights(
+            data=1.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+            temporal_accel=0.0,
+        ),
+        options=module.TorchSequenceFitOptions(max_iters=250, lr=0.08, optimizer="adam"),
+    )
+
+    assert torch.allclose(result.transl, true_transl, atol=2e-2)
+
+
+def test_fit_stageii_sequence_torch_temporal_second_order_term_smooths_translation():
+    module = _load_sequence_fit_module()
+    torch.manual_seed(42)
+    canonical_markers, marker_attachment, layout, true_transl, clean_observations = _make_minimal_problem(num_frames=12)
+    noisy_observations = clean_observations + 0.03 * torch.randn_like(clean_observations)
+
+    common_kwargs = dict(
+        body_model=TranslOnlyBodyModel(canonical_markers),
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=noisy_observations,
+        pose_prior=ZeroPosePrior(63),
+        layout=layout,
+        latent_pose_init=torch.zeros(noisy_observations.shape[0], layout.latent_dim),
+        transl_init=torch.zeros(noisy_observations.shape[0], 3),
+        options=module.TorchSequenceFitOptions(max_iters=300, lr=0.07, optimizer="adam"),
+    )
+
+    no_smooth = module.fit_stageii_sequence_torch(
+        weights=module.TorchSequenceFitWeights(
+            data=1.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+            temporal_accel=0.0,
+        ),
+        **common_kwargs,
+    )
+    with_smooth = module.fit_stageii_sequence_torch(
+        weights=module.TorchSequenceFitWeights(
+            data=1.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+            temporal_accel=5.0,
+        ),
+        **common_kwargs,
+    )
+
+    accel_no_smooth = no_smooth.transl[2:] - 2.0 * no_smooth.transl[1:-1] + no_smooth.transl[:-2]
+    accel_with_smooth = with_smooth.transl[2:] - 2.0 * with_smooth.transl[1:-1] + with_smooth.transl[:-2]
+
+    no_smooth_norm = torch.mean(torch.linalg.norm(accel_no_smooth, dim=1))
+    with_smooth_norm = torch.mean(torch.linalg.norm(accel_with_smooth, dim=1))
+
+    assert with_smooth_norm < no_smooth_norm
+    assert torch.allclose(with_smooth.transl.mean(dim=0), true_transl.mean(dim=0), atol=8e-2)
+
+
+def test_fit_stageii_sequence_torch_delta_trans_regularization_keeps_solution_near_seed_under_outlier():
+    module = _load_sequence_fit_module()
+    canonical_markers, marker_attachment, layout, true_transl, marker_observations = _make_minimal_problem(num_frames=6)
+    noisy = marker_observations.clone()
+    noisy[3:] += torch.tensor([0.30, -0.20, 0.10], dtype=torch.float32)
+
+    common_kwargs = dict(
+        body_model=TranslOnlyBodyModel(canonical_markers),
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=noisy,
+        pose_prior=ZeroPosePrior(63),
+        layout=layout,
+        latent_pose_init=torch.zeros(noisy.shape[0], layout.latent_dim),
+        transl_init=true_transl.clone(),
+        options=module.TorchSequenceFitOptions(max_iters=200, lr=0.06, optimizer="adam"),
+    )
+
+    unconstrained = module.fit_stageii_sequence_torch(
+        weights=module.TorchSequenceFitWeights(
+            data=1.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+            temporal_accel=0.0,
+            delta_pose=0.0,
+            delta_trans=0.0,
+            delta_expr=0.0,
+        ),
+        **common_kwargs,
+    )
+    constrained = module.fit_stageii_sequence_torch(
+        weights=module.TorchSequenceFitWeights(
+            data=1.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+            temporal_accel=0.0,
+            delta_pose=0.0,
+            delta_trans=4.0,
+            delta_expr=0.0,
+        ),
+        **common_kwargs,
+    )
+
+    unconstrained_err = torch.mean(torch.linalg.norm(unconstrained.transl - true_transl, dim=1))
+    constrained_err = torch.mean(torch.linalg.norm(constrained.transl - true_transl, dim=1))
+
+    assert constrained_err < unconstrained_err
