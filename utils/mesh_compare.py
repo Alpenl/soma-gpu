@@ -38,22 +38,46 @@ def _fallback_stageii_model_path(sample_path, *, support_base_dir=None):
     if not support_base_dir:
         return None
     baseline = normalize_stageii_sample(sample_path)
-    base_dir = Path(support_base_dir) / baseline.surface_model_type / baseline.gender
-    for suffix in (".npz", ".pkl"):
-        candidate = base_dir / f"model{suffix}"
-        if candidate.exists():
-            return str(candidate)
-    return str(base_dir / "model.npz")
+    candidate_types = []
+    for model_type in (baseline.surface_model_type, "smplx"):
+        if model_type and model_type != "unknown" and model_type not in candidate_types:
+            candidate_types.append(model_type)
+    candidate_genders = []
+    for gender in (baseline.gender, "neutral"):
+        if gender and gender != "unknown" and gender not in candidate_genders:
+            candidate_genders.append(gender)
+
+    fallback_candidates = []
+    for model_type in candidate_types:
+        for gender in candidate_genders:
+            base_dir = Path(support_base_dir) / model_type / gender
+            for suffix in (".npz", ".pkl"):
+                candidate = base_dir / f"model{suffix}"
+                if candidate.exists():
+                    return str(candidate)
+                fallback_candidates.append(str(candidate))
+    if fallback_candidates:
+        return fallback_candidates[0]
+    return None
 
 
 def _stageii_model_path(sample_path, *, support_base_dir=None):
+    resolved_path = None
+    resolve_error = None
     try:
-        return resolve_stageii_model_path(str(sample_path), support_base_dir=support_base_dir)
-    except (KeyError, ValueError):
-        fallback = _fallback_stageii_model_path(sample_path, support_base_dir=support_base_dir)
-        if fallback is None:
-            raise
+        resolved_path = resolve_stageii_model_path(str(sample_path), support_base_dir=support_base_dir)
+    except (KeyError, ValueError) as exc:
+        resolve_error = exc
+
+    if resolved_path is not None and Path(resolved_path).exists():
+        return resolved_path
+
+    fallback = _fallback_stageii_model_path(sample_path, support_base_dir=support_base_dir)
+    if fallback is not None:
         return fallback
+    if resolved_path is not None:
+        return resolved_path
+    raise resolve_error
 
 
 def _loaded_chunk_config(input_path, *, explicit_chunk_config=None):

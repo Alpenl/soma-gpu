@@ -428,6 +428,27 @@ def _summarize_stageii_quality(sample_path, baseline):
     return quality
 
 
+def _summarize_mesh_compare(
+    sample_path,
+    *,
+    reference_path,
+    support_base_dir=None,
+    chunk_size=None,
+    chunk_overlap=None,
+):
+    from utils.mesh_compare import compare_mesh_sequences
+
+    report = compare_mesh_sequences(
+        reference_path,
+        sample_path,
+        support_base_dir=support_base_dir,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    report["reference_path"] = str(reference_path)
+    return report
+
+
 def _support_files_root(repo_root):
     return Path(repo_root) / "support_files"
 
@@ -736,7 +757,16 @@ def _is_public_stageii_sample(sample_path, repo_root):
         return False
 
 
-def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5):
+def run_public_stageii_benchmark(
+    sample_path,
+    *,
+    warmup_runs=1,
+    measured_runs=5,
+    mesh_reference_path=None,
+    mesh_support_base_dir=None,
+    mesh_chunk_size=None,
+    mesh_chunk_overlap=None,
+):
     sample_path = Path(sample_path)
     if warmup_runs < 0:
         raise ValueError("warmup_runs must be >= 0")
@@ -787,7 +817,16 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
         warmup_runs=warmup_runs,
         measured_runs=measured_runs,
     )
-    quality_summary = _summarize_stageii_quality(sample_path, baseline)
+    quality_summary = dict(_summarize_stageii_quality(sample_path, baseline))
+    quality_summary["mesh_compare"] = None
+    if mesh_reference_path is not None:
+        quality_summary["mesh_compare"] = _summarize_mesh_compare(
+            sample_path,
+            reference_path=mesh_reference_path,
+            support_base_dir=mesh_support_base_dir,
+            chunk_size=mesh_chunk_size,
+            chunk_overlap=mesh_chunk_overlap,
+        )
 
     return {
         "sample": {

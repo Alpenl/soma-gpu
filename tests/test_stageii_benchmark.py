@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import benchmark_stageii_public
 import utils.stageii_benchmark as stageii_benchmark
 from utils.stageii_benchmark import (
     normalize_stageii_sample,
@@ -272,7 +273,128 @@ def test_run_public_stageii_benchmark_includes_quality_summary_when_available(mo
         measured_runs=1,
     )
 
-    assert report["quality"] == quality_summary
+    assert report["quality"] == {**quality_summary, "mesh_compare": None}
+
+
+def test_run_public_stageii_benchmark_includes_optional_mesh_compare_summary(monkeypatch):
+    mesh_compare_summary = {
+        "reference_path": "/tmp/baseline_stageii.pkl",
+        "reference": {"mesh_accel_l2": {"mean": 1.0}},
+        "candidate": {"mesh_accel_l2": {"mean": 0.5}},
+        "frame_delta_l2": {"mean": 0.25},
+    }
+    captured = {}
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_stageii_quality",
+        lambda *args, **kwargs: {
+            "marker_residual_l2": {"count": 3, "mean": 1.0},
+            "trans_jitter_l2": {"count": 2, "mean": 0.5},
+            "pose_jitter_l2": {"count": 2, "mean": 0.25},
+            "chunk_seam_transl_jump_l2": None,
+            "chunk_seam_pose_jump_l2": None,
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_mesh_compare",
+        lambda sample_path, *, reference_path, support_base_dir, chunk_size, chunk_overlap: (
+            captured.update(
+                {
+                    "sample_path": sample_path,
+                    "reference_path": reference_path,
+                    "support_base_dir": support_base_dir,
+                    "chunk_size": chunk_size,
+                    "chunk_overlap": chunk_overlap,
+                }
+            )
+            or mesh_compare_summary
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        ROOT / "support_data/tests/mosh_stageii.pkl",
+        warmup_runs=0,
+        measured_runs=1,
+        mesh_reference_path="/tmp/baseline_stageii.pkl",
+        mesh_support_base_dir="/tmp/support_files",
+        mesh_chunk_size=32,
+        mesh_chunk_overlap=4,
+    )
+
+    assert report["quality"]["mesh_compare"] == mesh_compare_summary
+    assert captured == {
+        "sample_path": ROOT / "support_data/tests/mosh_stageii.pkl",
+        "reference_path": "/tmp/baseline_stageii.pkl",
+        "support_base_dir": "/tmp/support_files",
+        "chunk_size": 32,
+        "chunk_overlap": 4,
+    }
+
+
+def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monkeypatch, capsys):
+    captured = {}
+
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap: (
+            captured.update(
+                {
+                    "sample_path": sample_path,
+                    "warmup_runs": warmup_runs,
+                    "measured_runs": measured_runs,
+                    "mesh_reference_path": mesh_reference_path,
+                    "mesh_support_base_dir": mesh_support_base_dir,
+                    "mesh_chunk_size": mesh_chunk_size,
+                    "mesh_chunk_overlap": mesh_chunk_overlap,
+                }
+            )
+            or {
+                "sample": {"path": sample_path},
+                "quality": {"mesh_compare": None},
+                "artifact": {"report_path": None},
+            }
+        ),
+    )
+
+    benchmark_stageii_public.main(
+        [
+            "--input",
+            "candidate_stageii.pkl",
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+            "--mesh-reference",
+            "baseline_stageii.pkl",
+            "--mesh-support-base-dir",
+            "/tmp/support_files",
+            "--mesh-chunk-size",
+            "64",
+            "--mesh-chunk-overlap",
+            "8",
+        ]
+    )
+
+    assert captured == {
+        "sample_path": "candidate_stageii.pkl",
+        "warmup_runs": 0,
+        "measured_runs": 1,
+        "mesh_reference_path": "baseline_stageii.pkl",
+        "mesh_support_base_dir": "/tmp/support_files",
+        "mesh_chunk_size": 64,
+        "mesh_chunk_overlap": 8,
+    }
+    output = json.loads(capsys.readouterr().out)
+    assert output["sample"]["path"] == "candidate_stageii.pkl"
 
 
 def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_new_format(

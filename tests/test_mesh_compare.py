@@ -44,7 +44,9 @@ def test_load_mesh_sequence_reads_stageii_pkl_and_uses_runtime_chunk_config(tmp_
                             "sequence_chunk_size": 32,
                             "sequence_chunk_overlap": 4,
                         },
-                    }
+                    },
+                    "markers_obs": np.zeros((5, 1, 3), dtype=np.float32),
+                    "labels_obs": [["A"]] * 5,
                 },
             }
         )
@@ -52,10 +54,13 @@ def test_load_mesh_sequence_reads_stageii_pkl_and_uses_runtime_chunk_config(tmp_
     expected_vertices = np.arange(45, dtype=np.float32).reshape(5, 3, 3)
     fake_model = SimpleNamespace(name="model")
     captured = {}
+    resolved_model_path = tmp_path / "resolved" / "model.npz"
+    resolved_model_path.parent.mkdir(parents=True)
+    resolved_model_path.write_bytes(b"npz")
 
     def fake_resolve(stageii_pkl, *, support_base_dir=None):
         captured["resolve_call"] = (str(stageii_pkl), support_base_dir)
-        return "/resolved/model.npz"
+        return str(resolved_model_path)
 
     def fake_load_render_model(model_path):
         captured["model_path"] = model_path
@@ -76,8 +81,69 @@ def test_load_mesh_sequence_reads_stageii_pkl_and_uses_runtime_chunk_config(tmp_
     assert loaded.chunk_overlap == 4
     assert loaded.vertices is expected_vertices
     assert captured["resolve_call"] == (str(sample_path), "/support-files")
-    assert captured["model_path"] == "/resolved/model.npz"
+    assert captured["model_path"] == str(resolved_model_path)
     assert captured["vertices_call"] == (str(sample_path), fake_model)
+
+
+def test_load_mesh_sequence_falls_back_to_existing_smplx_support_model_when_resolved_path_is_missing(
+    tmp_path, monkeypatch
+):
+    mesh_compare = _load_mesh_compare_module()
+    sample_path = tmp_path / "legacy_like_stageii.pkl"
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.zeros((3, 156), dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.zeros((3, 3), dtype=np.float32),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplh",
+                            "gender": "male",
+                            "fname": "/old-machine/support_files/smplh/male/model.npz",
+                        },
+                        "runtime": {
+                            "sequence_chunk_size": 16,
+                            "sequence_chunk_overlap": 4,
+                        },
+                    },
+                    "markers_obs": np.zeros((3, 1, 3), dtype=np.float32),
+                    "labels_obs": [["A"]] * 3,
+                },
+            }
+        )
+    )
+    support_root = tmp_path / "support_files"
+    fallback_model = support_root / "smplx" / "male" / "model.npz"
+    fallback_model.parent.mkdir(parents=True)
+    fallback_model.write_bytes(b"npz")
+    expected_vertices = np.zeros((3, 2, 3), dtype=np.float32)
+    fake_model = SimpleNamespace(name="model")
+    captured = {}
+
+    monkeypatch.setattr(
+        mesh_compare,
+        "resolve_stageii_model_path",
+        lambda *args, **kwargs: str(support_root / "smplh" / "male" / "model.npz"),
+    )
+    monkeypatch.setattr(
+        mesh_compare.render_video,
+        "load_render_model",
+        lambda model_path: captured.setdefault("model_path", model_path) or fake_model,
+    )
+    monkeypatch.setattr(
+        mesh_compare.render_video,
+        "load_vertices",
+        lambda stageii_pkl, model: expected_vertices,
+    )
+
+    loaded = mesh_compare.load_mesh_sequence(sample_path, support_base_dir=str(support_root))
+
+    assert loaded.vertices is expected_vertices
+    assert captured["model_path"] == str(fallback_model)
 
 
 def test_load_mesh_sequence_reads_pc2_and_accepts_explicit_chunk_config(tmp_path):

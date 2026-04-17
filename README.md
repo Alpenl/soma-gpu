@@ -126,3 +126,13 @@ python save_smplx_verts.py \
   --fname-filter swing
 ````
 批量模式会递归发现匹配的 `*_stageii.pkl`，按相对目录结构镜像写出 OBJ/PC2；如果目录下没有任何匹配结果，脚本会直接报错而不是静默成功。若只需要 preview MP4，可使用 `render_video.py`。
+
+若要在复核真实 `.mcp -> stageii -> mesh` 候选时，把单样本 `stageii` 质量摘要和 baseline 的 mesh-space 对比收敛到同一份 JSON，也可直接运行：
+````
+python benchmark_stageii_public.py \
+  --input ROOT/mosh_results_tracklet/[session]/[subject]/candidate_stageii.pkl \
+  --mesh-reference ROOT/mosh_results_tracklet/[session]/[subject]/baseline_stageii.pkl \
+  --mesh-support-base-dir support_files \
+  --output ROOT/benchmarks/candidate_vs_baseline.json
+````
+此时报告除了现有 `quality.marker_residual_l2` / `trans_jitter_l2` / `chunk_seam_*` 摘要外，还会在 `quality.mesh_compare` 下追加 baseline 与 candidate 的 `reference` / `candidate` / `frame_delta_l2` mesh-space 摘要。对于 `stageii.pkl` 输入通常不需要显式传 `--mesh-chunk-size/--mesh-chunk-overlap`；只有直接比较裸 `pc2/pc16` 缓存时才需要覆盖。

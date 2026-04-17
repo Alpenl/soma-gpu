@@ -33,6 +33,28 @@ def build_parser():
         default=5,
         help="Number of measured parses to record.",
     )
+    parser.add_argument(
+        "--mesh-reference",
+        default=None,
+        help="Optional baseline stageii.pkl or .pc2/.pc16 path used to append mesh-space comparison summaries.",
+    )
+    parser.add_argument(
+        "--mesh-support-base-dir",
+        default="support_files",
+        help="support_files root used when --mesh-reference or --input stageii pickles need relocated model paths.",
+    )
+    parser.add_argument(
+        "--mesh-chunk-size",
+        type=int,
+        default=None,
+        help="Optional chunk size override for mesh comparison, mainly for raw PC2 inputs.",
+    )
+    parser.add_argument(
+        "--mesh-chunk-overlap",
+        type=int,
+        default=None,
+        help="Optional chunk overlap override paired with --mesh-chunk-size for mesh comparison.",
+    )
     return parser
 
 
@@ -42,6 +64,10 @@ def main(argv=None):
         args.input,
         warmup_runs=args.warmup_runs,
         measured_runs=args.measured_runs,
+        mesh_reference_path=args.mesh_reference,
+        mesh_support_base_dir=args.mesh_support_base_dir,
+        mesh_chunk_size=args.mesh_chunk_size,
+        mesh_chunk_overlap=args.mesh_chunk_overlap,
     )
 
     if args.output:
