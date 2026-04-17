@@ -1,23 +1,52 @@
 import argparse
+import inspect
 import os.path as osp
 import pickle
+from pathlib import Path
+from types import SimpleNamespace
 
 from utils.script_utils import codec_for_video_path, list_stageii_pickles
+
+CAMERA_PRESETS = {
+    "frontal": {
+        "camera_x": 0.0,
+        "camera_y": -3.0,
+        "camera_z": 1.0,
+        "lookat_x": 0.0,
+        "lookat_y": 0.0,
+        "lookat_z": 1.0,
+        "up_x": 0.0,
+        "up_y": 0.0,
+        "up_z": 1.0,
+    }
+}
+CAMERA_FIELDS = tuple(CAMERA_PRESETS["frontal"].keys())
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Render every *_stageii.pkl in a directory into videos."
+        description=(
+            "Render stageii pickles into preview mp4 videos without using the legacy "
+            "Blender mesh-export pipeline."
+        )
+    )
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
+        "--input-dir",
+        help="Directory containing stageii pickle files.",
+    )
+    input_group.add_argument(
+        "--input-path",
+        help="Single stageii pickle file to render.",
     )
     parser.add_argument(
-        "--input-dir",
-        required=True,
-        help="Directory containing stageii pickle files.",
+        "--output-path",
+        help="Explicit video output path used only with --input-path.",
     )
     parser.add_argument(
         "--model-path",
         required=True,
-        help="Path to the SMPL-X model npz file.",
+        help="Path to the SMPL-X model .npz or .pkl file.",
     )
     parser.add_argument(
         "--input-suffix",
@@ -53,6 +82,21 @@ def build_parser():
         help="Taichi backend to use, for example gpu or cuda.",
     )
     parser.add_argument(
+        "--camera-preset",
+        default="frontal",
+        choices=sorted(CAMERA_PRESETS),
+        help="Stable preview camera preset. Manual camera args override preset fields.",
+    )
+    parser.add_argument("--camera-x", type=float, default=None, help="Camera position X.")
+    parser.add_argument("--camera-y", type=float, default=None, help="Camera position Y.")
+    parser.add_argument("--camera-z", type=float, default=None, help="Camera position Z.")
+    parser.add_argument("--lookat-x", type=float, default=None, help="Camera look-at X.")
+    parser.add_argument("--lookat-y", type=float, default=None, help="Camera look-at Y.")
+    parser.add_argument("--lookat-z", type=float, default=None, help="Camera look-at Z.")
+    parser.add_argument("--up-x", type=float, default=None, help="Camera up-vector X.")
+    parser.add_argument("--up-y", type=float, default=None, help="Camera up-vector Y.")
+    parser.add_argument("--up-z", type=float, default=None, help="Camera up-vector Z.")
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Re-render videos even if the target file already exists.",
@@ -68,15 +112,24 @@ def load_vertices(pkl_path, model):
 
     num_frames = data["fullpose"].shape[0]
     fullpose = torch.from_numpy(data["fullpose"]).float()
-    shape_components = torch.from_numpy(data["betas"]).float()[None]
+    shape_components = torch.as_tensor(data["betas"]).float()
+    if shape_components.ndim == 1:
+        shape_components = shape_components.unsqueeze(0)
+    if shape_components.shape[0] == 1 and num_frames > 1:
+        shape_components = shape_components.expand(num_frames, -1)
     trans = torch.from_numpy(data["trans"]).float()
+    expression = (
+        shape_components[:, 300:310]
+        if shape_components.shape[1] >= 310
+        else torch.zeros(num_frames, 10, dtype=shape_components.dtype)
+    )
 
     ret = model(
         global_orient=fullpose[:, :3],
         transl=trans,
         body_pose=fullpose[:, 3:66],
         betas=shape_components[:, :10],
-        expression=shape_components[:, 300:310].repeat(num_frames, 1),
+        expression=expression,
         jaw_pose=fullpose[:, 66:69],
         leye_pose=fullpose[:, 69:72],
         reye_pose=fullpose[:, 72:75],
@@ -92,32 +145,118 @@ def build_video_path(pkl_path, input_suffix, video_suffix):
     return osp.splitext(pkl_path)[0] + video_suffix
 
 
-def main(argv=None):
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    import cv2
+def _ensure_legacy_pickle_compat():
     import numpy as np
+
+    legacy_aliases = {
+        "bool": bool,
+        "int": int,
+        "float": float,
+        "complex": complex,
+        "object": object,
+        "unicode": str,
+        "str": str,
+    }
+    for name, value in legacy_aliases.items():
+        if not hasattr(np, name):
+            setattr(np, name, value)
+    if not hasattr(inspect, "getargspec"):
+        inspect.getargspec = inspect.getfullargspec
+
+
+class HumanBodyPriorRenderModel:
+    def __init__(self, body_model, *, num_betas, num_expressions):
+        import torch
+
+        self.body_model = body_model
+        self.faces = body_model.f.detach().cpu().numpy() if hasattr(body_model.f, "detach") else body_model.f
+
+        with torch.no_grad():
+            template = body_model(
+                root_orient=torch.zeros(1, 3),
+                pose_body=torch.zeros(1, 63),
+                pose_hand=torch.zeros(1, 90),
+                pose_jaw=torch.zeros(1, 3),
+                pose_eye=torch.zeros(1, 6),
+                betas=torch.zeros(1, num_betas),
+                trans=torch.zeros(1, 3),
+                expression=torch.zeros(1, num_expressions),
+            )
+        self.v_template = template.v[0].detach().cpu().numpy()
+
+    def __call__(self, **kwargs):
+        import torch
+
+        pose_hand = torch.cat((kwargs["left_hand_pose"], kwargs["right_hand_pose"]), dim=1)
+        pose_eye = torch.cat((kwargs["leye_pose"], kwargs["reye_pose"]), dim=1)
+        output = self.body_model(
+            root_orient=kwargs["global_orient"],
+            pose_body=kwargs["body_pose"],
+            pose_hand=pose_hand,
+            pose_jaw=kwargs["jaw_pose"],
+            pose_eye=pose_eye,
+            betas=kwargs["betas"],
+            trans=kwargs["transl"],
+            expression=kwargs["expression"],
+        )
+        return SimpleNamespace(vertices=output.v, joints=output.Jtr)
+
+
+def load_render_model(model_path):
+    model_path = Path(model_path)
+    if model_path.suffix == ".pkl":
+        npz_path = model_path.with_suffix(".npz")
+        if npz_path.exists():
+            model_path = npz_path
+
+    if model_path.suffix == ".npz":
+        from human_body_prior.body_model.body_model import BodyModel
+
+        body_model = BodyModel(
+            bm_fname=str(model_path),
+            num_betas=10,
+            num_expressions=10,
+        )
+        return HumanBodyPriorRenderModel(body_model, num_betas=10, num_expressions=10)
+
     import smplx
-    import taichi as ti
-    from tqdm import tqdm
 
-    if not hasattr(ti, args.arch):
-        parser.error("Unsupported Taichi arch: {}".format(args.arch))
+    ext = model_path.suffix.lstrip(".")
+    if ext == "pkl":
+        _ensure_legacy_pickle_compat()
+    return smplx.SMPLX(str(model_path), use_pca=False, ext=ext or "npz")
 
-    ti.init(arch=getattr(ti, args.arch), debug=False)
 
-    model = smplx.SMPLX(args.model_path, use_pca=False)
-    window = ti.ui.Window("SOMA Renderer", (args.width, args.height), show_window=False)
-    canvas = window.get_canvas()
-    canvas.set_background_color((1, 1, 1))
-    scene = ti.ui.Scene()
-    camera = ti.ui.Camera()
+def build_preview_jobs(args):
+    input_path = getattr(args, "input_path", None)
+    output_path = getattr(args, "output_path", None)
 
-    particle_vertices = ti.Vector.field(
-        3, dtype=ti.f32, shape=model.v_template.shape[0]
-    )
-    faces = model.faces
+    if input_path:
+        input_path = str(input_path)
+        resolved_output_path = output_path
+        if resolved_output_path is None:
+            resolved_output_path = build_video_path(input_path, args.input_suffix, args.video_suffix)
+        return [(input_path, str(resolved_output_path))]
+
+    if output_path:
+        raise ValueError("--output-path requires --input-path for the preview renderer")
+
+    return [
+        (pkl_path, build_video_path(pkl_path, args.input_suffix, args.video_suffix))
+        for pkl_path in list_stageii_pickles(args.input_dir, args.input_suffix)
+    ]
+
+
+def resolve_camera_config(args):
+    camera_values = CAMERA_PRESETS[args.camera_preset].copy()
+    for field in CAMERA_FIELDS:
+        value = getattr(args, field, None)
+        if value is not None:
+            camera_values[field] = value
+    return SimpleNamespace(**camera_values)
+
+
+def _build_mesh_indices(ti, faces):
     faces_ti = ti.field(dtype=ti.i32, shape=faces.shape)
     faces_ti.from_numpy(faces)
     indices = ti.field(dtype=ti.i32, shape=3 * faces.shape[0])
@@ -125,9 +264,33 @@ def main(argv=None):
         indices[3 * index] = faces_ti[index, 0]
         indices[3 * index + 1] = faces_ti[index, 1]
         indices[3 * index + 2] = faces_ti[index, 2]
+    return indices
 
-    for pkl_path in list_stageii_pickles(args.input_dir, args.input_suffix):
-        video_path = build_video_path(pkl_path, args.input_suffix, args.video_suffix)
+
+def render_preview_jobs(args):
+    import cv2
+    import numpy as np
+    import taichi as ti
+    from tqdm import tqdm
+
+    if not hasattr(ti, args.arch):
+        raise ValueError("Unsupported Taichi arch: {}".format(args.arch))
+
+    ti.init(arch=getattr(ti, args.arch), debug=False)
+
+    model = load_render_model(args.model_path)
+    camera_cfg = resolve_camera_config(args)
+
+    window = ti.ui.Window("SOMA Preview Renderer", (args.width, args.height), show_window=False)
+    canvas = window.get_canvas()
+    canvas.set_background_color((1, 1, 1))
+    scene = ti.ui.Scene()
+    camera = ti.ui.Camera()
+
+    particle_vertices = ti.Vector.field(3, dtype=ti.f32, shape=model.v_template.shape[0])
+    indices = _build_mesh_indices(ti, model.faces)
+
+    for pkl_path, video_path in build_preview_jobs(args):
         if osp.exists(video_path) and not args.force:
             continue
 
@@ -142,11 +305,14 @@ def main(argv=None):
         for frame_vertices in tqdm(vertices, desc=osp.basename(pkl_path)):
             particle_vertices.from_numpy(frame_vertices)
 
-            camera.position(0.0, -3.0, 1.0)
-            camera.lookat(0.0, 0.0, 1.0)
-            camera.up(0.0, 0.0, 1.0)
+            camera.position(camera_cfg.camera_x, camera_cfg.camera_y, camera_cfg.camera_z)
+            camera.lookat(camera_cfg.lookat_x, camera_cfg.lookat_y, camera_cfg.lookat_z)
+            camera.up(camera_cfg.up_x, camera_cfg.up_y, camera_cfg.up_z)
             scene.set_camera(camera)
-            scene.point_light(pos=(0.0, -3.0, 0.0), color=(1.0, 1.0, 1.0))
+            scene.point_light(
+                pos=(camera_cfg.camera_x, camera_cfg.camera_y, 0.0),
+                color=(1.0, 1.0, 1.0),
+            )
             scene.ambient_light((0.5, 0.5, 0.5))
             scene.mesh(
                 particle_vertices,
@@ -165,6 +331,57 @@ def main(argv=None):
             video_writer.write(image)
 
         video_writer.release()
+
+
+def render_stageii_preview(
+    *,
+    input_path,
+    output_path=None,
+    model_path,
+    fps=30,
+    width=512,
+    height=512,
+    arch="gpu",
+    camera_preset="frontal",
+    input_suffix="_stageii.pkl",
+    video_suffix="_stageii.mp4",
+    force=False,
+    **camera_overrides,
+):
+    args_dict = {field: None for field in CAMERA_FIELDS}
+    args_dict.update(camera_overrides)
+    resolved_output_path = (
+        str(output_path)
+        if output_path is not None
+        else build_video_path(str(input_path), input_suffix, video_suffix)
+    )
+    args = SimpleNamespace(
+        input_dir=None,
+        input_path=str(input_path),
+        output_path=resolved_output_path,
+        model_path=str(model_path),
+        input_suffix=input_suffix,
+        video_suffix=video_suffix,
+        fps=fps,
+        width=width,
+        height=height,
+        arch=arch,
+        camera_preset=camera_preset,
+        force=force,
+        **args_dict,
+    )
+    render_preview_jobs(args)
+    return resolved_output_path
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        render_preview_jobs(args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":
