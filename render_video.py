@@ -372,7 +372,7 @@ def render_preview_jobs(args):
     window = ti.ui.Window("SOMA Preview Renderer", (args.width, args.height), show_window=False)
     canvas = window.get_canvas()
     canvas.set_background_color((1, 1, 1))
-    scene = ti.ui.Scene()
+    scene = window.get_scene()
     camera = ti.ui.Camera()
 
     particle_vertices = ti.Vector.field(3, dtype=ti.f32, shape=model.v_template.shape[0])

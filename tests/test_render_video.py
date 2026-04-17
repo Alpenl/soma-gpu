@@ -1,8 +1,11 @@
+import pickle
 import sys
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -156,3 +159,38 @@ def test_render_stageii_preview_infers_output_path_when_omitted(monkeypatch, tmp
     expected_output = str(tmp_path / "single_stageii.mp4")
     assert result == expected_output
     assert captured["args"].output_path == expected_output
+
+
+def test_render_stageii_preview_writes_mp4_without_taichi_scene_deprecation(tmp_path):
+    pytest.importorskip("cv2")
+    pytest.importorskip("taichi")
+
+    input_path = tmp_path / "tiny_stageii.pkl"
+    output_path = tmp_path / "tiny_stageii.mp4"
+    input_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.zeros((2, 165), dtype=np.float32),
+                "betas": np.zeros(400, dtype=np.float32),
+                "trans": np.zeros((2, 3), dtype=np.float32),
+            }
+        )
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = render_video.render_stageii_preview(
+            input_path=input_path,
+            output_path=output_path,
+            model_path=SUPPORT_ROOT / "smplx" / "male" / "model.npz",
+            width=128,
+            height=128,
+            fps=5,
+            arch="cpu",
+            force=True,
+        )
+
+    assert result == str(output_path)
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+    assert not any("Instantiating ti.ui.Scene directly is deprecated" in str(warning.message) for warning in caught)
