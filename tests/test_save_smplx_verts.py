@@ -252,3 +252,28 @@ def test_save_smplx_verts_main_errors_when_model_path_cannot_be_resolved(tmp_pat
         )
 
     assert excinfo.value.code == 2
+
+
+def test_save_smplx_verts_main_errors_when_model_load_fails(monkeypatch, tmp_path):
+    input_path = tmp_path / "broken_stageii.pkl"
+    _write_stageii_pickle(
+        input_path,
+        model_path="/missing/support_files/smplx/male/model.npz",
+        gender="male",
+    )
+
+    monkeypatch.setattr(
+        save_smplx_verts.render_video,
+        "load_render_model",
+        lambda model_path: (_ for _ in ()).throw(FileNotFoundError("missing model asset")),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        save_smplx_verts.main(
+            [
+                "--input-pkl",
+                str(input_path),
+            ]
+        )
+
+    assert excinfo.value.code == 2
