@@ -199,6 +199,10 @@ python run_stageii_torch_pair.py \
 - 若开启了 `--export-mesh --mesh-output-dir`，pair runner 现在还会继续检查 baseline/candidate 推导出的 OBJ/PC2 落点是否会同名；即使两侧 `stageii.pkl` 在不同目录，只要 basename 一样、最终会把导出写进同一个 OBJ/PC2 路径，也会直接报错，避免 mesh 主线复核时把 baseline 导出物悄悄被 candidate 覆盖。
 - 若 baseline 也开启了 standalone benchmark，pair runner 现在还会比较 baseline/candidate 最终的 benchmark JSON 落点；只要 `--baseline-benchmark-output` 与 candidate 的显式或默认 `*_benchmark.json` 路径相同，命令也会直接报错，避免 pair 复核报告互相覆盖。
 - 即使静态预检没有命中，pair runner 现在也会在 baseline 真正跑完后，再把 baseline payload 里实际返回的 `stageii_path`、`mesh_export.obj/pc2`、以及 baseline benchmark `report_path` 与 candidate 的计划落点做一次二次比对；如果 underlying single runner 的真实落点和静态预判漂移到会覆盖 candidate，命令会在 candidate 启动前直接中止，而不是继续把 baseline 产物覆盖掉。
+- pair runner 现在还会把请求过的产物当作强 contract：
+  - 开了 `--export-mesh`，baseline/candidate 两侧都必须从 underlying single runner 返回 `mesh_export.obj_path` 与 `mesh_export.pc2_path`
+  - baseline 显式开了 standalone benchmark 或 candidate 默认 benchmark 路径缺失 `benchmark.artifact.report_path` 时，也会直接报错
+  - 这样不会再出现“命令成功退出，但 pair payload 其实没带齐 mesh/report 产物路径”的 silent success
 - 若 baseline / candidate 任一侧的 single runner 运行失败，或者返回 payload 缺失 `stageii_path`，pair runner 现在也会统一以 CLI error 退出，而不是把 `ValueError` / `FileNotFoundError` 栈直接打到终端。
 
 若要在同一条命令里继续做 sweep，可用：

@@ -367,7 +367,7 @@ def _require_stageii_path(payload, *, label):
     return stageii_path
 
 
-def _baseline_actual_benchmark_output_path(payload):
+def _benchmark_report_path(payload):
     benchmark = payload.get("benchmark")
     if not isinstance(benchmark, dict):
         return None
@@ -378,6 +378,24 @@ def _baseline_actual_benchmark_output_path(payload):
     if not report_path:
         return None
     return Path(report_path)
+
+
+def _require_benchmark_report_path(payload, *, label):
+    report_path = _benchmark_report_path(payload)
+    if report_path is None:
+        raise ValueError(f"{label} runner did not return benchmark.artifact.report_path")
+    return report_path
+
+
+def _require_mesh_export_paths(payload, *, label):
+    mesh_export = payload.get("mesh_export")
+    if not isinstance(mesh_export, dict):
+        raise ValueError(f"{label} runner did not return mesh_export.obj_path/pc2_path")
+    obj_path = mesh_export.get("obj_path")
+    pc2_path = mesh_export.get("pc2_path")
+    if not obj_path or not pc2_path:
+        raise ValueError(f"{label} runner did not return mesh_export.obj_path/pc2_path")
+    return obj_path, pc2_path
 
 
 def _validate_baseline_actual_outputs_against_candidate_plan(
@@ -394,28 +412,30 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
             "adjust explicit stageii/basename overrides or investigate underlying runner path drift"
         )
 
-    baseline_mesh_export = baseline_payload.get("mesh_export")
-    if args.export_mesh and isinstance(baseline_mesh_export, dict):
+    if args.export_mesh:
         candidate_obj_path, candidate_pc2_path = _planned_mesh_output_paths(
             args,
             stageii_path=candidate_stageii_path,
         )
-        baseline_obj_path = baseline_mesh_export.get("obj_path")
-        baseline_pc2_path = baseline_mesh_export.get("pc2_path")
+        baseline_obj_path, baseline_pc2_path = _require_mesh_export_paths(
+            baseline_payload,
+            label="baseline",
+        )
         if (
-            baseline_obj_path
-            and _normalized_path(baseline_obj_path) == _normalized_path(candidate_obj_path)
+            _normalized_path(baseline_obj_path) == _normalized_path(candidate_obj_path)
         ) or (
-            baseline_pc2_path
-            and _normalized_path(baseline_pc2_path) == _normalized_path(candidate_pc2_path)
+            _normalized_path(baseline_pc2_path) == _normalized_path(candidate_pc2_path)
         ):
             parser.error(
                 "baseline actual mesh export output collides with candidate plan; "
                 "adjust stageii basenames/paths, export directories, or investigate underlying runner path drift"
             )
 
-    baseline_benchmark_output = _baseline_actual_benchmark_output_path(baseline_payload)
-    if args.baseline_benchmark_output is not None and baseline_benchmark_output is not None:
+    if args.baseline_benchmark_output is not None:
+        baseline_benchmark_output = _require_benchmark_report_path(
+            baseline_payload,
+            label="baseline",
+        )
         candidate_benchmark_output = _planned_candidate_benchmark_output_path(
             args,
             candidate_stageii_path=candidate_stageii_path,
@@ -470,6 +490,9 @@ def run(argv=None, *, emit_json=True):
             emit_json=False,
         )
         _require_stageii_path(candidate_payload, label="candidate")
+        if args.export_mesh:
+            _require_mesh_export_paths(candidate_payload, label="candidate")
+        _require_benchmark_report_path(candidate_payload, label="candidate")
     except PAIR_RUNNER_CLI_ERROR_TYPES as exc:
         parser.error(str(exc))
 
