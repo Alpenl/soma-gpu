@@ -180,14 +180,13 @@ def _percentile(values, q):
     return float(np.percentile(np.asarray(values, dtype=np.float64), q))
 
 
-def _summarize_numeric_samples(samples):
+def _summarize_numeric_samples(samples, *, include_samples=True):
     if not samples:
         return None
     sample_mean = statistics.mean(samples)
     sample_stdev = statistics.stdev(samples) if len(samples) > 1 else 0.0
-    return {
+    summary = {
         "count": len(samples),
-        "samples": [float(value) for value in samples],
         "mean": sample_mean,
         "stdev": sample_stdev,
         "min": min(samples),
@@ -196,10 +195,13 @@ def _summarize_numeric_samples(samples):
         "p90": _percentile(samples, 90),
         "p99": _percentile(samples, 99),
     }
+    if include_samples:
+        summary["samples"] = [float(value) for value in samples]
+    return summary
 
 
 def _summarize_latency_samples(latency_samples):
-    return _summarize_numeric_samples(latency_samples)
+    return _summarize_numeric_samples(latency_samples, include_samples=True)
 
 
 def _numeric_arrays(sample):
@@ -342,13 +344,16 @@ def _summarize_stageii_quality(sample_path, baseline):
     stageii_data = _load_pickle_compat(sample_path)
     quality = {
         "marker_residual_l2": _summarize_numeric_samples(
-            _marker_residual_l2_samples(stageii_data)
+            _marker_residual_l2_samples(stageii_data),
+            include_samples=False,
         ),
         "trans_jitter_l2": _summarize_numeric_samples(
-            _temporal_accel_l2_samples(baseline.trans)
+            _temporal_accel_l2_samples(baseline.trans),
+            include_samples=False,
         ),
         "pose_jitter_l2": _summarize_numeric_samples(
-            _temporal_accel_l2_samples(baseline.poses)
+            _temporal_accel_l2_samples(baseline.poses),
+            include_samples=False,
         ),
         "chunk_seam_transl_jump_l2": None,
         "chunk_seam_pose_jump_l2": None,
@@ -363,14 +368,16 @@ def _summarize_stageii_quality(sample_path, baseline):
             baseline.trans,
             chunk_size=chunk_size,
             overlap=chunk_overlap,
-        )
+        ),
+        include_samples=False,
     )
     quality["chunk_seam_pose_jump_l2"] = _summarize_numeric_samples(
         _chunk_seam_jump_l2_samples(
             baseline.poses,
             chunk_size=chunk_size,
             overlap=chunk_overlap,
-        )
+        ),
+        include_samples=False,
     )
     return quality
 

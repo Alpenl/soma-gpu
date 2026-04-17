@@ -304,6 +304,50 @@ def test_summarize_stageii_quality_reads_legacy_marker_residual_from_public_samp
     assert quality["chunk_seam_transl_jump_l2"] is None
 
 
+def test_summarize_stageii_quality_omits_bulky_raw_samples(tmp_path):
+    sample_path = tmp_path / "synthetic_stageii.pkl"
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.asarray([[0.0], [1.0], [2.0]], dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.asarray(
+                    [
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [3.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                        }
+                    },
+                    "mocap_frame_rate": 120.0,
+                    "mocap_time_length": 3,
+                    "markers_obs": np.zeros((3, 1, 3), dtype=np.float32),
+                    "markers_sim": np.ones((3, 1, 3), dtype=np.float32),
+                    "labels_obs": [["A"]] * 3,
+                },
+            }
+        )
+    )
+
+    quality = stageii_benchmark._summarize_stageii_quality(
+        sample_path,
+        stageii_benchmark.normalize_stageii_sample(sample_path),
+    )
+
+    assert "samples" not in quality["marker_residual_l2"]
+    assert "samples" not in quality["trans_jitter_l2"]
+    assert "samples" not in quality["pose_jitter_l2"]
+
+
 def test_benchmark_preview_vertex_decode_propagates_unexpected_render_failures(monkeypatch):
     baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
     fake_render_video = type(
