@@ -249,6 +249,47 @@ def test_convert_mosh_errors_when_export_artifacts_finds_no_stageii_pickles(
     assert len(mosh_calls) == 1
 
 
+def test_convert_mosh_errors_when_export_artifacts_model_load_fails(
+    monkeypatch, tmp_path
+):
+    dataset = "demo_ds"
+    work_dir = tmp_path / "work"
+    mocap_base_dir = tmp_path / "mocap"
+    mocap_path = mocap_base_dir / dataset / "subject04" / "broken_stageii.mcp"
+
+    mosh_calls = []
+    _install_fake_mosh_manual_module(monkeypatch, mosh_calls)
+
+    export_module = types.ModuleType("export_stageii_artifacts")
+    export_module.export_stageii_artifacts_batch = (
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("failed to load render model"))
+    )
+    monkeypatch.setitem(sys.modules, "export_stageii_artifacts", export_module)
+
+    mocap_path.parent.mkdir(parents=True, exist_ok=True)
+    mocap_path.write_bytes(b"mcp")
+    _write_stageii_pickle(
+        work_dir / "mosh_results" / dataset / "subject04" / "broken_stageii.pkl",
+        model_path="/missing/support_files/smplx/male/model.npz",
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        convert_mosh.main(
+            [
+                "--dataset",
+                dataset,
+                "--mocap-base-dir",
+                str(mocap_base_dir),
+                "--work-base-dir",
+                str(work_dir),
+                "--export-artifacts",
+            ]
+        )
+
+    assert excinfo.value.code == 2
+    assert len(mosh_calls) == 1
+
+
 def test_convert_mosh_errors_when_no_c3d_or_mcp_inputs_match(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         convert_mosh.main(

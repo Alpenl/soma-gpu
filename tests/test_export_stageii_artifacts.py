@@ -374,3 +374,53 @@ def test_export_stageii_artifacts_main_errors_when_single_input_cannot_resolve_m
         )
 
     assert excinfo.value.code == 2
+
+
+def test_export_stageii_artifacts_main_errors_when_single_input_model_load_fails(
+    monkeypatch, tmp_path
+):
+    input_path = tmp_path / "broken_stageii.pkl"
+    _write_stageii_pickle(
+        input_path,
+        model_path="/missing/support_files/smplx/male/model.npz",
+        gender="male",
+    )
+
+    monkeypatch.setattr(
+        export_stageii_artifacts.render_video,
+        "load_render_model",
+        lambda model_path: (_ for _ in ()).throw(FileNotFoundError("missing model asset")),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        export_stageii_artifacts.main(
+            [
+                "--input-pkl",
+                str(input_path),
+            ]
+        )
+
+    assert excinfo.value.code == 2
+
+
+def test_export_stageii_artifacts_batch_wraps_model_load_failures_with_stageii_context(
+    monkeypatch, tmp_path
+):
+    input_path = tmp_path / "broken_stageii.pkl"
+    _write_stageii_pickle(
+        input_path,
+        model_path="/missing/support_files/smplx/male/model.npz",
+        gender="male",
+    )
+
+    monkeypatch.setattr(
+        export_stageii_artifacts.render_video,
+        "load_render_model",
+        lambda model_path: (_ for _ in ()).throw(FileNotFoundError("missing model asset")),
+    )
+
+    with pytest.raises(ValueError, match="missing model asset"):
+        export_stageii_artifacts.export_stageii_artifacts_batch(
+            input_pkls=[input_path],
+            arch="cpu",
+        )

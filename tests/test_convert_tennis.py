@@ -252,6 +252,45 @@ def test_convert_tennis_errors_when_export_artifacts_finds_no_stageii_pickles(
     assert [call["run_tasks"] for call in run_calls] == [["soma"]]
 
 
+def test_convert_tennis_errors_when_export_artifacts_model_load_fails(
+    monkeypatch, tmp_path
+):
+    dataset = "demo_ds"
+    work_dir = tmp_path / "work"
+    mocap_base_dir = tmp_path / "mocap"
+    run_calls = []
+    _install_fake_run_soma_module(monkeypatch, run_calls)
+
+    export_module = types.ModuleType("export_stageii_artifacts")
+    export_module.export_stageii_artifacts_batch = (
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("failed to load render model"))
+    )
+    monkeypatch.setitem(sys.modules, "export_stageii_artifacts", export_module)
+
+    _write_mocap_file(mocap_base_dir / dataset / "subject05" / "broken_stageii.c3d")
+    _write_stageii_pickle(
+        work_dir / dataset / "subject05" / "broken_stageii.pkl",
+        model_path="/missing/support_files/smplx/male/model.npz",
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        convert_tennis.main(
+            [
+                "--dataset",
+                dataset,
+                "--mocap-base-dir",
+                str(mocap_base_dir),
+                "--soma-work-base-dir",
+                str(work_dir),
+                "--skip-mosh",
+                "--export-artifacts",
+            ]
+        )
+
+    assert excinfo.value.code == 2
+    assert [call["run_tasks"] for call in run_calls] == [["soma"]]
+
+
 def test_convert_tennis_errors_when_no_c3d_or_mcp_inputs_match_before_importing_soma(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         convert_tennis.main(

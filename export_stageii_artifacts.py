@@ -118,6 +118,15 @@ def _resolve_artifact_paths(input_pkl, *, output_dir=None, obj_out=None, pc2_out
     )
 
 
+def _load_render_model_with_context(model_path, *, input_pkl):
+    try:
+        return render_video.load_render_model(model_path)
+    except (FileNotFoundError, ImportError, ModuleNotFoundError, ValueError) as exc:
+        raise ValueError(
+            f"{input_pkl}: failed to load render model from {model_path}: {exc}"
+        ) from exc
+
+
 def export_stageii_artifacts(
     input_pkl,
     model_path=None,
@@ -140,7 +149,7 @@ def export_stageii_artifacts(
     if model is None:
         if model_path is None:
             raise ValueError("model_path is required when model is not provided")
-        model = render_video.load_render_model(model_path)
+        model = _load_render_model_with_context(model_path, input_pkl=input_pkl)
     if vertices is None:
         vertices = render_video.load_vertices(input_pkl, model)
 
@@ -205,7 +214,10 @@ def export_stageii_artifacts_batch(
             raise ValueError(f"{input_pkl}: {exc}") from exc
         model = model_cache.get(resolved_model_path)
         if model is None:
-            model = render_video.load_render_model(resolved_model_path)
+            model = _load_render_model_with_context(
+                resolved_model_path,
+                input_pkl=input_pkl,
+            )
             model_cache[resolved_model_path] = model
         results.append(
             export_stageii_artifacts(
@@ -264,16 +276,19 @@ def main(argv=None):
                     fname_filter=args.fname_filter,
                 )
             )
-        export_stageii_artifacts_batch(
-            input_pkls=input_pkls,
-            support_base_dir=args.support_base_dir,
-            fps=args.fps,
-            width=args.width,
-            height=args.height,
-            arch=args.arch,
-            camera_preset=args.camera_preset,
-            **camera_overrides,
-        )
+        try:
+            export_stageii_artifacts_batch(
+                input_pkls=input_pkls,
+                support_base_dir=args.support_base_dir,
+                fps=args.fps,
+                width=args.width,
+                height=args.height,
+                arch=args.arch,
+                camera_preset=args.camera_preset,
+                **camera_overrides,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
         return
 
     try:
@@ -283,20 +298,23 @@ def main(argv=None):
         )
     except (KeyError, ValueError) as exc:
         parser.error(str(exc))
-    export_stageii_artifacts(
-        input_pkl=args.input_pkl,
-        model_path=resolved_model_path,
-        output_dir=args.output_dir,
-        obj_out=args.obj_out,
-        pc2_out=args.pc2_out,
-        video_out=args.video_out,
-        fps=args.fps,
-        width=args.width,
-        height=args.height,
-        arch=args.arch,
-        camera_preset=args.camera_preset,
-        **camera_overrides,
-    )
+    try:
+        export_stageii_artifacts(
+            input_pkl=args.input_pkl,
+            model_path=resolved_model_path,
+            output_dir=args.output_dir,
+            obj_out=args.obj_out,
+            pc2_out=args.pc2_out,
+            video_out=args.video_out,
+            fps=args.fps,
+            width=args.width,
+            height=args.height,
+            arch=args.arch,
+            camera_preset=args.camera_preset,
+            **camera_overrides,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":
