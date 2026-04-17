@@ -140,6 +140,58 @@ def test_fit_stageii_frame_torch_recovers_translation_on_synthetic_markers():
     assert result.loss_terms["data"] < 1e-5
 
 
+def test_fit_stageii_frame_torch_supports_adam_refine_optimizer():
+    module = _load_frame_fit_torch_module()
+    can_body = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    marker_attachment = build_marker_attachment(can_body, can_body)
+    target_offset = torch.tensor([0.18, -0.12, 0.22], dtype=torch.float32)
+    marker_observations = can_body + target_offset
+
+    layout = module.make_stageii_latent_layout(
+        surface_model_type="smplx",
+        dof_per_hand=24,
+        optimize_fingers=False,
+        optimize_face=False,
+    )
+
+    result = module.fit_stageii_frame_torch(
+        body_model=TranslOnlyBodyModel(can_body),
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        pose_prior=ZeroPosePrior(63),
+        layout=layout,
+        latent_pose_init=torch.zeros(1, layout.latent_dim),
+        transl_init=torch.zeros(1, 3),
+        weights=module.TorchFrameFitWeights(
+            data=1.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+        ),
+        options=module.TorchFrameFitOptions(
+            rigid_iters=0,
+            warmup_iters=0,
+            refine_iters=250,
+            refine_lr=0.08,
+            refine_optimizer="adam",
+        ),
+    )
+
+    assert torch.allclose(result.transl[0], target_offset, atol=2e-2)
+    assert torch.allclose(result.predicted_markers, marker_observations, atol=2e-2)
+
+
 def test_build_stageii_evaluator_supports_optional_torch_compile(monkeypatch):
     module = _load_frame_fit_torch_module()
     layout = module.make_stageii_latent_layout(

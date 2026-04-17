@@ -303,6 +303,46 @@ def _runtime_get(runtime, key, default=None):
     return getattr(runtime, key, default)
 
 
+def _runtime_stage_fit_options(cfg, runtime):
+    valid_optimizers = {"lbfgs", "adam"}
+
+    def _stage_optimizer(name):
+        value = str(_runtime_get(runtime, f"{name}_optimizer", "lbfgs")).lower()
+        if value not in valid_optimizers:
+            raise ValueError(
+                f"Unsupported runtime optimizer for {name}: {value}. Expected one of {sorted(valid_optimizers)}."
+            )
+        return value
+
+    default_maxiter = int(cfg.opt_settings.maxiter)
+    options = TorchFrameFitOptions(
+        rigid_iters=int(_runtime_get(runtime, "rigid_iters", default_maxiter)),
+        warmup_iters=int(_runtime_get(runtime, "warmup_iters", default_maxiter)),
+        refine_iters=int(_runtime_get(runtime, "refine_iters", default_maxiter)),
+        rigid_lr=float(_runtime_get(runtime, "rigid_lr", 1.0)),
+        warmup_lr=float(_runtime_get(runtime, "warmup_lr", 1.0)),
+        refine_lr=float(_runtime_get(runtime, "refine_lr", 1.0)),
+        rigid_optimizer=_stage_optimizer("rigid"),
+        warmup_optimizer=_stage_optimizer("warmup"),
+        refine_optimizer=_stage_optimizer("refine"),
+        history_size=int(_runtime_get(runtime, "lbfgs_history_size", 100)),
+        tolerance_grad=float(_runtime_get(runtime, "lbfgs_tolerance_grad", 1e-7)),
+        tolerance_change=float(_runtime_get(runtime, "lbfgs_tolerance_change", 1e-9)),
+        max_eval=_runtime_get(runtime, "lbfgs_max_eval", None),
+        rigid_max_eval=_runtime_get(runtime, "rigid_max_eval", None),
+        warmup_max_eval=_runtime_get(runtime, "warmup_max_eval", None),
+        refine_max_eval=_runtime_get(runtime, "refine_max_eval", None),
+    )
+
+    stage_max_evals = []
+    for stage_max_eval in (options.rigid_max_eval, options.warmup_max_eval, options.refine_max_eval):
+        if stage_max_eval is not None:
+            stage_max_evals.append(int(stage_max_eval))
+    if options.max_eval is None and stage_max_evals and len(set(stage_max_evals)) == 1:
+        options.max_eval = stage_max_evals[0]
+    return options
+
+
 def _initial_translation(markers_obs, markers_latent, visible_mask=None):
     if visible_mask is not None:
         visible_mask = torch.as_tensor(visible_mask, dtype=torch.bool, device=markers_obs.device)
@@ -393,6 +433,13 @@ def _runtime_sequence_seed_options(options, runtime):
     if seed_iters <= 0:
         return None
 
+    valid_optimizers = {"lbfgs", "adam"}
+    refine_optimizer = str(_runtime_get(runtime, "sequence_seed_refine_optimizer", options.optimizer)).lower()
+    if refine_optimizer not in valid_optimizers:
+        raise ValueError(
+            f"Unsupported runtime optimizer for sequence seed: {refine_optimizer}. Expected one of {sorted(valid_optimizers)}."
+        )
+    refine_max_eval = _runtime_get(runtime, "sequence_seed_refine_max_eval", options.max_eval)
     return TorchFrameFitOptions(
         rigid_iters=0,
         warmup_iters=0,
@@ -400,6 +447,16 @@ def _runtime_sequence_seed_options(options, runtime):
         rigid_lr=1.0,
         warmup_lr=1.0,
         refine_lr=float(_runtime_get(runtime, "sequence_seed_refine_lr", options.lr)),
+        rigid_optimizer="lbfgs",
+        warmup_optimizer="lbfgs",
+        refine_optimizer=refine_optimizer,
+        history_size=options.history_size,
+        tolerance_grad=options.tolerance_grad,
+        tolerance_change=options.tolerance_change,
+        max_eval=refine_max_eval,
+        rigid_max_eval=None,
+        warmup_max_eval=None,
+        refine_max_eval=refine_max_eval,
     )
 
 
@@ -846,11 +903,7 @@ def mosh_stageii_torch(
                 expr=cfg.opt_settings.weights.stageii_wt_expr,
                 velocity=cfg.opt_settings.weights.stageii_wt_velo,
             )
-            options = TorchFrameFitOptions(
-                rigid_iters=cfg.opt_settings.maxiter,
-                warmup_iters=cfg.opt_settings.maxiter,
-                refine_iters=cfg.opt_settings.maxiter,
-            )
+            options = _runtime_stage_fit_options(cfg, runtime)
 
             if fidx == 0:
                 current_transl = _initial_translation(markers_obs, markers_latent_tensor[visible_ids])

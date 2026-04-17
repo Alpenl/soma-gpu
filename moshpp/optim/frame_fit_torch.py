@@ -95,6 +95,16 @@ class TorchFrameFitOptions:
     rigid_lr: float = 1.0
     warmup_lr: float = 1.0
     refine_lr: float = 1.0
+    rigid_optimizer: str = "lbfgs"
+    warmup_optimizer: str = "lbfgs"
+    refine_optimizer: str = "lbfgs"
+    history_size: int = 100
+    tolerance_grad: float = 1e-7
+    tolerance_change: float = 1e-9
+    max_eval: Optional[int] = None
+    rigid_max_eval: Optional[int] = None
+    warmup_max_eval: Optional[int] = None
+    refine_max_eval: Optional[int] = None
 
 
 @dataclass
@@ -263,10 +273,23 @@ def _run_lbfgs(
     latent_pose_param,
     max_iters,
     lr,
+    history_size,
+    tolerance_grad,
+    tolerance_change,
+    max_eval,
 ):
     if max_iters <= 0:
         return
-    optimizer = torch.optim.LBFGS(params, lr=lr, max_iter=max_iters, line_search_fn="strong_wolfe")
+    optimizer = torch.optim.LBFGS(
+        params,
+        lr=lr,
+        max_iter=max_iters,
+        max_eval=max_eval,
+        history_size=history_size,
+        tolerance_grad=tolerance_grad,
+        tolerance_change=tolerance_change,
+        line_search_fn="strong_wolfe",
+    )
     active_mask = torch.zeros_like(latent_pose_param)
     if active_pose_ids:
         active_mask[:, active_pose_ids] = 1.0
@@ -280,6 +303,73 @@ def _run_lbfgs(
         return loss
 
     optimizer.step(closure)
+
+
+def _run_first_order(
+    *,
+    params,
+    closure_fn,
+    active_pose_ids,
+    latent_pose_param,
+    max_iters,
+    lr,
+    optimizer_type,
+):
+    if max_iters <= 0:
+        return
+    if optimizer_type != "adam":
+        raise ValueError(f"Unsupported first-order optimizer: {optimizer_type}")
+
+    optimizer = torch.optim.Adam(params, lr=lr)
+    active_mask = torch.zeros_like(latent_pose_param)
+    if active_pose_ids:
+        active_mask[:, active_pose_ids] = 1.0
+
+    for _ in range(max_iters):
+        optimizer.zero_grad()
+        loss = closure_fn()
+        loss.backward()
+        if latent_pose_param.grad is not None:
+            latent_pose_param.grad.mul_(active_mask)
+        optimizer.step()
+
+
+def _run_solver(
+    *,
+    optimizer_type,
+    params,
+    closure_fn,
+    active_pose_ids,
+    latent_pose_param,
+    max_iters,
+    lr,
+    history_size,
+    tolerance_grad,
+    tolerance_change,
+    max_eval,
+):
+    if optimizer_type == "lbfgs":
+        return _run_lbfgs(
+            params=params,
+            closure_fn=closure_fn,
+            active_pose_ids=active_pose_ids,
+            latent_pose_param=latent_pose_param,
+            max_iters=max_iters,
+            lr=lr,
+            history_size=history_size,
+            tolerance_grad=tolerance_grad,
+            tolerance_change=tolerance_change,
+            max_eval=max_eval,
+        )
+    return _run_first_order(
+        params=params,
+        closure_fn=closure_fn,
+        active_pose_ids=active_pose_ids,
+        latent_pose_param=latent_pose_param,
+        max_iters=max_iters,
+        lr=lr,
+        optimizer_type=optimizer_type,
+    )
 
 
 def fit_stageii_frame_torch(
@@ -360,13 +450,18 @@ def fit_stageii_frame_torch(
             expr=0.0,
             velocity=0.0,
         )
-        _run_lbfgs(
+        _run_solver(
+            optimizer_type=options.rigid_optimizer,
             params=[latent_pose_param, transl_param],
             closure_fn=closure_for(rigid_weights),
             active_pose_ids=list(range(layout.root_slice.start, layout.root_slice.stop)),
             latent_pose_param=latent_pose_param,
             max_iters=options.rigid_iters,
             lr=options.rigid_lr,
+            history_size=options.history_size,
+            tolerance_grad=options.tolerance_grad,
+            tolerance_change=options.tolerance_change,
+            max_eval=options.rigid_max_eval if options.rigid_max_eval is not None else options.max_eval,
         )
 
     for scale in warmup_pose_scales:
@@ -378,19 +473,25 @@ def fit_stageii_frame_torch(
             expr=0.0,
             velocity=weights.velocity,
         )
-        _run_lbfgs(
+        _run_solver(
+            optimizer_type=options.warmup_optimizer,
             params=[latent_pose_param, transl_param],
             closure_fn=closure_for(warmup_weights),
             active_pose_ids=layout.warmup_ids(optimize_toes=optimize_toes),
             latent_pose_param=latent_pose_param,
             max_iters=options.warmup_iters,
             lr=options.warmup_lr,
+            history_size=options.history_size,
+            tolerance_grad=options.tolerance_grad,
+            tolerance_change=options.tolerance_change,
+            max_eval=options.warmup_max_eval if options.warmup_max_eval is not None else options.max_eval,
         )
 
     refine_params = [latent_pose_param, transl_param]
     if optimize_face and expression_param is not None:
         refine_params.append(expression_param)
-    _run_lbfgs(
+    _run_solver(
+        optimizer_type=options.refine_optimizer,
         params=refine_params,
         closure_fn=closure_for(weights),
         active_pose_ids=layout.refine_ids(
@@ -401,6 +502,10 @@ def fit_stageii_frame_torch(
         latent_pose_param=latent_pose_param,
         max_iters=options.refine_iters,
         lr=options.refine_lr,
+        history_size=options.history_size,
+        tolerance_grad=options.tolerance_grad,
+        tolerance_change=options.tolerance_change,
+        max_eval=options.refine_max_eval if options.refine_max_eval is not None else options.max_eval,
     )
 
     evaluation = evaluate_stageii_frame(

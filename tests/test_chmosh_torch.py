@@ -427,6 +427,174 @@ def test_runtime_sequence_fit_options_inherit_refine_solver_defaults():
     assert options.max_eval == 77
 
 
+def test_runtime_sequence_seed_options_inherit_runtime_seed_solver_defaults():
+    module = _load_chmosh_torch_module()
+    runtime = _ns(
+        {
+            "sequence_seed_refine_iters": 9,
+            "sequence_seed_refine_lr": 0.03,
+            "sequence_seed_refine_optimizer": "adam",
+            "sequence_seed_refine_max_eval": 41,
+        }
+    )
+    sequence_options = module.TorchSequenceFitOptions(
+        max_iters=33,
+        lr=0.7,
+        optimizer="lbfgs",
+        history_size=55,
+        tolerance_grad=1e-5,
+        tolerance_change=1e-6,
+        max_eval=77,
+    )
+
+    seed_options = module._runtime_sequence_seed_options(sequence_options, runtime)
+
+    assert seed_options.refine_iters == 9
+    assert seed_options.refine_lr == pytest.approx(0.03)
+    assert seed_options.refine_optimizer == "adam"
+    assert seed_options.history_size == 55
+    assert seed_options.tolerance_grad == pytest.approx(1e-5)
+    assert seed_options.tolerance_change == pytest.approx(1e-6)
+    assert seed_options.max_eval == 41
+    assert seed_options.refine_max_eval == 41
+
+
+def test_mosh_stageii_torch_frame_solver_inherits_runtime_stage_solver_defaults(tmp_path, monkeypatch):
+    module = _load_chmosh_torch_module()
+
+    markers_latent = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    ).numpy()
+    latent_labels = ["A", "B", "C", "D"]
+    marker_offsets = torch.tensor(
+        [
+            [0.10, 0.00, 0.00],
+            [0.25, -0.15, 0.35],
+        ],
+        dtype=torch.float32,
+    )
+    markers = markers_latent[None, :, :] + marker_offsets[:, None, :].numpy()
+    mocap_fname = tmp_path / "synthetic_frame_runtime_defaults.pkl"
+    with mocap_fname.open("wb") as handle:
+        pickle.dump({"markers": markers, "labels": latent_labels, "frame_rate": 120.0}, handle)
+
+    cfg = _ns(
+        {
+            "mocap": {
+                "unit": "m",
+                "rotate": None,
+                "subject_name": None,
+                "multi_subject": False,
+                "start_fidx": 0,
+                "end_fidx": -1,
+                "ds_rate": 1,
+            },
+            "surface_model": {
+                "type": "smplx",
+                "num_betas": 10,
+                "dof_per_hand": 24,
+                "num_expressions": 10,
+                "use_hands_mean": True,
+                "betas_expr_start_id": 300,
+            },
+            "moshpp": {
+                "optimize_fingers": False,
+                "optimize_face": False,
+                "optimize_toes": False,
+                "optimize_dynamics": False,
+                "verbosity": 0,
+            },
+            "opt_settings": {
+                "maxiter": 20,
+                "weights": {
+                    "stageii_wt_data": 1.0,
+                    "stageii_wt_poseB": 0.0,
+                    "stageii_wt_poseH": 0.0,
+                    "stageii_wt_poseF": 0.0,
+                    "stageii_wt_expr": 0.0,
+                    "stageii_wt_dmpl": 0.0,
+                    "stageii_wt_velo": 0.0,
+                    "stageii_wt_annealing": 0.0,
+                },
+            },
+            "runtime": {
+                "backend": "torch",
+                "device": "cpu",
+                "rigid_iters": 3,
+                "warmup_iters": 4,
+                "refine_iters": 5,
+                "rigid_lr": 0.11,
+                "warmup_lr": 0.22,
+                "refine_lr": 0.33,
+                "rigid_optimizer": "adam",
+                "warmup_optimizer": "lbfgs",
+                "refine_optimizer": "adam",
+                "lbfgs_history_size": 13,
+                "lbfgs_tolerance_grad": 1e-5,
+                "lbfgs_tolerance_change": 1e-6,
+                "rigid_max_eval": 31,
+                "warmup_max_eval": 41,
+                "refine_max_eval": 51,
+            },
+        }
+    )
+
+    recorded = {"options": []}
+
+    def fake_fit_stageii_frame_torch(**kwargs):
+        recorded["options"].append(kwargs["options"])
+        markers_obs = torch.as_tensor(kwargs["marker_observations"], dtype=torch.float32)
+        transl = torch.as_tensor(kwargs["transl_init"], dtype=torch.float32)
+        return SimpleNamespace(
+            latent_pose=torch.as_tensor(kwargs["latent_pose_init"], dtype=torch.float32),
+            fullpose=torch.zeros(1, 165, dtype=torch.float32),
+            transl=transl,
+            expression=None,
+            predicted_markers=markers_obs.clone(),
+            vertices=markers_obs.unsqueeze(0).clone(),
+            joints=torch.zeros(1, 3, 3, dtype=torch.float32),
+            loss_terms={"data": 0.0, "poseB": 0.0, "poseH": 0.0, "poseF": 0.0, "expr": 0.0, "velo": 0.0},
+        )
+
+    monkeypatch.setattr(module, "fit_stageii_frame_torch", fake_fit_stageii_frame_torch)
+
+    module.mosh_stageii_torch(
+        mocap_fname=str(mocap_fname),
+        cfg=cfg,
+        markers_latent=markers_latent,
+        latent_labels=latent_labels,
+        betas=torch.zeros(10).numpy(),
+        marker_meta={"marker_type_mask": {}, "marker_type": {}, "surface_model_type": "smplx"},
+        body_model_factory=lambda: TranslOnlyBodyModel(torch.as_tensor(markers_latent, dtype=torch.float32)),
+        pose_prior=ZeroPosePrior(63),
+        device="cpu",
+    )
+
+    assert len(recorded["options"]) == 2
+    options = recorded["options"][0]
+    assert options.rigid_iters == 3
+    assert options.warmup_iters == 4
+    assert options.refine_iters == 5
+    assert options.rigid_lr == pytest.approx(0.11)
+    assert options.warmup_lr == pytest.approx(0.22)
+    assert options.refine_lr == pytest.approx(0.33)
+    assert options.rigid_optimizer == "adam"
+    assert options.warmup_optimizer == "lbfgs"
+    assert options.refine_optimizer == "adam"
+    assert options.history_size == 13
+    assert options.tolerance_grad == pytest.approx(1e-5)
+    assert options.tolerance_change == pytest.approx(1e-6)
+    assert options.rigid_max_eval == 31
+    assert options.warmup_max_eval == 41
+    assert options.refine_max_eval == 51
+
+
 def test_mosh_stageii_torch_sequence_solver_inherits_refine_runtime_defaults(tmp_path, monkeypatch):
     module = _load_chmosh_torch_module()
 
