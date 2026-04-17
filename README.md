@@ -197,6 +197,7 @@ python run_stageii_torch_pair.py \
 - 若加了 `--export-mesh`，pair runner 会把同一套 mesh 导出参数同时透传给 baseline 和 candidate；由于两侧默认 `mocap.basename` suffix 不同，即使共用一个 `--mesh-output-dir`，OBJ/PC2 也会自动分名，不需要再手工分两个导出目录。若没开 `--export-mesh` 却传了 `--mesh-output-dir`，pair runner 现在会直接报错，而不是静默忽略。
 - pair runner 现在还会在真正调用 baseline / candidate 两次 single runner 之前，先按与 single runner 相同的 `preset < --cfg < dedicated args` 规则静态推导两侧默认 `stageii.pkl` 输出路径；如果 `--baseline-cfg` / `--candidate-cfg` 里的 `mocap.basename`、`dirs.stageii_fname` 或相关路径覆盖最终把两侧指到同一个 `stageii.pkl`，命令会直接报错，而不会先跑一轮再把 baseline 自己覆盖掉。
 - 若开启了 `--export-mesh --mesh-output-dir`，pair runner 现在还会继续检查 baseline/candidate 推导出的 OBJ/PC2 落点是否会同名；即使两侧 `stageii.pkl` 在不同目录，只要 basename 一样、最终会把导出写进同一个 OBJ/PC2 路径，也会直接报错，避免 mesh 主线复核时把 baseline 导出物悄悄被 candidate 覆盖。
+- 若 baseline 也开启了 standalone benchmark，pair runner 现在还会比较 baseline/candidate 最终的 benchmark JSON 落点；只要 `--baseline-benchmark-output` 与 candidate 的显式或默认 `*_benchmark.json` 路径相同，命令也会直接报错，避免 pair 复核报告互相覆盖。
 - 若 baseline / candidate 任一侧的 single runner 运行失败，或者返回 payload 缺失 `stageii_path`，pair runner 现在也会统一以 CLI error 退出，而不是把 `ValueError` / `FileNotFoundError` 栈直接打到终端。
 
 若要在同一条命令里继续做 sweep，可用：

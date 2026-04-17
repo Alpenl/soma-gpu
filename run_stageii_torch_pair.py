@@ -331,6 +331,21 @@ def _validate_distinct_mesh_output_paths(parser, args, *, baseline_stageii_path,
         )
 
 
+def _validate_distinct_benchmark_output_paths(parser, args, *, candidate_stageii_path):
+    if args.baseline_benchmark_output is None:
+        return
+    baseline_benchmark_output = Path(args.baseline_benchmark_output)
+    candidate_benchmark_output = Path(
+        args.candidate_benchmark_output
+        or run_stageii_torch_official.default_benchmark_output_path(candidate_stageii_path)
+    )
+    if _normalized_path(baseline_benchmark_output) == _normalized_path(candidate_benchmark_output):
+        parser.error(
+            "baseline and candidate resolve to the same benchmark output path; "
+            "adjust benchmark-output paths or candidate stageii basename/path"
+        )
+
+
 def _require_stageii_path(payload, *, label):
     stageii_path = payload.get("stageii_path")
     if not stageii_path:
@@ -357,6 +372,11 @@ def run(argv=None, *, emit_json=True):
             parser,
             args,
             baseline_stageii_path=baseline_stageii_path,
+            candidate_stageii_path=candidate_stageii_path,
+        )
+        _validate_distinct_benchmark_output_paths(
+            parser,
+            args,
             candidate_stageii_path=candidate_stageii_path,
         )
         baseline_payload = run_stageii_torch_official.run(
