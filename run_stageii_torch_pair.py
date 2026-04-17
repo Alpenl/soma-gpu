@@ -373,6 +373,23 @@ def _baseline_benchmark_output_collision_kind(args, *, baseline_benchmark_output
     return None
 
 
+def _candidate_benchmark_output_collision_kind(args, *, candidate_benchmark_output, baseline_stageii_path):
+    if _normalized_path(candidate_benchmark_output) == _normalized_path(baseline_stageii_path):
+        return "stageii"
+    if args.export_mesh:
+        baseline_obj_path, baseline_pc2_path = _planned_mesh_output_paths(
+            args,
+            stageii_path=baseline_stageii_path,
+        )
+        if (
+            _normalized_path(candidate_benchmark_output) == _normalized_path(baseline_obj_path)
+        ) or (
+            _normalized_path(candidate_benchmark_output) == _normalized_path(baseline_pc2_path)
+        ):
+            return "mesh"
+    return None
+
+
 def _validate_distinct_benchmark_output_paths(parser, args, *, candidate_stageii_path):
     if args.baseline_benchmark_output is None:
         return
@@ -396,6 +413,30 @@ def _validate_distinct_benchmark_output_paths(parser, args, *, candidate_stageii
         parser.error(
             "baseline benchmark output collides with candidate mesh plan; "
             "adjust benchmark-output paths, candidate stageii basename/path, or mesh export directory"
+        )
+
+
+def _validate_candidate_benchmark_output_against_baseline_plan(
+    parser,
+    args,
+    *,
+    baseline_stageii_path,
+    candidate_benchmark_output,
+):
+    collision_kind = _candidate_benchmark_output_collision_kind(
+        args,
+        candidate_benchmark_output=candidate_benchmark_output,
+        baseline_stageii_path=baseline_stageii_path,
+    )
+    if collision_kind == "stageii":
+        parser.error(
+            "candidate benchmark output collides with baseline stageii plan; "
+            "adjust benchmark-output paths or baseline stageii basename/path"
+        )
+    if collision_kind == "mesh":
+        parser.error(
+            "candidate benchmark output collides with baseline mesh plan; "
+            "adjust benchmark-output paths, baseline stageii basename/path, or mesh export directory"
         )
 
 
@@ -443,12 +484,18 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
     *,
     baseline_payload,
     candidate_stageii_path,
+    candidate_benchmark_output,
 ):
     baseline_stageii_path = _require_stageii_path(baseline_payload, label="baseline")
     if _normalized_path(baseline_stageii_path) == _normalized_path(candidate_stageii_path):
         parser.error(
             "baseline actual stageii output path collides with candidate plan; "
             "adjust explicit stageii/basename overrides or investigate underlying runner path drift"
+        )
+    if _normalized_path(baseline_stageii_path) == _normalized_path(candidate_benchmark_output):
+        parser.error(
+            "baseline actual stageii output path collides with candidate benchmark plan; "
+            "adjust benchmark outputs, baseline stageii basename/path, or investigate underlying runner path drift"
         )
 
     if args.export_mesh:
@@ -468,6 +515,16 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
             parser.error(
                 "baseline actual mesh export output collides with candidate plan; "
                 "adjust stageii basenames/paths, export directories, or investigate underlying runner path drift"
+            )
+        if (
+            _normalized_path(baseline_obj_path) == _normalized_path(candidate_benchmark_output)
+        ) or (
+            _normalized_path(baseline_pc2_path) == _normalized_path(candidate_benchmark_output)
+        ):
+            parser.error(
+                "baseline actual mesh export output collides with candidate benchmark plan; "
+                "adjust benchmark outputs, baseline/candidate stageii basenames/paths, export directories, "
+                "or investigate underlying runner path drift"
             )
 
     if args.baseline_benchmark_output is not None:
@@ -546,6 +603,12 @@ def run(argv=None, *, emit_json=True):
             args,
             candidate_stageii_path=candidate_stageii_path,
         )
+        _validate_candidate_benchmark_output_against_baseline_plan(
+            parser,
+            args,
+            baseline_stageii_path=baseline_stageii_path,
+            candidate_benchmark_output=candidate_benchmark_output,
+        )
         baseline_payload = run_stageii_torch_official.run(
             _build_baseline_runner_args(
                 args,
@@ -561,6 +624,7 @@ def run(argv=None, *, emit_json=True):
             args,
             baseline_payload=baseline_payload,
             candidate_stageii_path=candidate_stageii_path,
+            candidate_benchmark_output=candidate_benchmark_output,
         )
         candidate_payload = run_stageii_torch_official.run(
             _build_candidate_runner_args(
