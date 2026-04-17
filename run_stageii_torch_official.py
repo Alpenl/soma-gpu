@@ -9,7 +9,11 @@ from utils.stageii_benchmark import (
     run_public_stageii_benchmark,
     write_benchmark_report,
 )
-from utils.script_utils import default_stageii_output_paths, resolve_stageii_model_path
+from utils.script_utils import (
+    default_stageii_output_paths,
+    planned_stageii_output_path_from_overrides,
+    resolve_stageii_model_path,
+)
 
 
 REAL_MCP_BASELINE_PRESET = {
@@ -199,14 +203,12 @@ def _resolve_mesh_reference_path(parser, args):
     if args.mesh_reference_output_suffix is None:
         return None
 
-    reference_cfg = MoSh.prepare_cfg(
-        **_cfg_overrides(
-            parser,
-            args,
-            output_suffix=args.mesh_reference_output_suffix,
-        )
+    reference_overrides = _cfg_overrides(
+        parser,
+        args,
+        output_suffix=args.mesh_reference_output_suffix,
     )
-    return str(reference_cfg.dirs.stageii_fname)
+    return str(planned_stageii_output_path_from_overrides(reference_overrides))
 
 
 def _normalized_path(path):

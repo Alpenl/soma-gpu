@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import run_stageii_torch_official
+from utils.script_utils import planned_stageii_output_path_from_overrides
 
 
 DEFAULT_BASELINE_PRESET = "real-mcp-baseline"
@@ -221,67 +222,12 @@ def _planned_stageii_output_overrides(parser, args, *, preset, side_cfg_entries,
     return run_stageii_torch_official._cfg_overrides(parser, runner_namespace)
 
 
-def _string_flag_is_true(value):
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _default_mocap_path_part(mocap_path, index_from_end, *, label):
-    parts = mocap_path.as_posix().split("/")
-    try:
-        return parts[index_from_end]
-    except IndexError as exc:
-        raise ValueError(
-            f"cannot infer {label} from --mocap-fname={mocap_path}; "
-            "provide a dataset/session-style path or override the relevant mocap.* cfg explicitly"
-        ) from exc
-
-
-def _planned_stageii_output_path_from_overrides(overrides):
-    explicit_stageii_path = overrides.get("dirs.stageii_fname")
-    if explicit_stageii_path:
-        return Path(str(explicit_stageii_path))
-
-    mocap_path = Path(str(overrides["mocap.fname"]))
-    work_base_dir = Path(str(overrides["dirs.work_base_dir"]))
-    ds_name = str(
-        overrides.get(
-            "mocap.ds_name",
-            _default_mocap_path_part(mocap_path, -3, label="mocap.ds_name"),
-        )
-    )
-    session_name = str(
-        overrides.get(
-            "mocap.session_name",
-            _default_mocap_path_part(mocap_path, -2, label="mocap.session_name"),
-        )
-    )
-    basename = str(overrides.get("mocap.basename", mocap_path.stem))
-    session_subject_subfolders = overrides.get("dirs.session_subject_subfolders")
-    if session_subject_subfolders is not None:
-        relative_dir = Path(str(session_subject_subfolders))
-    elif _string_flag_is_true(overrides.get("mocap.multi_subject")):
-        subject_name = overrides.get("mocap.subject_name")
-        if not subject_name:
-            raise ValueError(
-                "cannot infer multi-subject stageii output path without mocap.subject_name; "
-                "set mocap.subject_name or dirs.session_subject_subfolders explicitly"
-            )
-        relative_dir = Path(session_name) / str(subject_name)
-    else:
-        relative_dir = Path(session_name)
-    return work_base_dir / ds_name / relative_dir / f"{basename}_stageii.pkl"
-
-
 def _normalized_path(path):
     return Path(path).expanduser().resolve(strict=False)
 
 
 def _planned_stageii_output_paths(parser, args):
-    baseline_stageii_path = _planned_stageii_output_path_from_overrides(
+    baseline_stageii_path = planned_stageii_output_path_from_overrides(
         _planned_stageii_output_overrides(
             parser,
             args,
@@ -290,7 +236,7 @@ def _planned_stageii_output_paths(parser, args):
             output_suffix=args.baseline_output_suffix,
         )
     )
-    candidate_stageii_path = _planned_stageii_output_path_from_overrides(
+    candidate_stageii_path = planned_stageii_output_path_from_overrides(
         _planned_stageii_output_overrides(
             parser,
             args,

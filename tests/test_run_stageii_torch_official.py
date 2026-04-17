@@ -209,7 +209,7 @@ def test_run_stageii_torch_official_main_writes_default_benchmark_report_next_to
     assert payload["benchmark"]["artifact"]["report_path"] == str(expected_output)
 
 
-def test_run_stageii_torch_official_main_can_resolve_mesh_reference_from_output_suffix(
+def test_run_stageii_torch_official_main_plans_mesh_reference_from_output_suffix_without_second_prepare_cfg(
     tmp_path, monkeypatch
 ):
     captured = {"prepare_cfg_calls": []}
@@ -217,10 +217,16 @@ def test_run_stageii_torch_official_main_can_resolve_mesh_reference_from_output_
     def fake_prepare_cfg(**kwargs):
         captured["prepare_cfg_calls"].append(kwargs)
         basename = kwargs.get("mocap.basename", Path(kwargs["mocap.fname"]).stem)
-        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(tmp_path / f"{basename}_stageii.pkl")))
+        return SimpleNamespace(
+            dirs=SimpleNamespace(
+                stageii_fname=str(tmp_path / "work" / "input" / "wolf001" / f"{basename}_stageii.pkl")
+            )
+        )
 
     def fake_run_moshpp_once(cfg):
-        Path(cfg.dirs.stageii_fname).write_bytes(b"stageii")
+        stageii_path = Path(cfg.dirs.stageii_fname)
+        stageii_path.parent.mkdir(parents=True, exist_ok=True)
+        stageii_path.write_bytes(b"stageii")
 
     def fake_run_public_stageii_benchmark(
         sample_path,
@@ -279,25 +285,22 @@ def test_run_stageii_torch_official_main_can_resolve_mesh_reference_from_output_
             "dirs.support_base_dir": str(tmp_path / "support_files"),
             "dirs.work_base_dir": str(tmp_path / "work"),
             "runtime.backend": "torch",
-        },
-        {
-            "mocap.basename": "manual_name_baseline",
-            "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "dirs.support_base_dir": str(tmp_path / "support_files"),
-            "dirs.work_base_dir": str(tmp_path / "work"),
-            "runtime.backend": "torch",
-        },
+        }
     ]
     assert captured["benchmark_call"] == {
-        "sample_path": str(tmp_path / "manual_name_candidate_stageii.pkl"),
+        "sample_path": str(tmp_path / "work" / "input" / "wolf001" / "manual_name_candidate_stageii.pkl"),
         "warmup_runs": 0,
         "measured_runs": 1,
-        "mesh_reference_path": str(tmp_path / "manual_name_baseline_stageii.pkl"),
+        "mesh_reference_path": str(
+            tmp_path / "work" / "input" / "wolf001" / "manual_name_baseline_stageii.pkl"
+        ),
         "mesh_support_base_dir": str(tmp_path / "support_files"),
         "mesh_chunk_size": None,
         "mesh_chunk_overlap": None,
     }
-    assert payload["stageii_path"] == str(tmp_path / "manual_name_candidate_stageii.pkl")
+    assert payload["stageii_path"] == str(
+        tmp_path / "work" / "input" / "wolf001" / "manual_name_candidate_stageii.pkl"
+    )
 
 
 def test_run_stageii_torch_official_main_applies_real_mcp_baseline_preset_before_explicit_cfg(
@@ -995,13 +998,20 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_th
     def fake_prepare_cfg(**kwargs):
         captured["prepare_cfg_calls"].append(kwargs)
         basename = kwargs.get("mocap.basename", Path(kwargs["mocap.fname"]).stem)
-        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(tmp_path / f"{basename}_stageii.pkl")))
+        return SimpleNamespace(
+            dirs=SimpleNamespace(
+                stageii_fname=str(tmp_path / "work" / "input" / "wolf001" / f"{basename}_stageii.pkl")
+            )
+        )
 
     monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
     monkeypatch.setattr(
         run_stageii_torch_official,
         "run_moshpp_once",
-        lambda cfg: Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
@@ -1038,14 +1048,7 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_th
             "dirs.support_base_dir": str(tmp_path / "support_files"),
             "dirs.work_base_dir": str(tmp_path / "work"),
             "runtime.backend": "torch",
-        },
-        {
-            "mocap.basename": "manual_name_candidate",
-            "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "dirs.support_base_dir": str(tmp_path / "support_files"),
-            "dirs.work_base_dir": str(tmp_path / "work"),
-            "runtime.backend": "torch",
-        },
+        }
     ]
     assert "mesh reference resolves to the current stageii output" in capsys.readouterr().err
 
