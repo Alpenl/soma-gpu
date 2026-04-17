@@ -31,6 +31,8 @@ OFFICIAL_PRESETS = {
     },
 }
 
+BENCHMARK_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
+
 
 def build_parser():
     parser = argparse.ArgumentParser(
@@ -245,24 +247,27 @@ def run(argv=None, *, emit_json=True):
             parser.error(str(exc))
 
     if not args.skip_benchmark:
-        mesh_reference_path = _resolve_mesh_reference_path(parser, args)
-        _validate_mesh_reference_path(
-            parser,
-            stageii_path=stageii_path,
-            mesh_reference_path=mesh_reference_path,
-        )
-        report = run_public_stageii_benchmark(
-            str(stageii_path),
-            warmup_runs=args.warmup_runs,
-            measured_runs=args.measured_runs,
-            mesh_reference_path=mesh_reference_path,
-            mesh_support_base_dir=_mesh_support_base_dir(args),
-            mesh_chunk_size=args.mesh_chunk_size,
-            mesh_chunk_overlap=args.mesh_chunk_overlap,
-        )
-        benchmark_output_path = args.benchmark_output or default_benchmark_output_path(stageii_path)
-        report = write_benchmark_report(report, str(benchmark_output_path))
-        payload["benchmark"] = report
+        try:
+            mesh_reference_path = _resolve_mesh_reference_path(parser, args)
+            _validate_mesh_reference_path(
+                parser,
+                stageii_path=stageii_path,
+                mesh_reference_path=mesh_reference_path,
+            )
+            report = run_public_stageii_benchmark(
+                str(stageii_path),
+                warmup_runs=args.warmup_runs,
+                measured_runs=args.measured_runs,
+                mesh_reference_path=mesh_reference_path,
+                mesh_support_base_dir=_mesh_support_base_dir(args),
+                mesh_chunk_size=args.mesh_chunk_size,
+                mesh_chunk_overlap=args.mesh_chunk_overlap,
+            )
+            benchmark_output_path = args.benchmark_output or default_benchmark_output_path(stageii_path)
+            report = write_benchmark_report(report, str(benchmark_output_path))
+            payload["benchmark"] = report
+        except BENCHMARK_CLI_ERROR_TYPES as exc:
+            parser.error(str(exc))
 
     if emit_json:
         print(json.dumps(payload, indent=2, sort_keys=True))

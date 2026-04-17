@@ -7,6 +7,8 @@ from utils.stageii_benchmark import (
     write_benchmark_report,
 )
 
+BENCHMARK_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
+
 
 def build_parser():
     parser = argparse.ArgumentParser(
@@ -66,19 +68,23 @@ def build_parser():
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
-    report = run_public_stageii_benchmark(
-        args.input,
-        warmup_runs=args.warmup_runs,
-        measured_runs=args.measured_runs,
-        mesh_reference_path=args.mesh_reference,
-        mesh_support_base_dir=args.mesh_support_base_dir,
-        mesh_chunk_size=args.mesh_chunk_size,
-        mesh_chunk_overlap=args.mesh_chunk_overlap,
-    )
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        report = run_public_stageii_benchmark(
+            args.input,
+            warmup_runs=args.warmup_runs,
+            measured_runs=args.measured_runs,
+            mesh_reference_path=args.mesh_reference,
+            mesh_support_base_dir=args.mesh_support_base_dir,
+            mesh_chunk_size=args.mesh_chunk_size,
+            mesh_chunk_overlap=args.mesh_chunk_overlap,
+        )
 
-    output_path = args.output or default_benchmark_output_path(args.input)
-    payload = write_benchmark_report(report, output_path)
+        output_path = args.output or default_benchmark_output_path(args.input)
+        payload = write_benchmark_report(report, output_path)
+    except BENCHMARK_CLI_ERROR_TYPES as exc:
+        parser.error(str(exc))
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 

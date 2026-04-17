@@ -838,3 +838,52 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_th
         },
     ]
     assert "mesh reference resolves to the current stageii output" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_errors_when_benchmark_validation_fails(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("chunk_overlap requires chunk_size")),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--mesh-reference",
+                str(tmp_path / "baseline.pc2"),
+                "--mesh-chunk-overlap",
+                "4",
+                "--warmup-runs",
+                "0",
+                "--measured-runs",
+                "1",
+            ]
+        )
+
+    assert "chunk_overlap requires chunk_size" in capsys.readouterr().err

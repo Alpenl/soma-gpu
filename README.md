@@ -137,6 +137,7 @@ python benchmark_stageii_public.py \
 ````
 此时报告除了现有 `quality.marker_residual_l2` / `trans_jitter_l2` / `chunk_seam_*` 摘要外，还会在 `quality.mesh_compare` 下追加 baseline 与 candidate 的 `reference` / `candidate` / `frame_delta_l2` mesh-space 摘要；如果 `--mesh-reference` 本身也是 `stageii.pkl`，同一份 JSON 里还会额外写出 `quality.reference_stageii_quality` 与 `quality.reference_stageii_delta`，把 baseline 的 stageii 质量摘要和 candidate-reference 的关键统计量差值一起收进来。`reference_stageii_delta` 目前固定汇总 `mean/p90/max`，数值按 `candidate - reference` 计算，因此对现有 residual / jitter / seam 指标来说，负值表示 candidate 更低、更接近我们想要的方向。对于 `stageii.pkl` 输入通常不需要显式传 `--mesh-chunk-size/--mesh-chunk-overlap`；只有直接比较裸 `pc2/pc16` 缓存时才需要覆盖。
 若不显式传 `--output`，`benchmark_stageii_public.py` 现在也会默认把报告写到输入同目录下的 `*_benchmark.json`：例如 `candidate_stageii.pkl -> candidate_benchmark.json`。`--output` 仅用于覆盖这个默认落点。
+如果 benchmark/mesh compare 参数本身不合法，例如只传了 `--mesh-chunk-overlap` 却没配 `--mesh-chunk-size`，`benchmark_stageii_public.py` 和 `run_stageii_torch_official.py` 现在都会直接以 CLI error 退出，而不是把内部 `ValueError` 栈追踪直接打到终端。
 
 若想直接走官方 `run_moshpp_once(cfg)` 单序列入口，并在同一条命令里产出 `stageii.pkl`，再按需顺带导出 OBJ/PC2 与 benchmark JSON，可使用：
 ````
@@ -152,6 +153,7 @@ python run_stageii_torch_official.py \
 该脚本只做薄编排：基础路径参数会直接落到 `MoSh.prepare_cfg(...)`，其余 candidate-specific 参数继续通过 repeatable `--cfg key=value` 透传；默认会在官方入口结束后立即对生成的 `stageii.pkl` 复用 `benchmark_stageii_public.py` 同一套质量/mesh 对比口径。如只想先产出 `stageii.pkl`、暂时不跑 benchmark，可加 `--skip-benchmark`。
 若当前主线想直接闭环到 mesh，可在同一条命令上再加 `--export-mesh`。默认会复用 `save_smplx_verts.export_stageii_meshes(...)`，把 OBJ/PC2 写到生成的 `stageii.pkl` 同目录；如需集中导出到独立目录，可追加 `--mesh-output-dir ROOT/mesh_exports/[session]/[subject]`。`--mesh-support-base-dir` 现在同时服务于 mesh 导出和 benchmark 里的 mesh compare；若不显式传，则默认回退到 `--support-base-dir`。
 若不显式传 `--benchmark-output`，runner 也会默认把报告写到同目录下的 `*_benchmark.json`：例如 `foo_stageii.pkl -> foo_benchmark.json`。`--benchmark-output` 现在只用于覆盖这个默认落点，而不是决定“是否写盘”。
+若 benchmark 这段本身因为 mesh compare 参数不合法、reference 路径/模型解析失败等原因出错，single runner 现在也会把异常收口成 CLI error，避免直接抛 Python 栈。
 
 `--preset real-mcp-baseline` 会先注入当前已验证的 corrected real `.mcp` torch baseline 参数：
 `moshpp.optimize_fingers=true`、`runtime.sequence_chunk_size=32`、`runtime.sequence_chunk_overlap=4`、`runtime.sequence_seed_refine_iters=5`、`runtime.refine_lr=0.05`、`runtime.sequence_lr=0.05`、`runtime.sequence_max_iters=30`。如果要在此基础上做单变量 sweep，继续追加 `--cfg key=value` 即可；`--cfg` 会覆盖同名 preset 项，因此不需要每次重打一整串 baseline override。

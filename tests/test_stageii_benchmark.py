@@ -606,6 +606,28 @@ def test_benchmark_stageii_public_main_writes_default_report_next_to_input(monke
     assert output["artifact"]["report_path"] == "/tmp/work/input/wolf001/candidate_benchmark.json"
 
 
+def test_benchmark_stageii_public_main_errors_when_benchmark_validation_fails(monkeypatch, capsys):
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("chunk_overlap requires chunk_size")),
+    )
+
+    with pytest.raises(SystemExit):
+        benchmark_stageii_public.main(
+            [
+                "--input",
+                "candidate_stageii.pkl",
+                "--mesh-reference",
+                "baseline.pc2",
+                "--mesh-chunk-overlap",
+                "4",
+            ]
+        )
+
+    assert "chunk_overlap requires chunk_size" in capsys.readouterr().err
+
+
 def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_new_format(
     tmp_path,
 ):
