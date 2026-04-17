@@ -1266,6 +1266,61 @@ def test_run_stageii_torch_official_main_errors_when_mesh_export_returns_drifted
     assert "mesh export payload obj_path drifted from requested output path" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_errors_when_mesh_export_raises_import_error(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
+    mesh_output_dir = tmp_path / "mesh_exports"
+    mesh_support_dir = tmp_path / "mesh_support"
+    resolved_model_path = mesh_support_dir / "smplx" / "male" / "model.npz"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "resolve_stageii_model_path",
+        lambda *args, **kwargs: str(resolved_model_path),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "export_stageii_meshes",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ImportError("missing mesh backend")),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--skip-benchmark",
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(mesh_output_dir),
+                "--mesh-support-base-dir",
+                str(mesh_support_dir),
+            ]
+        )
+
+    assert "missing mesh backend" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_runtime_error(
     tmp_path, monkeypatch, capsys
 ):
@@ -1297,6 +1352,39 @@ def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_runt
         )
 
     assert "mocap load failed" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_import_error(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (_ for _ in ()).throw(ModuleNotFoundError("missing torch runtime")),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert "missing torch runtime" in capsys.readouterr().err
 
 
 def test_run_stageii_torch_official_parser_rejects_explicit_mesh_reference_and_output_suffix_together():
