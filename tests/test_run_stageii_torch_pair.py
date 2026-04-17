@@ -707,6 +707,32 @@ def test_run_stageii_torch_pair_main_rejects_mesh_chunk_overlap_without_mesh_chu
     assert "--mesh-chunk-overlap requires --mesh-chunk-size" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_pair_main_rejects_non_positive_mesh_chunk_size(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_pair.run_stageii_torch_official,
+        "run",
+        lambda *args, **kwargs: pytest.fail("underlying runner should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--mesh-chunk-size",
+                "0",
+            ]
+        )
+
+    assert "--mesh-chunk-size must be > 0" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_pair_main_errors_when_baseline_runner_omits_stageii_path(
     tmp_path, monkeypatch, capsys
 ):

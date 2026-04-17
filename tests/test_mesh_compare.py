@@ -171,6 +171,31 @@ def test_load_mesh_sequence_reads_pc2_and_accepts_explicit_chunk_config(tmp_path
     np.testing.assert_allclose(loaded.vertices, expected_vertices)
 
 
+def test_load_mesh_sequence_rejects_non_positive_explicit_chunk_size(tmp_path):
+    mesh_compare = _load_mesh_compare_module()
+    pc2_path = tmp_path / "demo.pc2"
+    writePC2(str(pc2_path), np.zeros((2, 1, 3), dtype=np.float32))
+
+    with pytest.raises(ValueError, match="chunk_size must be > 0"):
+        mesh_compare.load_mesh_sequence(
+            pc2_path,
+            chunk_size=0,
+        )
+
+
+def test_load_mesh_sequence_rejects_negative_explicit_chunk_overlap(tmp_path):
+    mesh_compare = _load_mesh_compare_module()
+    pc2_path = tmp_path / "demo.pc2"
+    writePC2(str(pc2_path), np.zeros((2, 1, 3), dtype=np.float32))
+
+    with pytest.raises(ValueError, match="chunk_overlap must be >= 0"):
+        mesh_compare.load_mesh_sequence(
+            pc2_path,
+            chunk_size=16,
+            chunk_overlap=-1,
+        )
+
+
 def test_compare_mesh_sequences_reports_mesh_accel_seam_and_frame_delta_summaries(tmp_path):
     mesh_compare = _load_mesh_compare_module()
     reference_path = tmp_path / "reference.pc2"

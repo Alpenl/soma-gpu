@@ -965,6 +965,30 @@ def test_benchmark_stageii_public_main_rejects_mesh_chunk_size_without_mesh_refe
     assert "--mesh-chunk-size requires --mesh-reference" in capsys.readouterr().err
 
 
+def test_benchmark_stageii_public_main_rejects_non_positive_mesh_chunk_size(
+    monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark helper should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        benchmark_stageii_public.main(
+            [
+                "--input",
+                "candidate_stageii.pkl",
+                "--mesh-reference",
+                "baseline.pc2",
+                "--mesh-chunk-size",
+                "0",
+            ]
+        )
+
+    assert "--mesh-chunk-size must be > 0" in capsys.readouterr().err
+
+
 def test_benchmark_stageii_public_main_rejects_mesh_support_base_dir_without_mesh_reference(
     monkeypatch, capsys
 ):

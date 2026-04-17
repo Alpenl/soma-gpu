@@ -256,8 +256,12 @@ def _build_candidate_runner_args(
 def _validate_mesh_cli_args(parser, args):
     if args.mesh_output_dir is not None and not args.export_mesh:
         parser.error("--mesh-output-dir requires --export-mesh")
+    if args.mesh_chunk_size is not None and args.mesh_chunk_size <= 0:
+        parser.error("--mesh-chunk-size must be > 0")
     if args.mesh_chunk_overlap is not None and args.mesh_chunk_size is None:
         parser.error("--mesh-chunk-overlap requires --mesh-chunk-size")
+    if args.mesh_chunk_overlap is not None and args.mesh_chunk_overlap < 0:
+        parser.error("--mesh-chunk-overlap must be >= 0")
 
 
 def _single_runner_cfg_namespace(args, *, preset, cfg_entries, output_suffix):

@@ -31,7 +31,13 @@ def _explicit_chunk_config(chunk_size=None, chunk_overlap=None):
         if chunk_overlap not in (None, 0):
             raise ValueError("chunk_overlap requires chunk_size")
         return None
-    return max(int(chunk_size), 1), max(int(chunk_overlap or 0), 0)
+    chunk_size = int(chunk_size)
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be > 0")
+    chunk_overlap = int(chunk_overlap or 0)
+    if chunk_overlap < 0:
+        raise ValueError("chunk_overlap must be >= 0")
+    return chunk_size, chunk_overlap
 
 
 def _fallback_stageii_model_path(sample_path, *, support_base_dir=None):
