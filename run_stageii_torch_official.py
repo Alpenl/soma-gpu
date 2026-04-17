@@ -176,6 +176,20 @@ def _resolve_mesh_reference_path(parser, args):
     return str(reference_cfg.dirs.stageii_fname)
 
 
+def _normalized_path(path):
+    return Path(path).expanduser().resolve(strict=False)
+
+
+def _validate_mesh_reference_path(parser, *, stageii_path, mesh_reference_path):
+    if mesh_reference_path is None:
+        return
+    if _normalized_path(mesh_reference_path) == _normalized_path(stageii_path):
+        parser.error(
+            "mesh reference resolves to the current stageii output; "
+            "pass a distinct baseline stageii.pkl or .pc2/.pc16 reference"
+        )
+
+
 def _mesh_support_base_dir(args):
     return args.mesh_support_base_dir or args.support_base_dir
 
@@ -232,6 +246,11 @@ def run(argv=None, *, emit_json=True):
 
     if not args.skip_benchmark:
         mesh_reference_path = _resolve_mesh_reference_path(parser, args)
+        _validate_mesh_reference_path(
+            parser,
+            stageii_path=stageii_path,
+            mesh_reference_path=mesh_reference_path,
+        )
         report = run_public_stageii_benchmark(
             str(stageii_path),
             warmup_runs=args.warmup_runs,
