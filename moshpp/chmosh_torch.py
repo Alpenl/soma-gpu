@@ -615,6 +615,26 @@ def _splice_chunk_overlap_reference(
     return reference
 
 
+def _build_chunk_transl_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
+    if previous_tail is None:
+        return None
+    if base_reference is None or overlap_count <= 0:
+        return previous_tail[-1:].detach().clone()
+    keep_seam_window = max(int(keep_seam_window or 1), 1)
+    seam_reference = _splice_chunk_overlap_reference(
+        base_reference,
+        previous_tail,
+        overlap_count,
+        include_keep_seam=True,
+        keep_seam_window=keep_seam_window,
+    )
+    seam_window_end = min(overlap_count + keep_seam_window, seam_reference.shape[0])
+    keep_positions = seam_reference[overlap_count:seam_window_end].detach().clone()
+    if keep_positions.shape[0] == 0:
+        return previous_tail[-1:].detach().clone()
+    return torch.cat([previous_tail[-1:].detach().clone(), keep_positions], dim=0)
+
+
 def mosh_stageii_torch(
     mocap_fname: str,
     cfg,
@@ -837,13 +857,6 @@ def mosh_stageii_torch(
             )
             chunk_overlap_count = 0 if chunk_idx == 0 else min(sequence_chunk_overlap, row_end - row_start)
             chunk_length = row_end - row_start
-            transl_velocity_reference_index = None
-            if (
-                sequence_boundary_transl_velocity_reference
-                and prev_transl is not None
-                and chunk_overlap_count < chunk_length
-            ):
-                transl_velocity_reference_index = chunk_overlap_count
 
             if sequence_seed_cache is None:
                 chunk_latent_init = []
@@ -875,6 +888,24 @@ def mosh_stageii_torch(
                     if optimize_face and cached_expression_init is not None
                     else None
                 )
+
+            transl_velocity_reference = None
+            transl_velocity_reference_index = None
+            if (
+                sequence_boundary_transl_velocity_reference
+                and prev_transl is not None
+                and chunk_overlap_count < chunk_length
+            ):
+                transl_velocity_reference_index = chunk_overlap_count
+                transl_velocity_reference = prev_transl
+                keep_seam_window = min(chunk_overlap_count, chunk_length - chunk_overlap_count)
+                if previous_chunk_transl_tail is not None and keep_seam_window > 1:
+                    transl_velocity_reference = _build_chunk_transl_velocity_reference(
+                        chunk_transl_init,
+                        previous_chunk_transl_tail,
+                        chunk_overlap_count,
+                        keep_seam_window=keep_seam_window,
+                    )
 
             chunk_latent_reference = chunk_latent_init
             chunk_transl_reference = chunk_transl_init
@@ -925,7 +956,7 @@ def mosh_stageii_torch(
                 optimize_face=optimize_face,
                 optimize_toes=bool(cfg.moshpp.optimize_toes),
                 velocity_reference=prev_latent_pose if sequence_boundary_velocity_reference else None,
-                transl_velocity_reference=prev_transl if sequence_boundary_transl_velocity_reference else None,
+                transl_velocity_reference=transl_velocity_reference,
                 transl_velocity_reference_index=transl_velocity_reference_index,
                 visible_mask=chunk_visible,
                 weights=sequence_weights,

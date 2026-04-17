@@ -105,6 +105,28 @@ def _coerce_optional_reference(reference, *, device, dtype, feature_shape, num_f
     )
 
 
+def _coerce_optional_velocity_reference(reference, *, device, dtype, feature_shape, num_frames, name):
+    if reference is None:
+        return None
+    reference = torch.as_tensor(reference, dtype=dtype, device=device)
+    if len(feature_shape) == 0:
+        if reference.ndim == 1 and 1 <= reference.shape[0] <= num_frames:
+            return reference
+        if reference.ndim == 2 and 1 <= reference.shape[0] <= num_frames and reference.shape[1] == 0:
+            return reference
+    elif reference.ndim == len(feature_shape) and reference.shape == feature_shape:
+        return reference.reshape(1, *feature_shape)
+    elif (
+        reference.ndim == len(feature_shape) + 1
+        and 1 <= reference.shape[0] <= num_frames
+        and reference.shape[1:] == feature_shape
+    ):
+        return reference
+    raise ValueError(
+        f"{name} must have shape {feature_shape}, (1..{num_frames}, *{feature_shape}), got {tuple(reference.shape)}"
+    )
+
+
 def _coerce_optional_index(index, *, num_frames, name):
     if index is None:
         return None
@@ -263,7 +285,7 @@ def fit_stageii_sequence_torch(
         marker_data_weights = torch.as_tensor(marker_data_weights, dtype=torch.float32, device=device)
     if velocity_reference is not None:
         velocity_reference = torch.as_tensor(velocity_reference, dtype=torch.float32, device=device)
-    transl_velocity_reference = _coerce_optional_reference(
+    transl_velocity_reference = _coerce_optional_velocity_reference(
         transl_velocity_reference,
         device=device,
         dtype=torch.float32,

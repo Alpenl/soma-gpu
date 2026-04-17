@@ -68,10 +68,10 @@ def _coerce_velocity_reference(reference, like):
     reference = torch.as_tensor(reference, dtype=like.dtype, device=like.device)
     if reference.ndim == like.ndim - 1 and reference.shape == like.shape[1:]:
         return reference[None]
-    if reference.ndim == like.ndim and reference.shape[0] in (1, like.shape[0]) and reference.shape[1:] == like.shape[1:]:
+    if reference.ndim == like.ndim and 1 <= reference.shape[0] <= like.shape[0] and reference.shape[1:] == like.shape[1:]:
         return reference
     raise ValueError(
-        f"velocity_reference must have trailing shape {tuple(like.shape[1:])} with leading dim 1 or {like.shape[0]}, got {tuple(reference.shape)}"
+        f"velocity_reference must have trailing shape {tuple(like.shape[1:])} with leading dim in [1, {like.shape[0]}], got {tuple(reference.shape)}"
     )
 
 
@@ -168,6 +168,9 @@ class StageIISequenceEvaluator(torch.nn.Module):
         transl_velocity_term = latent_pose.new_zeros((latent_pose.shape[0],))
         transl_velocity_weight = float(getattr(weights, "transl_velocity", 0.0))
         if transl_velocity_weight != 0.0:
+            if transl.shape[0] >= 2:
+                diffs = transl[1:] - transl[:-1]
+                transl_velocity_term[1:] = torch.sum((diffs * transl_velocity_weight) ** 2, dim=1)
             if transl_velocity_reference is not None:
                 transl_velocity_reference = _coerce_velocity_reference(transl_velocity_reference, transl)
                 if transl_velocity_reference.shape[0] == 1:
@@ -178,20 +181,46 @@ class StageIISequenceEvaluator(torch.nn.Module):
                     )
                     if seam_idx is None:
                         seam_idx = 0
-                    if transl.shape[0] >= 2:
-                        diffs = transl[1:] - transl[:-1]
-                        transl_velocity_term[1:] = torch.sum((diffs * transl_velocity_weight) ** 2, dim=1)
                     transl_velocity_term[seam_idx] = torch.sum(
                         ((transl[seam_idx] - transl_velocity_reference[0]) * transl_velocity_weight) ** 2
                     )
-                else:
+                elif transl_velocity_reference.shape[0] == transl.shape[0]:
                     transl_velocity_term = torch.sum(
                         ((transl - transl_velocity_reference) * transl_velocity_weight) ** 2,
                         dim=1,
                     )
-            elif transl.shape[0] >= 2:
-                diffs = transl[1:] - transl[:-1]
-                transl_velocity_term[1:] = torch.sum((diffs * transl_velocity_weight) ** 2, dim=1)
+                else:
+                    seam_idx = _coerce_reference_index(
+                        transl_velocity_reference_index,
+                        num_frames=transl.shape[0],
+                        name="transl_velocity_reference_index",
+                    )
+                    if seam_idx is None:
+                        seam_idx = 0
+                    local_frame_count = transl_velocity_reference.shape[0] - 1
+                    window_end = seam_idx + local_frame_count
+                    if window_end > transl.shape[0]:
+                        raise ValueError(
+                            "transl_velocity_reference local window exceeds sequence length: "
+                            f"start={seam_idx}, window={local_frame_count}, num_frames={transl.shape[0]}"
+                        )
+                    reference_diffs = transl_velocity_reference[1:] - transl_velocity_reference[:-1]
+                    transl_velocity_term[seam_idx] = torch.sum(
+                        (
+                            (
+                                (transl[seam_idx] - transl_velocity_reference[0])
+                                - reference_diffs[0]
+                            )
+                            * transl_velocity_weight
+                        )
+                        ** 2
+                    )
+                    if local_frame_count > 1:
+                        local_diffs = transl[seam_idx + 1 : window_end] - transl[seam_idx : window_end - 1]
+                        transl_velocity_term[seam_idx + 1 : window_end] = torch.sum(
+                            ((local_diffs - reference_diffs[1:]) * transl_velocity_weight) ** 2,
+                            dim=1,
+                        )
 
         accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
         temporal_accel = float(getattr(weights, "temporal_accel", 0.0))
