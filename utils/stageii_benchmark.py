@@ -352,6 +352,18 @@ def _marker_residual_l2_samples(stageii_data):
     return residual_samples
 
 
+def _frame_delta_l2_samples(array_like):
+    array = np.asarray(array_like, dtype=np.float64)
+    if array.shape[0] < 2:
+        return []
+    delta = np.diff(array, axis=0)
+    delta = np.nan_to_num(delta, copy=False)
+    delta = delta.reshape(delta.shape[0], -1)
+    delta_norm = np.linalg.norm(delta, axis=1)
+    finite_mask = np.isfinite(delta_norm)
+    return [float(value) for value in delta_norm[finite_mask].tolist()]
+
+
 def _temporal_accel_l2_samples(array_like):
     array = np.asarray(array_like, dtype=np.float64)
     if array.shape[0] < 3:
@@ -420,6 +432,14 @@ def _summarize_stageii_quality(sample_path, baseline):
     quality = {
         "marker_residual_l2": _summarize_numeric_samples(
             _marker_residual_l2_samples(stageii_data),
+            include_samples=False,
+        ),
+        "trans_frame_delta_l2": _summarize_numeric_samples(
+            _frame_delta_l2_samples(baseline.trans),
+            include_samples=False,
+        ),
+        "pose_frame_delta_l2": _summarize_numeric_samples(
+            _frame_delta_l2_samples(baseline.poses),
             include_samples=False,
         ),
         "trans_jitter_l2": _summarize_numeric_samples(

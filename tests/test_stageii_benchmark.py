@@ -517,12 +517,24 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_sta
     reference_quality = report["quality"]["reference_stageii_quality"]
     assert reference_quality is not None
     assert reference_quality["marker_residual_l2"]["mean"] == pytest.approx(2.0)
+    assert reference_quality["trans_frame_delta_l2"]["mean"] == pytest.approx(1.5)
+    assert reference_quality["pose_frame_delta_l2"]["mean"] == pytest.approx(1.0)
     assert reference_quality["trans_jitter_l2"]["mean"] == pytest.approx(1.0)
     assert report["quality"]["reference_stageii_delta"] == {
         "marker_residual_l2": {
             "mean": pytest.approx(-1.0),
             "p90": pytest.approx(-1.0),
             "max": pytest.approx(-1.0),
+        },
+        "trans_frame_delta_l2": {
+            "mean": pytest.approx(0.0),
+            "p90": pytest.approx(0.0),
+            "max": pytest.approx(0.0),
+        },
+        "pose_frame_delta_l2": {
+            "mean": pytest.approx(0.0),
+            "p90": pytest.approx(0.0),
+            "max": pytest.approx(0.0),
         },
         "trans_jitter_l2": {
             "mean": pytest.approx(0.0),
@@ -1045,6 +1057,12 @@ def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_ne
 
     assert quality["marker_residual_l2"]["count"] == 5
     assert quality["marker_residual_l2"]["mean"] == pytest.approx(1.0)
+    assert quality["trans_frame_delta_l2"]["count"] == 4
+    assert quality["trans_frame_delta_l2"]["mean"] == pytest.approx(2.75)
+    assert quality["trans_frame_delta_l2"]["max"] == pytest.approx(8.0)
+    assert quality["pose_frame_delta_l2"]["count"] == 4
+    assert quality["pose_frame_delta_l2"]["mean"] == pytest.approx(2.75)
+    assert quality["pose_frame_delta_l2"]["max"] == pytest.approx(8.0)
     assert quality["trans_jitter_l2"]["max"] == pytest.approx(7.0)
     assert quality["pose_jitter_l2"]["max"] == pytest.approx(7.0)
     assert quality["chunk_seam_transl_jump_l2"]["count"] == 1
@@ -1061,6 +1079,8 @@ def test_summarize_stageii_quality_reads_legacy_marker_residual_from_public_samp
 
     assert quality["marker_residual_l2"]["count"] > 0
     assert quality["marker_residual_l2"]["mean"] >= 0.0
+    assert quality["trans_frame_delta_l2"]["count"] > 0
+    assert quality["pose_frame_delta_l2"]["count"] > 0
     assert quality["trans_jitter_l2"]["count"] > 0
     assert quality["chunk_seam_transl_jump_l2"] is None
 
@@ -1144,6 +1164,8 @@ def test_summarize_stageii_quality_omits_bulky_raw_samples(tmp_path):
     )
 
     assert "samples" not in quality["marker_residual_l2"]
+    assert "samples" not in quality["trans_frame_delta_l2"]
+    assert "samples" not in quality["pose_frame_delta_l2"]
     assert "samples" not in quality["trans_jitter_l2"]
     assert "samples" not in quality["pose_jitter_l2"]
 
