@@ -503,6 +503,15 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
             args,
             stageii_path=candidate_stageii_path,
         )
+        if (
+            _normalized_path(baseline_stageii_path) == _normalized_path(candidate_obj_path)
+        ) or (
+            _normalized_path(baseline_stageii_path) == _normalized_path(candidate_pc2_path)
+        ):
+            parser.error(
+                "baseline actual stageii output path collides with candidate mesh plan; "
+                "adjust stageii basenames/paths, export directories, or investigate underlying runner path drift"
+            )
         baseline_obj_path, baseline_pc2_path = _require_mesh_export_paths(
             baseline_payload,
             label="baseline",

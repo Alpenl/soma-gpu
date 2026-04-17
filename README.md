@@ -216,6 +216,7 @@ python run_stageii_torch_pair.py \
 - 若 baseline 也开启了 standalone benchmark，pair runner 现在不只会比较 baseline/candidate 两侧的 benchmark JSON 落点；只要 `--baseline-benchmark-output` 最终指向 candidate 的显式或默认 `*_benchmark.json`、candidate 的计划 `stageii.pkl`，或开启 `--export-mesh` 后 candidate 计划写出的 OBJ/PC2，命令都会直接报错，避免 baseline benchmark 先把 candidate 资产占掉。
 - 即使 baseline 不跑 standalone benchmark，candidate 这侧的 benchmark JSON 现在也不能反过来占用 baseline 的计划 `stageii.pkl` 或 baseline 计划写出的 OBJ/PC2；如果 `--candidate-benchmark-output` 显式或默认落点会撞到 baseline 资产，pair runner 会在 baseline 启动前直接报错。
 - 即使静态预检没有命中，pair runner 现在也会在 baseline 真正跑完后，再把 baseline payload 里实际返回的 `stageii_path`、`mesh_export.obj/pc2`、以及 baseline benchmark `report_path` 与 candidate 的计划落点做一次二次比对；如果 underlying single runner 的真实落点和静态预判漂移到会覆盖 candidate 的 benchmark/stageii/mesh 产物，命令会在 candidate 启动前直接中止，而不是继续把 baseline 产物覆盖掉。
+- 这层二次比对里，baseline 实际 `stageii_path` 现在不只会对 candidate 的 `stageii.pkl` / benchmark JSON 做比较；开启 `--export-mesh` 时，也会继续对 candidate 计划 OBJ/PC2 做比较，避免 baseline stageii 路径漂到 candidate mesh 落点后等第二次导出才把 baseline 文件覆写掉。
 - 这层 baseline-actual 二次比对现在也会把 baseline 实际 `stageii_path` / `mesh_export.obj/pc2` 与 candidate 计划 benchmark JSON 一并比较；因此就算 underlying single runner 的真实返回路径漂到了 candidate benchmark 落点，也会在第二次调用前被挡住，不会先把 baseline 资产覆写成 report JSON。
 - 除了上面的 baseline-actual 二次比对，pair runner 现在也会把 planned benchmark / mesh 输出路径连同 `stageii.pkl` 计划路径一起，作为 hidden internal arg 下推给 underlying single runner：
   - `--expected-stageii-path`
