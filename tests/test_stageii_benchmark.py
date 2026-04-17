@@ -69,3 +69,30 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert loaded["sample"]["sha256"] == report["sample"]["sha256"]
     assert loaded["artifact"]["report_path"].endswith("report.json")
     assert loaded["speed"]["latency_ms"]["samples"] == pytest.approx([5.0, 20.0, 50.0, 100.0, 200.0])
+
+
+def test_blocked_stages_use_preview_render_stack_and_support_files_assets(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    preview_model = repo_root / "support_files" / "smplx" / "male" / "model.npz"
+    preview_model.parent.mkdir(parents=True)
+    preview_model.write_bytes(b"npz")
+
+    available_modules = {
+        "taichi",
+        "cv2",
+        "human_body_prior.body_model.body_model",
+    }
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_safe_find_spec",
+        lambda module_name: object() if module_name in available_modules else None,
+    )
+
+    blocked = stageii_benchmark._blocked_stages(repo_root)
+    blocked_stages = [entry["stage"] for entry in blocked]
+    blocked_reasons = [entry["reason"] for entry in blocked]
+
+    assert "mp4_render" not in blocked_stages
+    assert "mesh_export" in blocked_stages
+    assert not any("model.npz assets needed for mesh export" in reason for reason in blocked_reasons)

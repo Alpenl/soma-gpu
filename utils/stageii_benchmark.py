@@ -4,7 +4,6 @@ import importlib.util
 import json
 import platform
 import pickle
-import shutil
 import statistics
 import sys
 from dataclasses import dataclass
@@ -193,9 +192,43 @@ def _all_finite(sample):
     return all(np.isfinite(array).all() for array in _core_numeric_arrays(sample).values())
 
 
+def _support_files_root(repo_root):
+    return Path(repo_root) / "support_files"
+
+
+def _support_model_assets(repo_root, *, suffix):
+    return sorted(_support_files_root(repo_root).glob(f"**/model{suffix}"))
+
+
 def _missing_mesh_model_assets(repo_root):
-    support_root = Path(repo_root) / "support_data"
-    return not any(support_root.glob("**/model.npz"))
+    return not _support_model_assets(repo_root, suffix=".npz")
+
+
+def _preview_render_block_reason(repo_root):
+    if _safe_find_spec("taichi") is None:
+        return "render_video.py preview renderer requires taichi, which is unavailable in the current Python environment"
+    if _safe_find_spec("cv2") is None:
+        return "render_video.py preview renderer requires cv2, which is unavailable in the current Python environment"
+
+    npz_models = _support_model_assets(repo_root, suffix=".npz")
+    if npz_models:
+        if _safe_find_spec("human_body_prior.body_model.body_model") is None:
+            return (
+                "render_video.py preview renderer found support_files model.npz assets but "
+                "human_body_prior.body_model.body_model is unavailable in the current Python environment"
+            )
+        return None
+
+    pkl_models = _support_model_assets(repo_root, suffix=".pkl")
+    if pkl_models:
+        if _safe_find_spec("smplx") is None:
+            return (
+                "render_video.py preview renderer found support_files model.pkl assets but "
+                "smplx is unavailable in the current Python environment"
+            )
+        return None
+
+    return "support_files does not include SMPL-X model.npz/model.pkl assets needed by render_video.py preview renderer"
 
 
 def _blocked_stages(repo_root):
@@ -219,14 +252,16 @@ def _blocked_stages(repo_root):
         blocked.append(
             {
                 "stage": "mesh_export",
-                "reason": "the public repo does not include licensed SMPL-X model.npz assets needed for mesh export",
+                "reason": "support_files does not include SMPL-X model.npz assets needed for mesh export",
             }
         )
-    if shutil.which("blender") is None:
+
+    preview_render_reason = _preview_render_block_reason(repo_root)
+    if preview_render_reason is not None:
         blocked.append(
             {
                 "stage": "mp4_render",
-                "reason": "blender is not available on PATH",
+                "reason": preview_render_reason,
             }
         )
 
