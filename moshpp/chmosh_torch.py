@@ -400,6 +400,16 @@ def _runtime_sequence_fit_weights(cfg, runtime, *, avg_visible_count, marker_cou
     )
 
 
+def _loss_history_to_numpy(values):
+    normalized = []
+    for value in values:
+        if torch.is_tensor(value):
+            normalized.append(float(value.detach().item()))
+        else:
+            normalized.append(float(value))
+    return np.asarray(normalized, dtype=np.float32)
+
+
 def mosh_stageii_torch(
     mocap_fname: str,
     cfg,
@@ -694,7 +704,7 @@ def mosh_stageii_torch(
             perframe_data["trans"].append(result.transl.cpu().numpy()[0].copy())
 
     stageii_debug_details = {
-        "stageii_errs": {key: np.array(values) for key, values in perframe_data.pop("stageii_errs").items()},
+        "stageii_errs": {key: _loss_history_to_numpy(values) for key, values in perframe_data.pop("stageii_errs").items()},
         "markers_sim": perframe_data.pop("markers_sim"),
         "markers_obs": perframe_data.pop("markers_obs"),
         "labels_obs": perframe_data.pop("labels_obs"),

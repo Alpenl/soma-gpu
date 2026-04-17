@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -427,3 +428,122 @@ def test_mosh_stageii_torch_builds_stageii_evaluator_once_and_reuses_it(tmp_path
     assert recorded["compile_fullgraph"] is True
     assert len(set(recorded["evaluator_ids"])) == 1
     assert stageii_data["fullpose"].shape == (2, 165)
+
+
+def test_mosh_stageii_torch_aggregates_tensor_loss_terms_to_numeric_arrays(tmp_path, monkeypatch):
+    module = _load_chmosh_torch_module()
+
+    markers_latent = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    ).numpy()
+    latent_labels = ["A", "B", "C", "D"]
+    marker_offsets = torch.tensor(
+        [
+            [0.10, 0.00, 0.00],
+            [0.25, -0.15, 0.35],
+        ],
+        dtype=torch.float32,
+    )
+    markers = markers_latent[None, :, :] + marker_offsets[:, None, :].numpy()
+    mocap_fname = tmp_path / "synthetic_tensor_losses.pkl"
+    with mocap_fname.open("wb") as handle:
+        pickle.dump({"markers": markers, "labels": latent_labels, "frame_rate": 120.0}, handle)
+
+    cfg = _ns(
+        {
+            "mocap": {
+                "unit": "m",
+                "rotate": None,
+                "subject_name": None,
+                "multi_subject": False,
+                "start_fidx": 0,
+                "end_fidx": -1,
+                "ds_rate": 1,
+            },
+            "surface_model": {
+                "type": "smplx",
+                "num_betas": 10,
+                "dof_per_hand": 24,
+                "num_expressions": 10,
+                "use_hands_mean": True,
+                "betas_expr_start_id": 300,
+            },
+            "moshpp": {
+                "optimize_fingers": False,
+                "optimize_face": False,
+                "optimize_toes": False,
+                "optimize_dynamics": False,
+                "verbosity": 0,
+            },
+            "opt_settings": {
+                "maxiter": 0,
+                "weights": {
+                    "stageii_wt_data": 1.0,
+                    "stageii_wt_poseB": 0.0,
+                    "stageii_wt_poseH": 0.0,
+                    "stageii_wt_poseF": 0.0,
+                    "stageii_wt_expr": 0.0,
+                    "stageii_wt_dmpl": 0.0,
+                    "stageii_wt_velo": 0.0,
+                    "stageii_wt_annealing": 0.0,
+                },
+            },
+            "runtime": {
+                "backend": "torch",
+                "device": "cpu",
+            },
+        }
+    )
+
+    call_count = {"value": 0}
+
+    def fail_tensor_array(self, dtype=None):
+        raise AssertionError("tensor __array__ should not be used during per-frame aggregation")
+
+    monkeypatch.setattr(torch.Tensor, "__array__", fail_tensor_array)
+
+    def fake_fit_stageii_frame_torch(**kwargs):
+        call_idx = call_count["value"]
+        call_count["value"] += 1
+        markers_obs = torch.as_tensor(kwargs["marker_observations"], dtype=torch.float32)
+        transl = torch.as_tensor(kwargs["transl_init"], dtype=torch.float32)
+        return SimpleNamespace(
+            latent_pose=torch.as_tensor(kwargs["latent_pose_init"], dtype=torch.float32),
+            fullpose=torch.zeros(1, 165, dtype=torch.float32),
+            transl=transl,
+            expression=None,
+            predicted_markers=markers_obs.clone(),
+            vertices=markers_obs.unsqueeze(0).clone(),
+            joints=torch.zeros(1, 3, 3, dtype=torch.float32),
+            loss_terms={
+                "data": torch.tensor(0.5 + call_idx, dtype=torch.float32),
+                "poseB": torch.tensor(0.0, dtype=torch.float32),
+                "poseH": torch.tensor(0.0, dtype=torch.float32),
+                "poseF": torch.tensor(0.0, dtype=torch.float32),
+                "expr": torch.tensor(0.0, dtype=torch.float32),
+                "velo": torch.tensor(0.0, dtype=torch.float32),
+            },
+        )
+
+    monkeypatch.setattr(module, "fit_stageii_frame_torch", fake_fit_stageii_frame_torch)
+
+    stageii_data = module.mosh_stageii_torch(
+        mocap_fname=str(mocap_fname),
+        cfg=cfg,
+        markers_latent=markers_latent,
+        latent_labels=latent_labels,
+        betas=torch.zeros(10).numpy(),
+        marker_meta={"marker_type_mask": {}, "marker_type": {}, "surface_model_type": "smplx"},
+        body_model_factory=lambda: TranslOnlyBodyModel(torch.as_tensor(markers_latent, dtype=torch.float32)),
+        pose_prior=ZeroPosePrior(63),
+        device="cpu",
+    )
+
+    assert stageii_data["stageii_debug_details"]["stageii_errs"]["data"].dtype != object
+    assert stageii_data["stageii_debug_details"]["stageii_errs"]["data"].tolist() == pytest.approx([0.5, 1.5])
