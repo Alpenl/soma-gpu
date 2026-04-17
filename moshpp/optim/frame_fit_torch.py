@@ -1,10 +1,11 @@
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Optional
 
 import torch
 
 from moshpp.models.smplx_torch_wrapper import SmplxTorchWrapper
-from moshpp.transformed_lm_torch import decode_marker_attachment
+from moshpp.optim.stageii_evaluator_torch import StageIIFrameEvaluator
 
 
 @dataclass
@@ -198,75 +199,60 @@ def encode_stageii_fullpose(fullpose, layout, hand_pca=None):
     return latent_pose
 
 
-def _select_prior_input(fullpose, pose_prior):
-    prior_dim = pose_prior.means.shape[-1]
-    if prior_dim == fullpose.shape[1]:
-        return fullpose
-    if prior_dim == 63:
-        return fullpose[:, 3:66]
-    if prior_dim == 69:
-        return fullpose[:, 3:72]
-    raise ValueError(f"Unsupported prior dimension {prior_dim} for fullpose shape {tuple(fullpose.shape)}")
-
-
-def _slice_norm_square(values, slice_or_ids, weight):
-    if not slice_or_ids:
-        return values.new_zeros(())
-    subset = values[:, slice_or_ids]
-    return torch.sum((subset * weight) ** 2)
-
-
-def _compute_weighted_terms(
+def build_stageii_evaluator(
     *,
     wrapper,
     layout,
     hand_pca,
+    pose_prior,
+    optimize_fingers,
+    optimize_face,
+    compile_module=False,
+    compile_mode="reduce-overhead",
+    compile_fullgraph=False,
+):
+    evaluator = StageIIFrameEvaluator(
+        wrapper=wrapper,
+        layout=layout,
+        hand_pca=hand_pca,
+        pose_prior=pose_prior,
+        optimize_fingers=optimize_fingers,
+        optimize_face=optimize_face,
+    )
+    if compile_module and hasattr(torch, "compile"):
+        return torch.compile(evaluator, mode=compile_mode, fullgraph=compile_fullgraph)
+    return evaluator
+
+
+def evaluate_stageii_frame(
+    *,
+    evaluator,
     latent_pose,
     transl,
     expression,
     betas,
     marker_attachment,
     marker_observations,
-    pose_prior,
     weights,
-    optimize_fingers,
-    optimize_face,
-    velocity_reference,
+    velocity_reference=None,
 ):
-    fullpose = decode_stageii_latent_pose(latent_pose, layout, hand_pca=hand_pca)
-    body_output = wrapper(fullpose=fullpose, betas=betas, transl=transl, expression=expression)
-    predicted_markers = decode_marker_attachment(marker_attachment, body_output.vertices[0])
-    marker_observations = marker_observations.to(device=predicted_markers.device, dtype=predicted_markers.dtype)
-
-    data_term = torch.sum(((predicted_markers - marker_observations) * weights.data) ** 2)
-    pose_term = torch.sum((pose_prior(_select_prior_input(fullpose, pose_prior)) * weights.pose_body) ** 2)
-
-    hand_term = latent_pose.new_zeros(())
-    if optimize_fingers:
-        hand_term = _slice_norm_square(latent_pose, layout.hand_ids(), weights.pose_hand)
-
-    face_term = latent_pose.new_zeros(())
-    expr_term = latent_pose.new_zeros(())
-    if optimize_face:
-        face_term = _slice_norm_square(latent_pose, layout.face_ids(), weights.pose_face)
-        if expression is not None:
-            expr_term = torch.sum((expression * weights.expr) ** 2)
-
-    velocity_term = latent_pose.new_zeros(())
-    if velocity_reference is not None:
-        velocity_reference = velocity_reference.to(device=latent_pose.device, dtype=latent_pose.dtype)
-        velocity_term = torch.sum(((latent_pose - velocity_reference) * weights.velocity) ** 2)
-
-    terms = {
-        "data": data_term,
-        "poseB": pose_term,
-        "poseH": hand_term,
-        "poseF": face_term,
-        "expr": expr_term,
-        "velo": velocity_term,
-    }
-    total = sum(terms.values())
-    return total, terms, fullpose, body_output, predicted_markers
+    total, terms, fullpose, body_output, predicted_markers = evaluator(
+        latent_pose=latent_pose,
+        transl=transl,
+        expression=expression,
+        betas=betas,
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        weights=weights,
+        velocity_reference=velocity_reference,
+    )
+    return SimpleNamespace(
+        total=total,
+        loss_terms=terms,
+        fullpose=fullpose,
+        body_output=body_output,
+        predicted_markers=predicted_markers,
+    )
 
 
 def _run_lbfgs(
@@ -335,26 +321,29 @@ def fit_stageii_frame_torch(
     hand_pca = _as_hand_pca_spec(hand_pca, device=device, dtype=latent_pose_param.dtype)
 
     wrapper = SmplxTorchWrapper(body_model=body_model, surface_model_type=layout.surface_model_type)
+    evaluator = build_stageii_evaluator(
+        wrapper=wrapper,
+        layout=layout,
+        hand_pca=hand_pca,
+        pose_prior=pose_prior,
+        optimize_fingers=optimize_fingers,
+        optimize_face=optimize_face,
+    )
 
     def closure_for(current_weights):
         def compute():
-            total, _, _, _, _ = _compute_weighted_terms(
-                wrapper=wrapper,
-                layout=layout,
-                hand_pca=hand_pca,
+            evaluation = evaluate_stageii_frame(
+                evaluator=evaluator,
                 latent_pose=latent_pose_param,
                 transl=transl_param,
                 expression=expression_param,
                 betas=betas,
                 marker_attachment=marker_attachment,
                 marker_observations=marker_observations,
-                pose_prior=pose_prior,
                 weights=current_weights,
-                optimize_fingers=optimize_fingers,
-                optimize_face=optimize_face,
                 velocity_reference=velocity_reference,
             )
-            return total
+            return evaluation.total
 
         return compute
 
@@ -410,30 +399,25 @@ def fit_stageii_frame_torch(
         lr=options.refine_lr,
     )
 
-    _, term_tensors, fullpose, body_output, predicted_markers = _compute_weighted_terms(
-        wrapper=wrapper,
-        layout=layout,
-        hand_pca=hand_pca,
+    evaluation = evaluate_stageii_frame(
+        evaluator=evaluator,
         latent_pose=latent_pose_param,
         transl=transl_param,
         expression=expression_param,
         betas=betas,
         marker_attachment=marker_attachment,
         marker_observations=marker_observations,
-        pose_prior=pose_prior,
         weights=weights,
-        optimize_fingers=optimize_fingers,
-        optimize_face=optimize_face,
         velocity_reference=velocity_reference,
     )
 
     return TorchFrameFitResult(
         latent_pose=latent_pose_param.detach(),
-        fullpose=fullpose.detach(),
+        fullpose=evaluation.fullpose.detach(),
         transl=transl_param.detach(),
         expression=expression_param.detach() if expression_param is not None else None,
-        predicted_markers=predicted_markers.detach(),
-        vertices=body_output.vertices.detach(),
-        joints=body_output.joints.detach(),
-        loss_terms={k: float(v.detach().cpu()) for k, v in term_tensors.items()},
+        predicted_markers=evaluation.predicted_markers.detach(),
+        vertices=evaluation.body_output.vertices.detach(),
+        joints=evaluation.body_output.joints.detach(),
+        loss_terms={k: float(v.detach().cpu()) for k, v in evaluation.loss_terms.items()},
     )

@@ -2,6 +2,7 @@ import importlib
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 
@@ -137,3 +138,107 @@ def test_fit_stageii_frame_torch_recovers_translation_on_synthetic_markers():
     assert torch.allclose(result.transl[0], target_offset, atol=1e-3)
     assert torch.allclose(result.predicted_markers, marker_observations, atol=1e-3)
     assert result.loss_terms["data"] < 1e-5
+
+
+def test_build_stageii_evaluator_supports_optional_torch_compile(monkeypatch):
+    module = _load_frame_fit_torch_module()
+    layout = module.make_stageii_latent_layout(
+        surface_model_type="smplx",
+        dof_per_hand=24,
+        optimize_fingers=False,
+        optimize_face=False,
+    )
+    recorded = {}
+
+    def fake_compile(compiled_module, *, mode, fullgraph):
+        recorded["module"] = compiled_module
+        recorded["mode"] = mode
+        recorded["fullgraph"] = fullgraph
+        return "compiled-evaluator"
+
+    monkeypatch.setattr(torch, "compile", fake_compile)
+
+    compiled = module.build_stageii_evaluator(
+        wrapper=object(),
+        layout=layout,
+        hand_pca=None,
+        pose_prior=ZeroPosePrior(63),
+        optimize_fingers=False,
+        optimize_face=False,
+        compile_module=True,
+        compile_mode="max-autotune",
+        compile_fullgraph=True,
+    )
+
+    assert compiled == "compiled-evaluator"
+    assert recorded["mode"] == "max-autotune"
+    assert recorded["fullgraph"] is True
+    assert hasattr(recorded["module"], "forward")
+
+
+def test_fit_stageii_frame_torch_uses_stageii_evaluator_for_final_pass(monkeypatch):
+    module = _load_frame_fit_torch_module()
+    layout = module.make_stageii_latent_layout(
+        surface_model_type="smplx",
+        dof_per_hand=24,
+        optimize_fingers=False,
+        optimize_face=False,
+    )
+    can_body = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    marker_attachment = build_marker_attachment(can_body, can_body)
+    marker_observations = can_body + torch.tensor([0.1, -0.2, 0.3], dtype=torch.float32)
+    recorded = {"calls": 0}
+
+    def fake_evaluate_stageii_frame(**kwargs):
+        recorded["calls"] += 1
+        return SimpleNamespace(
+            total=torch.tensor(0.0, dtype=torch.float32),
+            loss_terms={
+                "data": torch.tensor(0.0, dtype=torch.float32),
+                "poseB": torch.tensor(0.0, dtype=torch.float32),
+                "poseH": torch.tensor(0.0, dtype=torch.float32),
+                "poseF": torch.tensor(0.0, dtype=torch.float32),
+                "expr": torch.tensor(0.0, dtype=torch.float32),
+                "velo": torch.tensor(0.0, dtype=torch.float32),
+            },
+            fullpose=torch.zeros(1, layout.fullpose_dim, dtype=torch.float32),
+            body_output=DummyBodyOutput(
+                vertices=marker_observations.unsqueeze(0).clone(),
+                joints=torch.zeros(1, 3, 3, dtype=torch.float32),
+            ),
+            predicted_markers=marker_observations.clone(),
+        )
+
+    monkeypatch.setattr(module, "evaluate_stageii_frame", fake_evaluate_stageii_frame, raising=False)
+
+    result = module.fit_stageii_frame_torch(
+        body_model=TranslOnlyBodyModel(can_body),
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        pose_prior=ZeroPosePrior(63),
+        layout=layout,
+        latent_pose_init=torch.zeros(1, layout.latent_dim),
+        transl_init=torch.zeros(1, 3),
+        weights=module.TorchFrameFitWeights(
+            data=1.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+        ),
+        options=module.TorchFrameFitOptions(rigid_iters=0, warmup_iters=0, refine_iters=0),
+    )
+
+    assert recorded["calls"] == 1
+    assert result.predicted_markers.shape == (4, 3)
+    assert result.loss_terms["data"] == 0.0
