@@ -7,14 +7,14 @@ from utils.stageii_benchmark import run_public_stageii_benchmark, write_benchmar
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
-            "Benchmark the public stageii pickle ingest workload, plus optional preview/export "
+            "Benchmark a stageii pickle ingest workload, plus optional preview/export "
             "stages when the local environment supports them, and emit a JSON report."
         )
     )
     parser.add_argument(
         "--input",
         default="support_data/tests/mosh_stageii.pkl",
-        help="Path to the stageii pickle sample.",
+        help="Path to the stageii pickle sample. Defaults to the shipped public sample.",
     )
     parser.add_argument(
         "--output",

@@ -665,6 +665,17 @@ def _blocked_stages(repo_root):
     return blocked
 
 
+def _public_stageii_sample_path(repo_root):
+    return Path(repo_root) / "support_data" / "tests" / "mosh_stageii.pkl"
+
+
+def _is_public_stageii_sample(sample_path, repo_root):
+    try:
+        return Path(sample_path).resolve() == _public_stageii_sample_path(repo_root).resolve()
+    except FileNotFoundError:
+        return False
+
+
 def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5):
     sample_path = Path(sample_path)
     if warmup_runs < 0:
@@ -755,7 +766,7 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
         },
         "quality": quality_summary,
         "artifact": {
-            "public_sample_present": True,
+            "public_sample_present": _is_public_stageii_sample(sample_path, repo_root),
             "report_path": None,
             "blocked_stages": _blocked_stages(repo_root),
         },

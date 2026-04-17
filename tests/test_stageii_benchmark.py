@@ -82,6 +82,49 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert loaded["speed"]["latency_ms"]["samples"] == pytest.approx([5.0, 20.0, 50.0, 100.0, 200.0])
 
 
+def test_run_public_stageii_benchmark_marks_non_public_input_as_not_shipped_sample(
+    tmp_path, monkeypatch
+):
+    sample_path = tmp_path / "synthetic_stageii.pkl"
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.zeros((2, 3), dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.zeros((2, 3), dtype=np.float32),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                        }
+                    },
+                    "mocap_frame_rate": 120.0,
+                    "mocap_time_length": 2,
+                    "markers_obs": np.zeros((2, 1, 3), dtype=np.float32),
+                    "markers_sim": np.zeros((2, 1, 3), dtype=np.float32),
+                    "labels_obs": [["A"]] * 2,
+                },
+            }
+        )
+    )
+
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        sample_path,
+        warmup_runs=0,
+        measured_runs=1,
+    )
+
+    assert report["artifact"]["public_sample_present"] is False
+
+
 def test_run_public_stageii_benchmark_includes_preview_vertex_decode_metric_when_available(monkeypatch):
     preview_metric = {
         "count": 2,
