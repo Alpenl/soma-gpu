@@ -224,6 +224,7 @@ python run_stageii_torch_pair.py \
 - 即使静态预检没有命中，pair runner 现在也会在 baseline 真正跑完后，再把 baseline payload 里实际返回的 `stageii_path`、`mesh_export.obj/pc2`、以及 baseline benchmark `report_path` 与 candidate 的计划落点做一次二次比对；如果 underlying single runner 的真实落点和静态预判漂移到会覆盖 candidate 的 benchmark/stageii/mesh 产物，命令会在 candidate 启动前直接中止，而不是继续把 baseline 产物覆盖掉。
 - 这层二次比对里，baseline 实际 `stageii_path` 现在不只会对 candidate 的 `stageii.pkl` / benchmark JSON 做比较；开启 `--export-mesh` 时，也会继续对 candidate 计划 OBJ/PC2 做比较，避免 baseline stageii 路径漂到 candidate mesh 落点后等第二次导出才把 baseline 文件覆写掉。
 - 这层 baseline-actual 二次比对现在也会把 baseline 实际 `stageii_path` / `mesh_export.obj/pc2` 与 candidate 计划 benchmark JSON 一并比较；因此就算 underlying single runner 的真实返回路径漂到了 candidate benchmark 落点，也会在第二次调用前被挡住，不会先把 baseline 资产覆写成 report JSON。
+- baseline payload 现在也必须继续守住 baseline 自己的 planned `--expected-*` contract：真实 `stageii_path`、baseline standalone benchmark 的 `artifact.report_path`，以及开启 `--export-mesh` 时的 `mesh_export.obj_path/.pc2_path` 都必须仍等于 baseline 这次原本要落的静态路径。这样即使 baseline 的真实返回值没有直接撞上 candidate 计划，只要它已经脱离 baseline 原计划落点，pair runner 也会在 candidate 启动前直接失败，而不是继续把一个“写到别处的 baseline”传给第二次调用。
 - 除了上面的 baseline-actual 二次比对，pair runner 现在也会把 planned benchmark / mesh 输出路径连同 `stageii.pkl` 计划路径一起，作为 hidden internal arg 下推给 underlying single runner：
   - `--expected-stageii-path`
   - `--expected-benchmark-output`

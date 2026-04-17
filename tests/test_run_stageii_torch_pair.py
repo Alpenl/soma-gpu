@@ -132,13 +132,12 @@ def test_run_stageii_torch_pair_main_passes_returned_baseline_stageii_path_to_ca
     tmp_path, monkeypatch
 ):
     captured = {"calls": []}
-    baseline_stageii = tmp_path / "manual_baseline_stageii.pkl"
 
     def fake_run(argv, *, emit_json):
         captured["calls"].append((list(argv), emit_json))
         preset = argv[argv.index("--preset") + 1]
         if preset == "real-mcp-baseline":
-            return {"benchmark": None, "stageii_path": str(baseline_stageii)}
+            return {"benchmark": None, "stageii_path": _expected_stageii_path(argv)}
         return {
             "benchmark": {"artifact": {"report_path": _expected_benchmark_output(argv)}},
             "stageii_path": _expected_stageii_path(argv),
@@ -200,14 +199,14 @@ def test_run_stageii_torch_pair_main_passes_returned_baseline_stageii_path_to_ca
             "--expected-benchmark-output",
             str(tmp_path / "work" / "input" / "wolf001" / "manual_candidate_candidate_benchmark.json"),
             "--mesh-reference",
-            str(baseline_stageii),
+            str(tmp_path / "work" / "input" / "wolf001" / "manual_baseline_baseline_stageii.pkl"),
         ],
         False,
     )
     assert payload == {
         "baseline": {
             "benchmark": None,
-            "stageii_path": str(baseline_stageii),
+            "stageii_path": str(tmp_path / "work" / "input" / "wolf001" / "manual_baseline_baseline_stageii.pkl"),
         },
         "candidate": {
             "benchmark": {
@@ -268,13 +267,12 @@ def test_run_stageii_torch_pair_main_plans_expected_paths_from_flat_mocap_path_o
     tmp_path, monkeypatch
 ):
     captured = {"calls": []}
-    baseline_stageii = tmp_path / "actual_baseline_stageii.pkl"
 
     def fake_run(argv, *, emit_json):
         captured["calls"].append((list(argv), emit_json))
         preset = argv[argv.index("--preset") + 1]
         if preset == "real-mcp-baseline":
-            return {"benchmark": None, "stageii_path": str(baseline_stageii)}
+            return {"benchmark": None, "stageii_path": _expected_stageii_path(argv)}
         return {
             "benchmark": {"artifact": {"report_path": _expected_benchmark_output(argv)}},
             "stageii_path": _expected_stageii_path(argv),
@@ -308,7 +306,9 @@ def test_run_stageii_torch_pair_main_plans_expected_paths_from_flat_mocap_path_o
     assert candidate_argv[candidate_argv.index("--expected-benchmark-output") + 1] == str(
         tmp_path / "work" / "demo_ds" / "demo_session" / "capture_candidate_benchmark.json"
     )
-    assert candidate_argv[candidate_argv.index("--mesh-reference") + 1] == str(baseline_stageii)
+    assert candidate_argv[candidate_argv.index("--mesh-reference") + 1] == str(
+        tmp_path / "work" / "demo_ds" / "demo_session" / "capture_baseline_stageii.pkl"
+    )
 
 
 def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_path, monkeypatch):
@@ -826,7 +826,7 @@ def test_run_stageii_torch_pair_main_errors_when_candidate_runner_omits_stageii_
     def fake_run(argv, *, emit_json):
         preset = argv[argv.index("--preset") + 1]
         if preset == "real-mcp-baseline":
-            return {"benchmark": None, "stageii_path": str(tmp_path / "baseline_stageii.pkl")}
+            return {"benchmark": None, "stageii_path": _expected_stageii_path(argv)}
         return {"benchmark": {"artifact": {"report_path": "candidate.json"}}}
 
     monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
@@ -882,10 +882,10 @@ def test_run_stageii_torch_pair_main_errors_when_candidate_runner_omits_mesh_exp
             return {
                 "benchmark": None,
                 "mesh_export": {
-                    "obj_path": str(tmp_path / "mesh" / "baseline.obj"),
-                    "pc2_path": str(tmp_path / "mesh" / "baseline.pc2"),
+                    "obj_path": _expected_mesh_export_paths(argv)[0],
+                    "pc2_path": _expected_mesh_export_paths(argv)[1],
                 },
-                "stageii_path": str(tmp_path / "baseline_stageii.pkl"),
+                "stageii_path": _expected_stageii_path(argv),
             }
         return {
             "benchmark": {"artifact": {"report_path": _expected_benchmark_output(argv)}},
@@ -947,7 +947,7 @@ def test_run_stageii_torch_pair_main_errors_when_candidate_runner_omits_benchmar
     def fake_run(argv, *, emit_json):
         preset = argv[argv.index("--preset") + 1]
         if preset == "real-mcp-baseline":
-            return {"benchmark": None, "stageii_path": str(tmp_path / "baseline_stageii.pkl")}
+            return {"benchmark": None, "stageii_path": _expected_stageii_path(argv)}
         return {"benchmark": {"artifact": {}}, "stageii_path": _expected_stageii_path(argv)}
 
     monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
@@ -973,7 +973,7 @@ def test_run_stageii_torch_pair_main_errors_when_underlying_runner_raises_runtim
     def fake_run(argv, *, emit_json):
         preset = argv[argv.index("--preset") + 1]
         if preset == "real-mcp-baseline":
-            return {"benchmark": None, "stageii_path": str(tmp_path / "baseline_stageii.pkl")}
+            return {"benchmark": None, "stageii_path": _expected_stageii_path(argv)}
         raise FileNotFoundError("candidate stageii missing")
 
     monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
@@ -999,7 +999,7 @@ def test_run_stageii_torch_pair_main_errors_when_underlying_runner_raises_key_er
     def fake_run(argv, *, emit_json):
         preset = argv[argv.index("--preset") + 1]
         if preset == "real-mcp-baseline":
-            return {"benchmark": None, "stageii_path": str(tmp_path / "baseline_stageii.pkl")}
+            return {"benchmark": None, "stageii_path": _expected_stageii_path(argv)}
         raise KeyError("missing benchmark.artifact.report_path")
 
     monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
@@ -1505,10 +1505,10 @@ def test_run_stageii_torch_pair_main_errors_when_baseline_actual_benchmark_outpu
                     }
                 },
                 "mesh_export": {
-                    "obj_path": str(tmp_path / "baseline" / "baseline_stageii.obj"),
-                    "pc2_path": str(tmp_path / "baseline" / "baseline_stageii.pc2"),
+                    "obj_path": _expected_mesh_export_paths(argv)[0],
+                    "pc2_path": _expected_mesh_export_paths(argv)[1],
                 },
-                "stageii_path": str(tmp_path / "baseline" / "baseline_stageii.pkl"),
+                "stageii_path": _expected_stageii_path(argv),
             }
         pytest.fail(
             "candidate runner should not run when baseline actual benchmark output collides with candidate mesh plan"
@@ -1537,6 +1537,116 @@ def test_run_stageii_torch_pair_main_errors_when_baseline_actual_benchmark_outpu
 
     assert len(calls) == 1
     assert "baseline actual benchmark output path collides with candidate mesh plan" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_baseline_actual_stageii_path_drifts_from_baseline_plan(
+    tmp_path, monkeypatch, capsys
+):
+    calls = []
+    drifted_stageii = tmp_path / "baseline" / "actual_stageii.pkl"
+
+    def fake_run(argv, *, emit_json):
+        calls.append((list(argv), emit_json))
+        if len(calls) == 1:
+            return {
+                "benchmark": None,
+                "stageii_path": str(drifted_stageii),
+            }
+        pytest.fail("candidate runner should not run when baseline actual stageii path drifts from baseline plan")
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert len(calls) == 1
+    assert "baseline actual stageii output path drifted from baseline plan" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_baseline_actual_benchmark_output_drifts_from_baseline_plan(
+    tmp_path, monkeypatch, capsys
+):
+    calls = []
+    drifted_benchmark = tmp_path / "baseline" / "actual_benchmark.json"
+
+    def fake_run(argv, *, emit_json):
+        calls.append((list(argv), emit_json))
+        if len(calls) == 1:
+            return {
+                "benchmark": {"artifact": {"report_path": str(drifted_benchmark)}},
+                "stageii_path": _expected_stageii_path(argv),
+            }
+        pytest.fail(
+            "candidate runner should not run when baseline actual benchmark output drifts from baseline plan"
+        )
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--baseline-benchmark-output",
+                str(tmp_path / "baseline_benchmark.json"),
+            ]
+        )
+
+    assert len(calls) == 1
+    assert "baseline actual benchmark output path drifted from baseline plan" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_baseline_actual_mesh_export_drifts_from_baseline_plan(
+    tmp_path, monkeypatch, capsys
+):
+    calls = []
+    drifted_obj_path = tmp_path / "mesh_exports" / "actual_baseline.obj"
+
+    def fake_run(argv, *, emit_json):
+        calls.append((list(argv), emit_json))
+        if len(calls) == 1:
+            return {
+                "benchmark": None,
+                "mesh_export": {
+                    "obj_path": str(drifted_obj_path),
+                    "pc2_path": _expected_mesh_export_paths(argv)[1],
+                },
+                "stageii_path": _expected_stageii_path(argv),
+            }
+        pytest.fail("candidate runner should not run when baseline actual mesh export drifts from baseline plan")
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(tmp_path / "mesh_exports"),
+            ]
+        )
+
+    assert len(calls) == 1
+    assert "baseline actual mesh export output path drifted from baseline plan" in capsys.readouterr().err
 
 
 def test_run_stageii_torch_pair_main_errors_when_candidate_actual_stageii_path_drifts_from_candidate_plan(

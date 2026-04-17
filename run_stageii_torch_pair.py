@@ -533,6 +533,10 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
     args,
     *,
     baseline_payload,
+    baseline_planned_stageii_path,
+    baseline_planned_benchmark_output,
+    baseline_planned_mesh_obj_path,
+    baseline_planned_mesh_pc2_path,
     candidate_stageii_path,
     candidate_benchmark_output,
 ):
@@ -585,6 +589,15 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
                 "adjust benchmark outputs, baseline/candidate stageii basenames/paths, export directories, "
                 "or investigate underlying runner path drift"
             )
+        if (
+            _normalized_path(baseline_obj_path) != _normalized_path(baseline_planned_mesh_obj_path)
+        ) or (
+            _normalized_path(baseline_pc2_path) != _normalized_path(baseline_planned_mesh_pc2_path)
+        ):
+            parser.error(
+                "baseline actual mesh export output path drifted from baseline plan; "
+                "adjust stageii basenames/paths, export directories, or investigate underlying runner path drift"
+            )
 
     if args.baseline_benchmark_output is not None:
         baseline_benchmark_output = _require_benchmark_report_path(
@@ -611,6 +624,17 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
                 "baseline actual benchmark output path collides with candidate mesh plan; "
                 "adjust benchmark outputs, candidate stageii basename/path, mesh export directory, or investigate underlying runner path drift"
             )
+        if _normalized_path(baseline_benchmark_output) != _normalized_path(baseline_planned_benchmark_output):
+            parser.error(
+                "baseline actual benchmark output path drifted from baseline plan; "
+                "adjust benchmark outputs or investigate underlying runner path drift"
+            )
+
+    if _normalized_path(baseline_stageii_path) != _normalized_path(baseline_planned_stageii_path):
+        parser.error(
+            "baseline actual stageii output path drifted from baseline plan; "
+            "adjust stageii basenames/paths or investigate underlying runner path drift"
+        )
 
     return baseline_stageii_path
 
@@ -682,6 +706,10 @@ def run(argv=None, *, emit_json=True):
             parser,
             args,
             baseline_payload=baseline_payload,
+            baseline_planned_stageii_path=baseline_stageii_path,
+            baseline_planned_benchmark_output=baseline_benchmark_output,
+            baseline_planned_mesh_obj_path=baseline_mesh_obj_path,
+            baseline_planned_mesh_pc2_path=baseline_mesh_pc2_path,
             candidate_stageii_path=candidate_stageii_path,
             candidate_benchmark_output=candidate_benchmark_output,
         )
