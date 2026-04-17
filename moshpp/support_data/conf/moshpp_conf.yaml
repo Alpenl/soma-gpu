@@ -173,4 +173,5 @@ opt_weights:
     stageii_wt_annealing: 2.5
 
 runtime:
+  backend: chumpy
   stagei_only: False

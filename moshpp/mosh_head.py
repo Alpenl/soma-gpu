@@ -587,8 +587,11 @@ def run_moshpp_once(cfg):
     :param cfg:
     :return:
     """
+    from importlib import import_module
+
     from moshpp.chmosh import mosh_stagei, mosh_stageii
     from moshpp.mosh_head import MoSh
+    from moshpp.stageii_backend import load_stageii_backend
     from loguru import logger
     import numpy as np
 
@@ -600,7 +603,20 @@ def run_moshpp_once(cfg):
         [f'{k} = {np.sum(v ** 2):2.2e}' for k, v in mp.stagei_data['stagei_debug_details']['stagei_errs'].items()])))
 
     if not mp.cfg.runtime.stagei_only:
-        mp.mosh_stageii(mosh_stageii)
+        def load_torch_backend():
+            try:
+                return import_module("moshpp.chmosh_torch").mosh_stageii_torch
+            except ModuleNotFoundError as exc:
+                raise ModuleNotFoundError(
+                    "runtime.backend=torch requested but moshpp.chmosh_torch is unavailable"
+                ) from exc
+
+        stageii_backend = load_stageii_backend(
+            getattr(mp.cfg.runtime, "backend", "chumpy"),
+            mosh_stageii,
+            load_torch_backend,
+        )
+        mp.mosh_stageii(stageii_backend)
         logger.debug('Final mosh stageii loss: {}'.format(' | '.join(
             [f'{k} = {np.sum(v ** 2):2.2e}' for k, v in
              mp.stageii_data['stageii_debug_details']['stageii_errs'].items()])))
