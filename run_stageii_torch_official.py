@@ -6,6 +6,19 @@ from moshpp.mosh_head import MoSh, run_moshpp_once
 from utils.stageii_benchmark import run_public_stageii_benchmark, write_benchmark_report
 
 
+OFFICIAL_PRESETS = {
+    "real-mcp-baseline": {
+        "moshpp.optimize_fingers": "true",
+        "runtime.sequence_chunk_size": "32",
+        "runtime.sequence_chunk_overlap": "4",
+        "runtime.sequence_seed_refine_iters": "5",
+        "runtime.refine_lr": "0.05",
+        "runtime.sequence_lr": "0.05",
+        "runtime.sequence_max_iters": "30",
+    }
+}
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description=(
@@ -26,6 +39,15 @@ def build_parser():
         action="append",
         default=[],
         help="Repeatable dotlist override such as surface_model.gender=male or runtime.sequence_lr=0.05.",
+    )
+    parser.add_argument(
+        "--preset",
+        choices=sorted(OFFICIAL_PRESETS),
+        default=None,
+        help=(
+            "Optional named override pack applied before --cfg. "
+            "Use real-mcp-baseline to reproduce the corrected real .mcp torch candidate defaults."
+        ),
     )
     parser.add_argument(
         "--skip-benchmark",
@@ -60,7 +82,7 @@ def build_parser():
 
 
 def _cfg_overrides(parser, args):
-    overrides = {}
+    overrides = dict(OFFICIAL_PRESETS.get(args.preset, {}))
     for entry in args.cfg:
         if "=" not in entry:
             parser.error(f"--cfg entries must be KEY=VALUE, got: {entry}")

@@ -114,6 +114,65 @@ def test_run_stageii_torch_official_main_builds_cfg_and_wires_benchmark(tmp_path
     assert payload["benchmark"]["artifact"]["report_path"] == str(benchmark_output)
 
 
+def test_run_stageii_torch_official_main_applies_real_mcp_baseline_preset_before_explicit_cfg(
+    tmp_path, monkeypatch
+):
+    stageii_path = tmp_path / "candidate_stageii.pkl"
+    captured = {}
+
+    def fake_prepare_cfg(**kwargs):
+        captured["prepare_cfg"] = kwargs
+        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: stageii_path.write_bytes(b"stageii"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+
+    payload = run_stageii_torch_official.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-baseline",
+            "--cfg",
+            "moshpp.optimize_fingers=false",
+            "--cfg",
+            "runtime.sequence_lr=0.07",
+            "--skip-benchmark",
+        ]
+    )
+
+    assert captured["prepare_cfg"] == {
+        "moshpp.optimize_fingers": "false",
+        "runtime.sequence_chunk_size": "32",
+        "runtime.sequence_chunk_overlap": "4",
+        "runtime.sequence_seed_refine_iters": "5",
+        "runtime.refine_lr": "0.05",
+        "runtime.sequence_lr": "0.07",
+        "runtime.sequence_max_iters": "30",
+        "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+        "dirs.support_base_dir": str(tmp_path / "support_files"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "runtime.backend": "torch",
+    }
+    assert payload == {
+        "benchmark": None,
+        "stageii_path": str(stageii_path),
+    }
+
+
 def test_run_stageii_torch_official_main_can_skip_benchmark(tmp_path, monkeypatch, capsys):
     stageii_path = tmp_path / "candidate_stageii.pkl"
 
