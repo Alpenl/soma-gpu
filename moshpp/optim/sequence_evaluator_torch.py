@@ -110,7 +110,11 @@ def _velocity_term(sequence, *, weight, reference=None, reference_index=None, in
         return term
 
     if reference.shape[0] == sequence.shape[0]:
-        return torch.sum(((sequence - reference) * weight) ** 2, dim=reduce_dims)
+        term[0] = torch.sum(((sequence[0] - reference[0]) * weight) ** 2)
+        if sequence.shape[0] > 1:
+            reference_diffs = reference[1:] - reference[:-1]
+            term[1:] = torch.sum(((diffs - reference_diffs) * weight) ** 2, dim=reduce_dims)
+        return term
 
     seam_idx = _coerce_reference_index(
         reference_index,
