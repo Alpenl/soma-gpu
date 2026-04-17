@@ -228,7 +228,7 @@ python run_stageii_torch_pair.py \
   - 开了 `--export-mesh`，baseline/candidate 两侧都必须从 underlying single runner 返回 `mesh_export.obj_path` 与 `mesh_export.pc2_path`
   - baseline 显式开了 standalone benchmark 或 candidate 默认 benchmark 路径缺失 `benchmark.artifact.report_path` 时，也会直接报错
   - 这样不会再出现“命令成功退出，但 pair payload 其实没带齐 mesh/report 产物路径”的 silent success
-- 若 baseline / candidate 任一侧的 single runner 运行失败，或者返回 payload 缺失 `stageii_path`，pair runner 现在也会统一以 CLI error 退出，而不是把 `ValueError` / `FileNotFoundError` 栈直接打到终端。
+- 若 baseline / candidate 任一侧的 single runner 运行失败、抛缺字段 `KeyError`，或者返回 payload 缺失 `stageii_path`，pair runner 现在也会统一以 CLI error 退出，而不是把 `KeyError` / `ValueError` / `FileNotFoundError` 栈直接打到终端。
 
 若要在同一条命令里继续做 sweep，可用：
 - `--candidate-cfg key=value`：只改 candidate

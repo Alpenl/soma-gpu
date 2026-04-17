@@ -858,6 +858,32 @@ def test_run_stageii_torch_pair_main_errors_when_underlying_runner_raises_runtim
     assert "candidate stageii missing" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_pair_main_errors_when_underlying_runner_raises_key_error(
+    tmp_path, monkeypatch, capsys
+):
+    def fake_run(argv, *, emit_json):
+        preset = argv[argv.index("--preset") + 1]
+        if preset == "real-mcp-baseline":
+            return {"benchmark": None, "stageii_path": str(tmp_path / "baseline_stageii.pkl")}
+        raise KeyError("missing benchmark.artifact.report_path")
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert "missing benchmark.artifact.report_path" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_pair_main_rejects_colliding_stageii_outputs_from_basename_overrides(
     tmp_path, monkeypatch, capsys
 ):
