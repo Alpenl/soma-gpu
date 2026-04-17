@@ -74,7 +74,7 @@ ROOT
 打开Maya，右下角script窗口，将`fbx_convert.py`复制进去运行，需要更改中间的`data_dir`路径为你的`ROOT`路径（见上一节）
 结果会保存在`ROOT/mocap_raw/[session]/[subject]/[seq].npy`和`[seq]_racket.npy`
 2. 切回soma的环境，运行`npy2c3d.py`，将npy文件转换为c3d文件
-3. 运行soma的`convert_tennis.py`，会自动运行soma和mosh++，得到最终的smplx结果，储存在`ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl`。如需在主流程里直接继续导出 mesh 和 preview 视频，可追加 `--export-artifacts`：
+3. 运行soma的`convert_tennis.py`，会自动运行soma和mosh++，得到最终的smplx结果，储存在`ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl`。默认会自动发现 `ROOT/mocap_raw/[session]/[subject]` 下的 `.c3d` 和 `.mcp` 输入；如需强制只跑某一种扩展，可显式传 `--mocap-ext .c3d` 或 `--mocap-ext .mcp`。若同一 `subject/sequence` 同时保留了 `.c3d` 和 `.mcp` 两份别名输入，脚本会直接报错，避免生成同名输出时互相覆盖。如需在主流程里直接继续导出 mesh 和 preview 视频，可追加 `--export-artifacts`：
 ````
 python convert_tennis.py \
   --dataset [session] \
@@ -91,7 +91,7 @@ python convert_mosh.py \
   --work-base-dir ROOT \
   --export-artifacts
 ````
-默认会同时发现 `.c3d` 和 `.mcp` 输入；如 stageii pickle 里的模型路径来自旧机器，会优先回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`。
+默认会同时发现 `.c3d` 和 `.mcp` 输入；如果同一 `subject/sequence` 同时存在这两种别名文件，脚本会直接报错，避免 direct MoSh 生成同名结果时互相覆盖。如 stageii pickle 里的模型路径来自旧机器，会优先回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`。
 5. 若只想对已有 `*_stageii.pkl` 单独补跑导出，也可运行：
 ````
 python export_stageii_artifacts.py \

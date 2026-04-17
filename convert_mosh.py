@@ -1,6 +1,7 @@
 import argparse
 import os.path as osp
 from glob import glob
+from pathlib import Path
 
 from utils.script_utils import (
     discover_stageii_pickles,
@@ -102,6 +103,19 @@ def collect_mocap_fnames(mocap_base_dir, dataset_name, fname_filter):
     return mocap_fnames
 
 
+def find_duplicate_mocap_aliases(mocap_fnames, *, dataset_root):
+    seen = {}
+    duplicates = set()
+    dataset_root = Path(dataset_root)
+    for mocap_fname in mocap_fnames:
+        relative_stem = str(Path(mocap_fname).relative_to(dataset_root).with_suffix(""))
+        current_suffix = Path(mocap_fname).suffix.lower()
+        previous_suffix = seen.setdefault(relative_stem, current_suffix)
+        if previous_suffix != current_suffix:
+            duplicates.add(relative_stem)
+    return sorted(duplicates)
+
+
 def export_stageii_artifacts_for_dataset(
     *,
     work_base_dir,
@@ -153,6 +167,15 @@ def main(argv=None):
             "No .c3d or .mcp files matched under {}/{}/*/".format(
                 args.mocap_base_dir, args.dataset
             )
+        )
+    duplicate_aliases = find_duplicate_mocap_aliases(
+        mocap_fnames,
+        dataset_root=Path(args.mocap_base_dir) / args.dataset,
+    )
+    if duplicate_aliases:
+        parser.error(
+            "Found duplicate .c3d/.mcp aliases for the same sequence: {}. "
+            "Remove one source file.".format(", ".join(duplicate_aliases))
         )
 
     from soma.amass.mosh_manual import mosh_manual

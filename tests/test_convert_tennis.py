@@ -65,6 +65,11 @@ def _write_stageii_pickle(path, *, model_path, surface_model_type="smplx", gende
     )
 
 
+def _write_mocap_file(path, payload=b"c3d"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+
 def test_convert_tennis_exports_matching_stageii_artifacts_after_mosh(monkeypatch, tmp_path):
     dataset = "demo_ds"
     work_dir = tmp_path / "work"
@@ -77,6 +82,7 @@ def test_convert_tennis_exports_matching_stageii_artifacts_after_mosh(monkeypatc
     _install_fake_run_soma_module(monkeypatch, run_calls)
     _install_fake_export_module(monkeypatch, export_calls)
 
+    _write_mocap_file(mocap_base_dir / dataset / "subject01" / "swing.c3d")
     _write_stageii_pickle(work_dir / dataset / "subject01" / "swing_stageii.pkl", model_path=model_path)
     _write_stageii_pickle(work_dir / dataset / "subject01" / "serve_stageii.pkl", model_path=model_path)
 
@@ -114,6 +120,57 @@ def test_convert_tennis_exports_matching_stageii_artifacts_after_mosh(monkeypatc
     assert export_calls[0]["arch"] == "cpu"
 
 
+def test_convert_tennis_auto_detects_mcp_inputs_by_default(monkeypatch, tmp_path):
+    dataset = "demo_ds"
+    work_dir = tmp_path / "work"
+    mocap_base_dir = tmp_path / "mocap"
+    support_dir = tmp_path / "support"
+    mocap_path = mocap_base_dir / dataset / "subject01" / "swing_take.mcp"
+
+    run_calls = []
+    _install_fake_run_soma_module(monkeypatch, run_calls)
+
+    mocap_path.parent.mkdir(parents=True, exist_ok=True)
+    mocap_path.write_bytes(b"mcp")
+
+    convert_tennis.main(
+        [
+            "--dataset",
+            dataset,
+            "--mocap-base-dir",
+            str(mocap_base_dir),
+            "--soma-work-base-dir",
+            str(work_dir),
+            "--support-base-dir",
+            str(support_dir),
+        ]
+    )
+
+    assert [call["run_tasks"] for call in run_calls] == [["soma"], ["mosh"]]
+    assert [call["mocap_ext"] for call in run_calls] == [".mcp", ".mcp"]
+
+
+def test_convert_tennis_rejects_duplicate_c3d_and_mcp_aliases_for_same_sequence(tmp_path):
+    dataset = "demo_ds"
+    mocap_dir = tmp_path / "mocap" / dataset / "subject01"
+    _write_mocap_file(mocap_dir / "serve.c3d")
+    _write_mocap_file(mocap_dir / "serve.mcp", payload=b"mcp")
+
+    with pytest.raises(SystemExit) as excinfo:
+        convert_tennis.main(
+            [
+                "--dataset",
+                dataset,
+                "--mocap-base-dir",
+                str(tmp_path / "mocap"),
+                "--soma-work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert excinfo.value.code == 2
+
+
 def test_convert_tennis_can_export_existing_stageii_when_mosh_is_skipped(monkeypatch, tmp_path):
     dataset = "demo_ds"
     work_dir = tmp_path / "work"
@@ -126,6 +183,7 @@ def test_convert_tennis_can_export_existing_stageii_when_mosh_is_skipped(monkeyp
     _install_fake_run_soma_module(monkeypatch, run_calls)
     _install_fake_export_module(monkeypatch, export_calls)
 
+    _write_mocap_file(mocap_base_dir / dataset / "subject02" / "existing.c3d")
     stageii_path = work_dir / dataset / "subject02" / "existing_stageii.pkl"
     _write_stageii_pickle(stageii_path, model_path=model_path, gender="female")
 
@@ -150,6 +208,22 @@ def test_convert_tennis_can_export_existing_stageii_when_mosh_is_skipped(monkeyp
     assert export_calls[0]["model_path"] == str(model_path)
 
 
+def test_convert_tennis_errors_when_no_c3d_or_mcp_inputs_match_before_importing_soma(tmp_path):
+    with pytest.raises(SystemExit) as excinfo:
+        convert_tennis.main(
+            [
+                "--dataset",
+                "demo_ds",
+                "--mocap-base-dir",
+                str(tmp_path / "mocap"),
+                "--soma-work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert excinfo.value.code == 2
+
+
 def test_convert_tennis_export_relocates_model_path_under_support_base_dir(monkeypatch, tmp_path):
     dataset = "demo_ds"
     work_dir = tmp_path / "work"
@@ -164,6 +238,7 @@ def test_convert_tennis_export_relocates_model_path_under_support_base_dir(monke
     _install_fake_run_soma_module(monkeypatch, run_calls)
     _install_fake_export_module(monkeypatch, export_calls)
 
+    _write_mocap_file(mocap_base_dir / dataset / "subject03" / "portable.c3d")
     stageii_path = work_dir / dataset / "subject03" / "portable_stageii.pkl"
     _write_stageii_pickle(
         stageii_path,

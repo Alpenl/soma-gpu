@@ -79,6 +79,26 @@ def test_collect_mocap_fnames_includes_mcp_aliases(tmp_path):
     assert mocap_fnames == [str(c3d_path), str(mcp_path)]
 
 
+def test_convert_mosh_rejects_duplicate_c3d_and_mcp_aliases_for_same_sequence(tmp_path):
+    dataset = "demo_ds"
+    subject_dir = tmp_path / dataset / "subject01"
+    (subject_dir / "serve.c3d").parent.mkdir(parents=True, exist_ok=True)
+    (subject_dir / "serve.c3d").write_bytes(b"c3d")
+    (subject_dir / "serve.mcp").write_bytes(b"mcp")
+
+    with pytest.raises(SystemExit) as excinfo:
+        convert_mosh.main(
+            [
+                "--dataset",
+                dataset,
+                "--mocap-base-dir",
+                str(tmp_path),
+            ]
+        )
+
+    assert excinfo.value.code == 2
+
+
 def test_convert_mosh_accepts_mcp_inputs_and_exports_matching_stageii_artifacts(
     monkeypatch, tmp_path
 ):

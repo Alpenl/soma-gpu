@@ -1,5 +1,7 @@
 import argparse
 import os.path as osp
+from glob import glob
+from pathlib import Path
 
 from utils.script_utils import (
     discover_stageii_pickles,
@@ -9,7 +11,9 @@ from utils.script_utils import (
 
 DEFAULT_EXPR_ID = "V48_02_SuperSet"
 DEFAULT_DATA_ID = "OC_05_G_03_real_000_synt_100"
-DEFAULT_MOCAP_EXT = ".c3d"
+AUTO_MOCAP_EXT = "auto"
+SUPPORTED_MOCAP_EXTS = (".c3d", ".mcp")
+DEFAULT_MOCAP_EXT = AUTO_MOCAP_EXT
 
 
 def build_parser():
@@ -24,7 +28,7 @@ def build_parser():
     parser.add_argument(
         "--mocap-base-dir",
         required=True,
-        help="Base directory containing <dataset>/<subject>/*.c3d.",
+        help="Base directory containing <dataset>/<subject>/*.c3d or *.mcp.",
     )
     parser.add_argument(
         "--soma-work-base-dir",
@@ -60,7 +64,7 @@ def build_parser():
     parser.add_argument(
         "--mocap-ext",
         default=DEFAULT_MOCAP_EXT,
-        help="Extension of the input mocap files.",
+        help="Extension of the input mocap files. Use 'auto' to scan .c3d and .mcp.",
     )
     parser.add_argument(
         "--soma-batch-size",
@@ -113,6 +117,63 @@ def build_parser():
     )
     return parser
 
+
+def _collect_mocap_fnames(mocap_base_dir, dataset_name, mocap_ext, fname_filter):
+    pattern = osp.join(mocap_base_dir, dataset_name, "*", "*" + mocap_ext)
+    mocap_fnames = sorted(glob(pattern))
+    if fname_filter:
+        mocap_fnames = [
+            mocap_fname
+            for mocap_fname in mocap_fnames
+            if any(token in mocap_fname for token in fname_filter)
+        ]
+    return mocap_fnames
+
+
+def _requested_mocap_exts(mocap_ext):
+    if mocap_ext in (None, "", AUTO_MOCAP_EXT):
+        return list(SUPPORTED_MOCAP_EXTS)
+    return [mocap_ext]
+
+
+def resolve_mocap_exts(mocap_base_dir, dataset_name, mocap_ext, fname_filter):
+    requested_exts = _requested_mocap_exts(mocap_ext)
+    return [
+        candidate_ext
+        for candidate_ext in requested_exts
+        if _collect_mocap_fnames(
+            mocap_base_dir,
+            dataset_name,
+            candidate_ext,
+            fname_filter,
+        )
+    ]
+
+
+def find_duplicate_mocap_aliases(mocap_base_dir, dataset_name, mocap_exts, fname_filter):
+    dataset_root = Path(mocap_base_dir) / dataset_name
+    seen = {}
+    duplicates = set()
+    for mocap_ext in mocap_exts:
+        for mocap_fname in _collect_mocap_fnames(
+            mocap_base_dir,
+            dataset_name,
+            mocap_ext,
+            fname_filter,
+        ):
+            relative_stem = str(Path(mocap_fname).relative_to(dataset_root).with_suffix(""))
+            previous_ext = seen.setdefault(relative_stem, mocap_ext)
+            if previous_ext != mocap_ext:
+                duplicates.add(relative_stem)
+    return sorted(duplicates)
+
+
+def _format_mocap_exts(mocap_exts):
+    if len(mocap_exts) == 1:
+        return mocap_exts[0]
+    return ", ".join(mocap_exts[:-1]) + " or " + mocap_exts[-1]
+
+
 def export_stageii_artifacts_for_dataset(
     *,
     work_base_dir,
@@ -153,51 +214,80 @@ def main(argv=None):
     if args.skip_soma and args.skip_mosh:
         parser.error("At least one of SOMA or MoSh++ must remain enabled.")
 
-    from soma.tools.run_soma_multiple import run_soma_on_multiple_settings
-
     support_base_dir = resolve_support_base_dir(
         args.soma_work_base_dir, args.support_base_dir
     )
+    matched_mocap_exts = resolve_mocap_exts(
+        args.mocap_base_dir,
+        args.dataset,
+        args.mocap_ext,
+        args.fname_filter,
+    )
+    if not matched_mocap_exts:
+        parser.error(
+            "No {} files matched under {}/{}/*/".format(
+                _format_mocap_exts(_requested_mocap_exts(args.mocap_ext)),
+                args.mocap_base_dir,
+                args.dataset,
+            )
+        )
+    duplicate_aliases = find_duplicate_mocap_aliases(
+        args.mocap_base_dir,
+        args.dataset,
+        matched_mocap_exts,
+        args.fname_filter,
+    )
+    if duplicate_aliases:
+        parser.error(
+            "Found duplicate .c3d/.mcp aliases for the same sequence: {}. "
+            "Remove one source file or pass --mocap-ext explicitly.".format(
+                ", ".join(duplicate_aliases)
+            )
+        )
+    from soma.tools.run_soma_multiple import run_soma_on_multiple_settings
+
     parallel_cfg = {"randomly_run_jobs": True}
 
     if not args.skip_soma:
-        run_soma_on_multiple_settings(
-            soma_expr_ids=[args.expr_id],
-            soma_mocap_target_ds_names=[args.dataset],
-            soma_data_ids=[args.data_id],
-            soma_cfg={
-                "soma.batch_size": args.soma_batch_size,
-                "dirs.support_base_dir": support_base_dir,
-                "mocap.unit": args.mocap_unit,
-                "save_c3d": True,
-                "keep_nan_points": True,
-                "remove_zero_trajectories": True,
-            },
-            parallel_cfg=parallel_cfg,
-            run_tasks=["soma"],
-            mocap_base_dir=args.mocap_base_dir,
-            soma_work_base_dir=args.soma_work_base_dir,
-            mocap_ext=args.mocap_ext,
-            fname_filter=args.fname_filter,
-        )
+        for mocap_ext in matched_mocap_exts:
+            run_soma_on_multiple_settings(
+                soma_expr_ids=[args.expr_id],
+                soma_mocap_target_ds_names=[args.dataset],
+                soma_data_ids=[args.data_id],
+                soma_cfg={
+                    "soma.batch_size": args.soma_batch_size,
+                    "dirs.support_base_dir": support_base_dir,
+                    "mocap.unit": args.mocap_unit,
+                    "save_c3d": True,
+                    "keep_nan_points": True,
+                    "remove_zero_trajectories": True,
+                },
+                parallel_cfg=parallel_cfg,
+                run_tasks=["soma"],
+                mocap_base_dir=args.mocap_base_dir,
+                soma_work_base_dir=args.soma_work_base_dir,
+                mocap_ext=mocap_ext,
+                fname_filter=args.fname_filter,
+            )
 
     if not args.skip_mosh:
-        run_soma_on_multiple_settings(
-            soma_expr_ids=[args.expr_id],
-            soma_mocap_target_ds_names=[args.dataset],
-            soma_data_ids=[args.data_id],
-            mosh_cfg={
-                "moshpp.verbosity": 1,
-                "moshpp.stagei_frame_picker.type": "random",
-                "dirs.support_base_dir": support_base_dir,
-            },
-            mocap_base_dir=args.mocap_base_dir,
-            run_tasks=["mosh"],
-            fname_filter=args.fname_filter,
-            mocap_ext=args.mocap_ext,
-            soma_work_base_dir=args.soma_work_base_dir,
-            parallel_cfg=parallel_cfg,
-        )
+        for mocap_ext in matched_mocap_exts:
+            run_soma_on_multiple_settings(
+                soma_expr_ids=[args.expr_id],
+                soma_mocap_target_ds_names=[args.dataset],
+                soma_data_ids=[args.data_id],
+                mosh_cfg={
+                    "moshpp.verbosity": 1,
+                    "moshpp.stagei_frame_picker.type": "random",
+                    "dirs.support_base_dir": support_base_dir,
+                },
+                mocap_base_dir=args.mocap_base_dir,
+                run_tasks=["mosh"],
+                fname_filter=args.fname_filter,
+                mocap_ext=mocap_ext,
+                soma_work_base_dir=args.soma_work_base_dir,
+                parallel_cfg=parallel_cfg,
+            )
 
     if args.export_artifacts:
         export_stageii_artifacts_for_dataset(
