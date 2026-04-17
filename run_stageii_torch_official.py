@@ -219,6 +219,19 @@ def _validate_mesh_cli_args(parser, args):
         parser.error("--mesh-support-base-dir requires --export-mesh or --mesh-reference/--mesh-reference-output-suffix")
 
 
+def _validate_internal_contract_args(parser, args):
+    if args.expected_benchmark_output is not None and args.skip_benchmark:
+        parser.error("--expected-benchmark-output requires benchmark to be enabled")
+
+    has_expected_mesh_obj_path = args.expected_mesh_obj_path is not None
+    has_expected_mesh_pc2_path = args.expected_mesh_pc2_path is not None
+    has_expected_mesh_paths = has_expected_mesh_obj_path or has_expected_mesh_pc2_path
+    if has_expected_mesh_paths and not args.export_mesh:
+        parser.error("--expected-mesh-obj-path/--expected-mesh-pc2-path require --export-mesh")
+    if has_expected_mesh_obj_path != has_expected_mesh_pc2_path:
+        parser.error("--expected-mesh-obj-path and --expected-mesh-pc2-path must be provided together")
+
+
 def _resolve_mesh_reference_path(parser, args):
     if args.mesh_reference is not None:
         return args.mesh_reference
@@ -399,6 +412,7 @@ def run(argv=None, *, emit_json=True):
     parser = build_parser()
     args = parser.parse_args(argv)
     _validate_mesh_cli_args(parser, args)
+    _validate_internal_contract_args(parser, args)
     _validate_mesh_reference_output_suffix(parser, args)
     try:
         mesh_reference_path = _preflight_planned_output_contracts(parser, args)

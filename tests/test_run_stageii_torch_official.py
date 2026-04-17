@@ -1414,6 +1414,33 @@ def test_run_stageii_torch_official_main_rejects_benchmark_output_when_skip_benc
     assert "--benchmark-output requires benchmark to be enabled" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_rejects_expected_benchmark_output_when_skip_benchmark(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--skip-benchmark",
+                "--expected-benchmark-output",
+                str(tmp_path / "candidate_benchmark.json"),
+            ]
+        )
+
+    assert "--expected-benchmark-output requires benchmark to be enabled" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_rejects_mesh_reference_when_skip_benchmark(
     tmp_path, monkeypatch, capsys
 ):
@@ -1439,6 +1466,62 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_when_skip_benchm
         )
 
     assert "--mesh-reference requires benchmark to be enabled" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_rejects_expected_mesh_paths_without_export_mesh(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--expected-mesh-obj-path",
+                str(tmp_path / "mesh_exports" / "capture_stageii.obj"),
+                "--expected-mesh-pc2-path",
+                str(tmp_path / "mesh_exports" / "capture_stageii.pc2"),
+            ]
+        )
+
+    assert "--expected-mesh-obj-path/--expected-mesh-pc2-path require --export-mesh" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_rejects_partial_expected_mesh_contract(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--skip-benchmark",
+                "--export-mesh",
+                "--expected-mesh-obj-path",
+                str(tmp_path / "mesh_exports" / "capture_stageii.obj"),
+            ]
+        )
+
+    assert "--expected-mesh-obj-path and --expected-mesh-pc2-path must be provided together" in capsys.readouterr().err
 
 
 def test_run_stageii_torch_official_main_rejects_mesh_chunk_size_without_mesh_reference(
