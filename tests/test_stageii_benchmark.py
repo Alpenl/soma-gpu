@@ -1,4 +1,5 @@
 import json
+import pickle
 import sys
 from pathlib import Path
 
@@ -201,6 +202,106 @@ def test_run_public_stageii_benchmark_includes_artifact_bundle_export_metric_whe
     )
 
     assert report["speed"]["artifact_bundle_export_ms"] == artifact_bundle_metric
+
+
+def test_run_public_stageii_benchmark_includes_quality_summary_when_available(monkeypatch):
+    quality_summary = {
+        "marker_residual_l2": {"count": 3, "mean": 1.0},
+        "trans_jitter_l2": {"count": 2, "mean": 0.5},
+        "pose_jitter_l2": {"count": 2, "mean": 0.25},
+        "chunk_seam_transl_jump_l2": None,
+        "chunk_seam_pose_jump_l2": None,
+    }
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_stageii_quality",
+        lambda *args, **kwargs: quality_summary,
+        raising=False,
+    )
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        ROOT / "support_data/tests/mosh_stageii.pkl",
+        warmup_runs=0,
+        measured_runs=1,
+    )
+
+    assert report["quality"] == quality_summary
+
+
+def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_new_format(
+    tmp_path,
+):
+    sample_path = tmp_path / "synthetic_stageii.pkl"
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.asarray([[0.0], [1.0], [2.0], [10.0], [11.0]], dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.asarray(
+                    [
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [2.0, 0.0, 0.0],
+                        [10.0, 0.0, 0.0],
+                        [11.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                        },
+                        "runtime": {
+                            "sequence_chunk_size": 3,
+                            "sequence_chunk_overlap": 1,
+                        },
+                    },
+                    "mocap_frame_rate": 120.0,
+                    "mocap_time_length": 5,
+                    "markers_obs": np.zeros((5, 1, 3), dtype=np.float32),
+                    "markers_sim": np.tile(
+                        np.asarray([[[1.0, 0.0, 0.0]]], dtype=np.float32),
+                        (5, 1, 1),
+                    ),
+                    "labels_obs": [["A"]] * 5,
+                },
+            }
+        )
+    )
+
+    quality = stageii_benchmark._summarize_stageii_quality(
+        sample_path,
+        stageii_benchmark.normalize_stageii_sample(sample_path),
+    )
+
+    assert quality["marker_residual_l2"]["count"] == 5
+    assert quality["marker_residual_l2"]["mean"] == pytest.approx(1.0)
+    assert quality["trans_jitter_l2"]["max"] == pytest.approx(7.0)
+    assert quality["pose_jitter_l2"]["max"] == pytest.approx(7.0)
+    assert quality["chunk_seam_transl_jump_l2"]["count"] == 1
+    assert quality["chunk_seam_transl_jump_l2"]["mean"] == pytest.approx(8.0)
+    assert quality["chunk_seam_pose_jump_l2"]["mean"] == pytest.approx(8.0)
+
+
+def test_summarize_stageii_quality_reads_legacy_marker_residual_from_public_sample():
+    sample_path = ROOT / "support_data/tests/mosh_stageii.pkl"
+    quality = stageii_benchmark._summarize_stageii_quality(
+        sample_path,
+        stageii_benchmark.normalize_stageii_sample(sample_path),
+    )
+
+    assert quality["marker_residual_l2"]["count"] > 0
+    assert quality["marker_residual_l2"]["mean"] >= 0.0
+    assert quality["trans_jitter_l2"]["count"] > 0
+    assert quality["chunk_seam_transl_jump_l2"] is None
 
 
 def test_benchmark_preview_vertex_decode_propagates_unexpected_render_failures(monkeypatch):

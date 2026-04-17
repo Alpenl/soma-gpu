@@ -180,20 +180,26 @@ def _percentile(values, q):
     return float(np.percentile(np.asarray(values, dtype=np.float64), q))
 
 
-def _summarize_latency_samples(latency_samples):
-    latency_mean = statistics.mean(latency_samples)
-    latency_stdev = statistics.stdev(latency_samples) if len(latency_samples) > 1 else 0.0
+def _summarize_numeric_samples(samples):
+    if not samples:
+        return None
+    sample_mean = statistics.mean(samples)
+    sample_stdev = statistics.stdev(samples) if len(samples) > 1 else 0.0
     return {
-        "count": len(latency_samples),
-        "samples": [float(latency_ms) for latency_ms in latency_samples],
-        "mean": latency_mean,
-        "stdev": latency_stdev,
-        "min": min(latency_samples),
-        "max": max(latency_samples),
-        "p50": _percentile(latency_samples, 50),
-        "p90": _percentile(latency_samples, 90),
-        "p99": _percentile(latency_samples, 99),
+        "count": len(samples),
+        "samples": [float(value) for value in samples],
+        "mean": sample_mean,
+        "stdev": sample_stdev,
+        "min": min(samples),
+        "max": max(samples),
+        "p50": _percentile(samples, 50),
+        "p90": _percentile(samples, 90),
+        "p99": _percentile(samples, 99),
     }
+
+
+def _summarize_latency_samples(latency_samples):
+    return _summarize_numeric_samples(latency_samples)
 
 
 def _numeric_arrays(sample):
@@ -217,6 +223,156 @@ def _core_numeric_arrays(sample):
 
 def _all_finite(sample):
     return all(np.isfinite(array).all() for array in _core_numeric_arrays(sample).values())
+
+
+def _coerce_marker_frame(marker_frame):
+    marker_frame = np.asarray(marker_frame, dtype=np.float32)
+    if marker_frame.size == 0:
+        return np.zeros((0, 3), dtype=np.float32)
+    if marker_frame.ndim == 1:
+        marker_frame = marker_frame[None, :]
+    if marker_frame.ndim != 2 or marker_frame.shape[1] != 3:
+        raise ValueError(f"marker frame must have shape (M, 3), got {marker_frame.shape}")
+    return marker_frame
+
+
+def _iter_marker_frames(stageii_data):
+    stageii_debug = stageii_data.get("stageii_debug_details", {})
+    markers_obs = stageii_debug.get("markers_obs")
+    markers_sim = stageii_debug.get("markers_sim")
+    if markers_obs is not None and markers_sim is not None:
+        for observed_frame, simulated_frame in zip(markers_obs, markers_sim):
+            yield _coerce_marker_frame(observed_frame), _coerce_marker_frame(simulated_frame)
+        return
+
+    legacy_obs = stageii_data.get("pose_est_obmrks")
+    legacy_sim = stageii_data.get("pose_est_simmrks")
+    if legacy_obs is None or legacy_sim is None:
+        return
+    for observed_frame, simulated_frame in zip(legacy_obs, legacy_sim):
+        yield _coerce_marker_frame(observed_frame), _coerce_marker_frame(simulated_frame)
+
+
+def _marker_residual_l2_samples(stageii_data):
+    residual_samples = []
+    for observed_frame, simulated_frame in _iter_marker_frames(stageii_data):
+        if observed_frame.shape != simulated_frame.shape:
+            raise ValueError(
+                "observed and simulated marker frames must match, got "
+                f"{observed_frame.shape} != {simulated_frame.shape}"
+            )
+        if observed_frame.shape[0] == 0:
+            continue
+        residual = simulated_frame - observed_frame
+        finite_mask = np.isfinite(residual).all(axis=1)
+        if not finite_mask.any():
+            continue
+        residual_norm = np.linalg.norm(
+            np.asarray(residual[finite_mask], dtype=np.float64),
+            axis=1,
+        )
+        residual_samples.extend(float(value) for value in residual_norm.tolist())
+    return residual_samples
+
+
+def _temporal_accel_l2_samples(array_like):
+    array = np.asarray(array_like, dtype=np.float64)
+    if array.shape[0] < 3:
+        return []
+    accel = np.diff(array, n=2, axis=0)
+    accel = np.nan_to_num(accel, copy=False)
+    accel = accel.reshape(accel.shape[0], -1)
+    accel_norm = np.linalg.norm(accel, axis=1)
+    finite_mask = np.isfinite(accel_norm)
+    return [float(value) for value in accel_norm[finite_mask].tolist()]
+
+
+def _sequence_chunk_ranges(total_frames, chunk_size, overlap):
+    if total_frames <= 0:
+        return []
+    chunk_size = max(int(chunk_size), 1)
+    overlap = max(int(overlap), 0)
+    step = max(chunk_size - overlap, 1)
+    ranges = []
+    start = 0
+    while start < total_frames:
+        end = min(start + chunk_size, total_frames)
+        ranges.append((start, end))
+        if end >= total_frames:
+            break
+        start += step
+    return ranges
+
+
+def _sequence_chunk_config(stageii_data):
+    stageii_debug = stageii_data.get("stageii_debug_details", {})
+    cfg = stageii_debug.get("cfg")
+    if not isinstance(cfg, dict):
+        return None
+    runtime = cfg.get("runtime")
+    if not isinstance(runtime, dict):
+        return None
+    chunk_size = max(int(runtime.get("sequence_chunk_size", 1) or 1), 1)
+    chunk_overlap = max(int(runtime.get("sequence_chunk_overlap", 0) or 0), 0)
+    if chunk_size <= 1:
+        return None
+    return chunk_size, chunk_overlap
+
+
+def _chunk_seam_jump_l2_samples(array_like, *, chunk_size, overlap):
+    array = np.asarray(array_like, dtype=np.float64)
+    if array.shape[0] < 2:
+        return []
+    seam_samples = []
+    for chunk_idx, (row_start, row_end) in enumerate(
+        _sequence_chunk_ranges(array.shape[0], chunk_size, overlap)
+    ):
+        if chunk_idx == 0:
+            continue
+        keep_start = min(overlap, row_end - row_start)
+        seam_index = row_start + keep_start
+        if seam_index <= 0 or seam_index >= array.shape[0]:
+            continue
+        seam_delta = np.nan_to_num(array[seam_index] - array[seam_index - 1], copy=False)
+        seam_samples.append(float(np.linalg.norm(seam_delta.reshape(-1))))
+    return seam_samples
+
+
+def _summarize_stageii_quality(sample_path, baseline):
+    stageii_data = _load_pickle_compat(sample_path)
+    quality = {
+        "marker_residual_l2": _summarize_numeric_samples(
+            _marker_residual_l2_samples(stageii_data)
+        ),
+        "trans_jitter_l2": _summarize_numeric_samples(
+            _temporal_accel_l2_samples(baseline.trans)
+        ),
+        "pose_jitter_l2": _summarize_numeric_samples(
+            _temporal_accel_l2_samples(baseline.poses)
+        ),
+        "chunk_seam_transl_jump_l2": None,
+        "chunk_seam_pose_jump_l2": None,
+    }
+    chunk_config = _sequence_chunk_config(stageii_data)
+    if chunk_config is None:
+        return quality
+
+    chunk_size, chunk_overlap = chunk_config
+    quality["chunk_seam_transl_jump_l2"] = _summarize_numeric_samples(
+        _chunk_seam_jump_l2_samples(
+            baseline.trans,
+            chunk_size=chunk_size,
+            overlap=chunk_overlap,
+        )
+    )
+    quality["chunk_seam_pose_jump_l2"] = _summarize_numeric_samples(
+        _chunk_seam_jump_l2_samples(
+            baseline.poses,
+            chunk_size=chunk_size,
+            overlap=chunk_overlap,
+        )
+    )
+    return quality
 
 
 def _support_files_root(repo_root):
@@ -553,6 +709,7 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
         warmup_runs=warmup_runs,
         measured_runs=measured_runs,
     )
+    quality_summary = _summarize_stageii_quality(sample_path, baseline)
 
     return {
         "sample": {
@@ -589,6 +746,7 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
             "all_finite": _all_finite(baseline),
             "markers_obs_nan_count": int((~np.isfinite(baseline.markers_obs)).sum()),
         },
+        "quality": quality_summary,
         "artifact": {
             "public_sample_present": True,
             "report_path": None,
