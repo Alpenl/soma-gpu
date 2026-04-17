@@ -90,6 +90,7 @@ def write_mocap_c3d(markers: np.ndarray, labels: list, out_mocap_fname: str, fra
 
 
 def read_mocap(mocap_fname):
+    mocap_fname = str(mocap_fname)
     labels = None
     frame_rate = None
     if mocap_fname.endswith('.mat'):
@@ -121,7 +122,7 @@ def read_mocap(mocap_fname):
         # address a bug in bmlmovi
         labels = [f'*{lid}' if isinstance(l, np.ndarray) else l for lid, l in enumerate(labels)]
 
-    elif mocap_fname.endswith('.c3d'):
+    elif mocap_fname.endswith('.c3d') or mocap_fname.endswith('.mcp'):
         _marker_data = ezc3d.c3d(mocap_fname)
         # points_residuals = c['data']['meta_points']['residuals']
         # analog_data = c['data']['analogs']
