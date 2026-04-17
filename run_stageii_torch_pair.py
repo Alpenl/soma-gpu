@@ -350,18 +350,52 @@ def _planned_benchmark_output_path(*, explicit_output=None, stageii_path):
     )
 
 
-def _validate_distinct_benchmark_output_paths(parser, args, *, candidate_stageii_path):
-    if args.baseline_benchmark_output is None:
-        return
-    baseline_benchmark_output = Path(args.baseline_benchmark_output)
+def _baseline_benchmark_output_collision_kind(args, *, baseline_benchmark_output, candidate_stageii_path):
     candidate_benchmark_output = _planned_benchmark_output_path(
         explicit_output=args.candidate_benchmark_output,
         stageii_path=candidate_stageii_path,
     )
     if _normalized_path(baseline_benchmark_output) == _normalized_path(candidate_benchmark_output):
+        return "benchmark"
+    if _normalized_path(baseline_benchmark_output) == _normalized_path(candidate_stageii_path):
+        return "stageii"
+    if args.export_mesh:
+        candidate_obj_path, candidate_pc2_path = _planned_mesh_output_paths(
+            args,
+            stageii_path=candidate_stageii_path,
+        )
+        if (
+            _normalized_path(baseline_benchmark_output) == _normalized_path(candidate_obj_path)
+        ) or (
+            _normalized_path(baseline_benchmark_output) == _normalized_path(candidate_pc2_path)
+        ):
+            return "mesh"
+    return None
+
+
+def _validate_distinct_benchmark_output_paths(parser, args, *, candidate_stageii_path):
+    if args.baseline_benchmark_output is None:
+        return
+    baseline_benchmark_output = Path(args.baseline_benchmark_output)
+    collision_kind = _baseline_benchmark_output_collision_kind(
+        args,
+        baseline_benchmark_output=baseline_benchmark_output,
+        candidate_stageii_path=candidate_stageii_path,
+    )
+    if collision_kind == "benchmark":
         parser.error(
             "baseline and candidate resolve to the same benchmark output path; "
             "adjust benchmark-output paths or candidate stageii basename/path"
+        )
+    if collision_kind == "stageii":
+        parser.error(
+            "baseline benchmark output collides with candidate stageii plan; "
+            "adjust benchmark-output paths or candidate stageii basename/path"
+        )
+    if collision_kind == "mesh":
+        parser.error(
+            "baseline benchmark output collides with candidate mesh plan; "
+            "adjust benchmark-output paths, candidate stageii basename/path, or mesh export directory"
         )
 
 
@@ -441,14 +475,25 @@ def _validate_baseline_actual_outputs_against_candidate_plan(
             baseline_payload,
             label="baseline",
         )
-        candidate_benchmark_output = _planned_benchmark_output_path(
-            explicit_output=args.candidate_benchmark_output,
-            stageii_path=candidate_stageii_path,
+        collision_kind = _baseline_benchmark_output_collision_kind(
+            args,
+            baseline_benchmark_output=baseline_benchmark_output,
+            candidate_stageii_path=candidate_stageii_path,
         )
-        if _normalized_path(baseline_benchmark_output) == _normalized_path(candidate_benchmark_output):
+        if collision_kind == "benchmark":
             parser.error(
                 "baseline actual benchmark output path collides with candidate plan; "
                 "adjust benchmark outputs, candidate stageii basename/path, or investigate underlying runner path drift"
+            )
+        if collision_kind == "stageii":
+            parser.error(
+                "baseline actual benchmark output path collides with candidate stageii plan; "
+                "adjust benchmark outputs, candidate stageii basename/path, or investigate underlying runner path drift"
+            )
+        if collision_kind == "mesh":
+            parser.error(
+                "baseline actual benchmark output path collides with candidate mesh plan; "
+                "adjust benchmark outputs, candidate stageii basename/path, mesh export directory, or investigate underlying runner path drift"
             )
 
     return baseline_stageii_path

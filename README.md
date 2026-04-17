@@ -213,8 +213,8 @@ python run_stageii_torch_pair.py \
 - pair runner 现在也会在自己的 CLI 边界收紧 mesh compare chunk 参数：`--mesh-chunk-overlap` 必须和 `--mesh-chunk-size` 成对出现；否则命令会在 baseline 启动前直接报错，而不是等 candidate benchmark 深层调用 `utils.mesh_compare` 时才失败。
 - pair runner 现在还会在真正调用 baseline / candidate 两次 single runner 之前，先按与 single runner 相同的 `preset < --cfg < dedicated args` 规则静态推导两侧默认 `stageii.pkl` 输出路径；如果 `--baseline-cfg` / `--candidate-cfg` 里的 `mocap.basename`、`dirs.stageii_fname` 或相关路径覆盖最终把两侧指到同一个 `stageii.pkl`，命令会直接报错，而不会先跑一轮再把 baseline 自己覆盖掉。
 - 若开启了 `--export-mesh --mesh-output-dir`，pair runner 现在还会继续检查 baseline/candidate 推导出的 OBJ/PC2 落点是否会同名；即使两侧 `stageii.pkl` 在不同目录，只要 basename 一样、最终会把导出写进同一个 OBJ/PC2 路径，也会直接报错，避免 mesh 主线复核时把 baseline 导出物悄悄被 candidate 覆盖。
-- 若 baseline 也开启了 standalone benchmark，pair runner 现在还会比较 baseline/candidate 最终的 benchmark JSON 落点；只要 `--baseline-benchmark-output` 与 candidate 的显式或默认 `*_benchmark.json` 路径相同，命令也会直接报错，避免 pair 复核报告互相覆盖。
-- 即使静态预检没有命中，pair runner 现在也会在 baseline 真正跑完后，再把 baseline payload 里实际返回的 `stageii_path`、`mesh_export.obj/pc2`、以及 baseline benchmark `report_path` 与 candidate 的计划落点做一次二次比对；如果 underlying single runner 的真实落点和静态预判漂移到会覆盖 candidate，命令会在 candidate 启动前直接中止，而不是继续把 baseline 产物覆盖掉。
+- 若 baseline 也开启了 standalone benchmark，pair runner 现在不只会比较 baseline/candidate 两侧的 benchmark JSON 落点；只要 `--baseline-benchmark-output` 最终指向 candidate 的显式或默认 `*_benchmark.json`、candidate 的计划 `stageii.pkl`，或开启 `--export-mesh` 后 candidate 计划写出的 OBJ/PC2，命令都会直接报错，避免 baseline benchmark 先把 candidate 资产占掉。
+- 即使静态预检没有命中，pair runner 现在也会在 baseline 真正跑完后，再把 baseline payload 里实际返回的 `stageii_path`、`mesh_export.obj/pc2`、以及 baseline benchmark `report_path` 与 candidate 的计划落点做一次二次比对；如果 underlying single runner 的真实落点和静态预判漂移到会覆盖 candidate 的 benchmark/stageii/mesh 产物，命令会在 candidate 启动前直接中止，而不是继续把 baseline 产物覆盖掉。
 - 除了上面的 baseline-actual 二次比对，pair runner 现在也会把 planned benchmark / mesh 输出路径连同 `stageii.pkl` 计划路径一起，作为 hidden internal arg 下推给 underlying single runner：
   - `--expected-stageii-path`
   - `--expected-benchmark-output`
