@@ -498,13 +498,17 @@ def _summarize_mesh_compare(
     return report
 
 
-def _summarize_reference_stageii_quality(reference_path):
+def _normalize_reference_stageii_sample(reference_path):
     reference_path = Path(reference_path)
     if reference_path.suffix.lower() != ".pkl":
         return None
+    return normalize_stageii_sample(reference_path)
 
-    reference_sample = normalize_stageii_sample(reference_path)
-    return _summarize_stageii_quality(reference_path, reference_sample)
+
+def _summarize_reference_stageii_quality(reference_sample):
+    if reference_sample is None:
+        return None
+    return _summarize_stageii_quality(reference_sample.sample_path, reference_sample)
 
 
 def _summarize_reference_stageii_delta(candidate_quality, reference_quality):
@@ -907,13 +911,20 @@ def run_public_stageii_benchmark(
     quality_summary["reference_stageii_quality"] = None
     quality_summary["reference_stageii_delta"] = None
     quality_summary["mesh_compare"] = None
+    reference_stageii_elapsed_s = None
+    reference_stageii_elapsed_delta_s = None
     if mesh_reference_path is not None:
-        reference_quality = _summarize_reference_stageii_quality(mesh_reference_path)
+        reference_sample = _normalize_reference_stageii_sample(mesh_reference_path)
+        reference_quality = _summarize_reference_stageii_quality(reference_sample)
         quality_summary["reference_stageii_quality"] = reference_quality
         quality_summary["reference_stageii_delta"] = _summarize_reference_stageii_delta(
             candidate_quality,
             reference_quality,
         )
+        if reference_sample is not None:
+            reference_stageii_elapsed_s = reference_sample.stageii_elapsed_s
+            if baseline.stageii_elapsed_s is not None and reference_stageii_elapsed_s is not None:
+                reference_stageii_elapsed_delta_s = baseline.stageii_elapsed_s - reference_stageii_elapsed_s
         quality_summary["mesh_compare"] = _summarize_mesh_compare(
             sample_path,
             reference_path=mesh_reference_path,
@@ -946,6 +957,8 @@ def run_public_stageii_benchmark(
             "latency_ms": latency_summary,
             "throughput_ops_s": 1000.0 / latency_summary["mean"] if latency_summary["mean"] > 0 else 0.0,
             "stageii_elapsed_s": baseline.stageii_elapsed_s,
+            "reference_stageii_elapsed_s": reference_stageii_elapsed_s,
+            "reference_stageii_elapsed_delta_s": reference_stageii_elapsed_delta_s,
             "preview_vertex_decode_ms": preview_vertex_decode_summary,
             "mesh_export_ms": mesh_export_summary,
             "mp4_render_ms": mp4_render_summary,

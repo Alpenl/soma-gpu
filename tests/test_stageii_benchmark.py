@@ -67,6 +67,8 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert report["speed"]["latency_ms"]["p90"] == pytest.approx(160.0)
     assert report["speed"]["latency_ms"]["p99"] == pytest.approx(196.0)
     assert report["speed"]["stageii_elapsed_s"] is None
+    assert report["speed"]["reference_stageii_elapsed_s"] is None
+    assert report["speed"]["reference_stageii_elapsed_delta_s"] is None
     assert report["speed"]["preview_vertex_decode_ms"] is None
     assert report["speed"]["mesh_export_ms"] is None
     assert report["speed"]["mp4_render_ms"] is None
@@ -419,6 +421,12 @@ def test_run_public_stageii_benchmark_includes_optional_mesh_compare_summary(mon
         lambda *args, **kwargs: None,
         raising=False,
     )
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_normalize_reference_stageii_sample",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
     monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
     monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
     monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
@@ -446,7 +454,7 @@ def test_run_public_stageii_benchmark_includes_optional_mesh_compare_summary(mon
     }
 
 
-def _write_synthetic_stageii_sample(sample_path, *, residual_offset):
+def _write_synthetic_stageii_sample(sample_path, *, residual_offset, stageii_elapsed_time=None):
     sample_path.write_bytes(
         pickle.dumps(
             {
@@ -475,6 +483,7 @@ def _write_synthetic_stageii_sample(sample_path, *, residual_offset):
                     },
                     "mocap_frame_rate": 120.0,
                     "mocap_time_length": 3,
+                    "stageii_elapsed_time": stageii_elapsed_time,
                     "markers_obs": np.zeros((3, 1, 3), dtype=np.float32),
                     "markers_sim": np.tile(
                         np.asarray([[[residual_offset, 0.0, 0.0]]], dtype=np.float32),
@@ -492,8 +501,16 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_sta
 ):
     candidate_path = tmp_path / "candidate_stageii.pkl"
     reference_path = tmp_path / "baseline_stageii.pkl"
-    _write_synthetic_stageii_sample(candidate_path, residual_offset=1.0)
-    _write_synthetic_stageii_sample(reference_path, residual_offset=2.0)
+    _write_synthetic_stageii_sample(
+        candidate_path,
+        residual_offset=1.0,
+        stageii_elapsed_time=12.5,
+    )
+    _write_synthetic_stageii_sample(
+        reference_path,
+        residual_offset=2.0,
+        stageii_elapsed_time=10.0,
+    )
 
     monkeypatch.setattr(
         stageii_benchmark,
@@ -520,6 +537,8 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_sta
     assert reference_quality["trans_frame_delta_l2"]["mean"] == pytest.approx(1.5)
     assert reference_quality["pose_frame_delta_l2"]["mean"] == pytest.approx(1.0)
     assert reference_quality["trans_jitter_l2"]["mean"] == pytest.approx(1.0)
+    assert report["speed"]["reference_stageii_elapsed_s"] == pytest.approx(10.0)
+    assert report["speed"]["reference_stageii_elapsed_delta_s"] == pytest.approx(2.5)
     assert report["quality"]["reference_stageii_delta"] == {
         "marker_residual_l2": {
             "mean": pytest.approx(-1.0),
@@ -581,6 +600,8 @@ def test_run_public_stageii_benchmark_leaves_reference_stageii_quality_empty_for
 
     assert report["quality"]["reference_stageii_quality"] is None
     assert report["quality"]["reference_stageii_delta"] is None
+    assert report["speed"]["reference_stageii_elapsed_s"] is None
+    assert report["speed"]["reference_stageii_elapsed_delta_s"] is None
     assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.5}}
 
 
