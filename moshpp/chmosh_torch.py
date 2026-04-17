@@ -366,20 +366,25 @@ def _runtime_sequence_fit_options(cfg, runtime):
         raise RuntimeError("sequence fit options requested but torch sequence solver is unavailable")
 
     valid_optimizers = {"lbfgs", "adam"}
-    optimizer = str(_runtime_get(runtime, "sequence_optimizer", "adam")).lower()
+    default_optimizer = str(_runtime_get(runtime, "refine_optimizer", "adam")).lower()
+    optimizer = str(_runtime_get(runtime, "sequence_optimizer", default_optimizer)).lower()
     if optimizer not in valid_optimizers:
         raise ValueError(f"Unsupported runtime optimizer for sequence: {optimizer}. Expected one of {sorted(valid_optimizers)}.")
 
-    default_max_iters = int(_runtime_get(runtime, "sequence_max_iters", int(cfg.opt_settings.maxiter)))
-    default_lr = float(_runtime_get(runtime, "sequence_lr", 1e-1))
+    default_max_iters = int(_runtime_get(runtime, "refine_iters", int(cfg.opt_settings.maxiter)))
+    default_lr = float(_runtime_get(runtime, "refine_lr", 1e-1))
     return TorchSequenceFitOptions(
-        max_iters=default_max_iters,
-        lr=default_lr,
+        max_iters=int(_runtime_get(runtime, "sequence_max_iters", default_max_iters)),
+        lr=float(_runtime_get(runtime, "sequence_lr", default_lr)),
         optimizer=optimizer,
-        history_size=int(_runtime_get(runtime, "sequence_history_size", 100)),
-        tolerance_grad=float(_runtime_get(runtime, "sequence_tolerance_grad", 1e-7)),
-        tolerance_change=float(_runtime_get(runtime, "sequence_tolerance_change", 1e-9)),
-        max_eval=_runtime_get(runtime, "sequence_max_eval", None),
+        history_size=int(_runtime_get(runtime, "sequence_history_size", _runtime_get(runtime, "lbfgs_history_size", 100))),
+        tolerance_grad=float(
+            _runtime_get(runtime, "sequence_tolerance_grad", _runtime_get(runtime, "lbfgs_tolerance_grad", 1e-7))
+        ),
+        tolerance_change=float(
+            _runtime_get(runtime, "sequence_tolerance_change", _runtime_get(runtime, "lbfgs_tolerance_change", 1e-9))
+        ),
+        max_eval=_runtime_get(runtime, "sequence_max_eval", _runtime_get(runtime, "lbfgs_max_eval", None)),
     )
 
 

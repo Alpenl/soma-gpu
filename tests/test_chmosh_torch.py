@@ -395,6 +395,38 @@ def test_mosh_stageii_torch_sequence_chunking_runs_with_real_sequence_evaluator(
     assert stageii_data["stageii_debug_details"]["stageii_errs"]["data"].shape == (4,)
 
 
+def test_runtime_sequence_fit_options_inherit_refine_solver_defaults():
+    module = _load_chmosh_torch_module()
+    runtime = _ns(
+        {
+            "refine_optimizer": "lbfgs",
+            "refine_iters": 33,
+            "refine_lr": 0.7,
+            "lbfgs_history_size": 55,
+            "lbfgs_tolerance_grad": 1e-5,
+            "lbfgs_tolerance_change": 1e-6,
+            "lbfgs_max_eval": 77,
+        }
+    )
+    cfg = _ns(
+        {
+            "opt_settings": {
+                "maxiter": 20,
+            }
+        }
+    )
+
+    options = module._runtime_sequence_fit_options(cfg, runtime)
+
+    assert options.optimizer == "lbfgs"
+    assert options.max_iters == 33
+    assert options.lr == pytest.approx(0.7)
+    assert options.history_size == 55
+    assert options.tolerance_grad == pytest.approx(1e-5)
+    assert options.tolerance_change == pytest.approx(1e-6)
+    assert options.max_eval == 77
+
+
 def test_mosh_stageii_torch_builds_stageii_evaluator_once_and_reuses_it(tmp_path, monkeypatch):
     module = _load_chmosh_torch_module()
 
