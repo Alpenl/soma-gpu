@@ -6,6 +6,7 @@
 
 - 仓库级入口：[MAIN.md](../../../MAIN.md)
 - 控制面总说明：[docs/codex-potter/README.md](../README.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../iterations/README.md)
 
 ## 1. 定义
 
@@ -31,7 +32,7 @@
 
 ## 3. 阶段模板（可复制，确保可续跑）
 
-> 下面模板面向“每一轮”的执行。建议每轮都把“阶段输出”收敛到当轮目录中：`docs/codex-potter/iterations/round-XXXX-<slug>/`。最小交接包应至少包含：`round-overview.md`、`plan.md`、`test.md`、`summary.md`、`next-round-suggestions.md`。
+> 下面模板面向“每一轮”的执行。建议每轮都把“阶段输出”收敛到当轮目录中：`docs/codex-potter/iterations/round-XXXX-<slug>/`。最小交接包应至少包含：`round-overview.md`、`plan.md`、`code.md`、`test.md`、`next-round-suggestions.md`、`summary.md`、`commit.md`、`close.md`。
 
 ### 阶段 0：读上一轮文档（强制前置）
 
@@ -67,6 +68,7 @@
 - 并行切分方案（子任务列表，尽量互斥写集合）
 - 风险清单与缓解（每条风险对应一个缓解动作）
 - 预计改动路径（文件/模块级别，不要求逐行）
+- 阶段文档：`plan.md`
 
 门禁：
 
@@ -84,6 +86,7 @@
 - 可审阅的最小改动集（小步、可解释）
 - 关键实现说明（只写“为什么这么做”，不写大段教程）
 - 若涉及 GPU 加速：明确数据形状、dtype、device 流转与同步点
+- 阶段文档：`code.md`
 
 门禁：
 
@@ -102,6 +105,7 @@
 - 可复现的测试命令（含环境假设）
 - 结论（通过/不通过）与证据（输出摘要/指标）
 - 失败时的下一步定位建议（最短定位路径）
+- 阶段文档：`test.md`
 
 门禁：
 
@@ -116,6 +120,7 @@
 - 未完成项：按“阻塞/重要/可选”分类
 - 下一轮最小切入点（1 到 3 条）
 - 潜在技术债：未来会反噬的点（越具体越好）
+- 阶段文档：`next-round-suggestions.md`
 
 门禁：
 
@@ -131,6 +136,7 @@
 - 验证摘要（跑了什么、结果如何）
 - 已知问题与风险（以及是否接受）
 - 更新互链（确保 `MAIN.md` 运行索引可续跑）
+- 阶段文档：`summary.md`
 
 门禁：
 
@@ -144,6 +150,7 @@
 
 - 提交建议：是否需要拆分提交、提交信息草案
 - 变更审阅清单：哪些文件是高风险区
+- 阶段文档：`commit.md`
 
 门禁：
 
@@ -157,6 +164,7 @@
 
 - 更新 `MAIN.md` 的“每轮运行索引”（新增一行）
 - 标注“上一轮指针”与“本轮产物指针”
+- 阶段文档：`close.md`
 
 门禁：
 

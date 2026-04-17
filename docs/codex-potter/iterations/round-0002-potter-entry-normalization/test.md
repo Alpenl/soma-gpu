@@ -14,7 +14,16 @@ environment:
 
 # 本轮测试记录（Test Log）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 > 本轮主要验证“入口规则正确性”与“文档/内部 progress file 是否同步”，不是验证 GPU 功能。
+>
+> 2026-04-17 补充：在入口归一化之外，追加检查本轮目录的八件套完整性，避免示例轮次与协议脱节。
 
 ## 1. 测试范围（What We Tested）
 
@@ -79,6 +88,12 @@ environment:
    - 结果：PASS
    - 关键输出摘要：输出为 `3 .codexpotter/projects/2026/04/16/1/potter-rollout.jsonl`
 
+8. 命令：
+   - `find docs/codex-potter/iterations/round-0002-potter-entry-normalization -maxdepth 1 -type f | sort`
+   - 期望：目录内八件套齐全，且包含 `code.md` / `commit.md` / `close.md`
+   - 结果：PASS
+   - 关键输出摘要：目录下 8 个阶段文档齐全，入口归一化样例可直接作为续跑输入
+
 ## 4. 失败项与排查（If Any）
 
 失败项清单：
@@ -92,7 +107,7 @@ environment:
 下一步建议：
 
 - 若后续还需要对 Potter 实现做更深检查，优先本地源码验证，不依赖不稳定的外部子代理通道
-- 下一轮开始时直接使用 `codex-potter resume 2026/04/16/1 --yolo --rounds <N>`，不要再尝试仓库根 `MAIN.md`
+- 下一轮开始时直接使用 `codex-potter resume 2026/04/16/1 --yolo --rounds 10`（按需改最后的轮数），不要再尝试仓库根 `MAIN.md`
 
 ## 5. 回归风险点（Regression Watchlist）
 

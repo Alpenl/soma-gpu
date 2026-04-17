@@ -1,5 +1,12 @@
 # 2026-04-16 初始化实施计划（CodexPotter 控制面）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../iterations/README.md)
+
 > 目的：把本仓库的调度式工作流固化为可续跑的中文文档体系。  
 > 范围：只做控制面初始化与首轮交接包，不做 GPU 核心代码修改。
 
@@ -26,7 +33,7 @@
 - 控制面入口与互链规范
 - 轮次目录规范与模板
 - 指标框架与建议/决断点规范
-- `round-0001-init` 的 `overview/plan/test/summary/next` 文档
+- `round-0001-init` 的 `overview/plan/code/test/next/summary/commit/close` 文档
 - 文档层面的轻量验证
 
 ### 2.2 Out of Scope
@@ -52,16 +59,22 @@ docs/codex-potter/
   templates/
     README.md
     plan-template.md
+    code-template.md
     test-template.md
+    commit-template.md
+    close-template.md
     summary-template.md
   iterations/
     README.md
     round-0001-init/
       round-overview.md
       plan.md
+      code.md
       test.md
-      summary.md
       next-round-suggestions.md
+      summary.md
+      commit.md
+      close.md
 ```
 
 ## 4. 本轮执行步骤
@@ -82,13 +95,16 @@ docs/codex-potter/
 - 统一最小交接包为：
   - `round-overview.md`
   - `plan.md`
+  - `code.md`
   - `test.md`
-  - `summary.md`
   - `next-round-suggestions.md`
+  - `summary.md`
+  - `commit.md`
+  - `close.md`
 
 ### 步骤 4：补齐首轮交接包
 
-- 为 `round-0001-init` 补全实际 `plan/test/summary`
+- 为 `round-0001-init` 补全实际 `plan/code/test/next/summary/commit/close`
 - 把本轮真实执行信息、验证命令、结论与遗留写入交接包
 
 ### 步骤 5：轻量验证
@@ -118,7 +134,7 @@ docs/codex-potter/
 2. `docs/codex-potter/` 下已形成治理、模板、spec、plan、iterations 四类文档
 3. `round-0001-init` 目录具备最小交接包
 4. 轻量验证完成且无明显结构冲突
-5. 下一轮可以从 `MAIN.md -> iterations/README.md -> round-0001-init/summary.md` 这条路径开始续跑
+5. 下一轮可以从 `MAIN.md -> iterations/README.md -> round-0001-init/close.md` 这条路径开始续跑
 
 ## 7. 已知风险与下一步
 

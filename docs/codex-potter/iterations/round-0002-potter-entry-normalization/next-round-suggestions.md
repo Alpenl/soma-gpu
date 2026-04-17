@@ -1,5 +1,12 @@
 # 下一轮建议（Round 0003+ Suggestions）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 日期：2026-04-16
 
 本轮已经解决了 Potter 入口归一化问题。接下来不建议继续把精力花在工具入口上，而应该回到 GPU 路线的真实目标：速度、误差、视觉效果与工程化。

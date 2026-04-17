@@ -19,10 +19,17 @@ artifacts:
 
 # 本轮总结与交接（Summary & Handoff）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 ## 0. 本轮结论（TL;DR）
 
 - 已确认：CodexPotter 的 `resume` 不能直接把仓库根 `MAIN.md` 当作 runtime 入口。
-- 已固化标准续跑命令：`codex-potter resume 2026/04/16/1 --yolo --rounds <N>`。
+- 已固化默认续跑示例命令：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`；若需不同轮数，只替换最后的 `10`。
 - 已在仓库文档中写清“人类入口 vs runtime progress file”的区别。
 - 已同步本地 `.codexpotter/projects/2026/04/16/1/MAIN.md` 到当前基线提交，并把后续任务切换到真实 GPU 优化路线。
 - 下一轮可以不再讨论 Potter 入口问题，直接进入基线 bench / profiling。
@@ -114,7 +121,10 @@ artifacts:
 - `docs/codex-potter/governance/resume-and-handoff.md`
 - `docs/codex-potter/iterations/round-0002-potter-entry-normalization/round-overview.md`
 - `docs/codex-potter/iterations/round-0002-potter-entry-normalization/plan.md`
+- `docs/codex-potter/iterations/round-0002-potter-entry-normalization/code.md`
 - `docs/codex-potter/iterations/round-0002-potter-entry-normalization/test.md`
 - `docs/codex-potter/iterations/round-0002-potter-entry-normalization/summary.md`
 - `docs/codex-potter/iterations/round-0002-potter-entry-normalization/next-round-suggestions.md`
+- `docs/codex-potter/iterations/round-0002-potter-entry-normalization/commit.md`
+- `docs/codex-potter/iterations/round-0002-potter-entry-normalization/close.md`
 - `.codexpotter/projects/2026/04/16/1/MAIN.md`

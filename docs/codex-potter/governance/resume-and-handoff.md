@@ -1,5 +1,12 @@
 # 续跑与交接规范（CodexPotter）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../iterations/README.md)
+
 本规范定义：每一轮（round）如何开始、主会话如何调度与轻审、子代理如何领取任务与汇报、以及每轮结束时必须提交哪些产物，确保下一轮可以无歧义续跑。
 
 适用范围：本仓库所有由 AI Agent 协作完成的迭代开发与文档工作（包含纯文档轮与代码轮）。
@@ -10,9 +17,10 @@
 
 对当前仓库，CodexPotter 的 `resume` 入口必须使用 `.codexpotter/projects/.../MAIN.md` 这一类 progress file，而不是仓库根 `MAIN.md`。
 
-- 人类控制面入口：`/home/alpen/DEV/soma-gpu/MAIN.md`
-- 当前 runtime progress file：`/home/alpen/DEV/soma-gpu/.codexpotter/projects/2026/04/16/1/MAIN.md`
-- 当前标准续跑命令：`codex-potter resume 2026/04/16/1 --yolo --rounds <N>`
+- 人类控制面入口：`MAIN.md`
+- 当前 runtime progress file：`.codexpotter/projects/2026/04/16/1/MAIN.md`
+- 当前默认续跑示例命令：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`
+- 若需要不同轮数，只替换最后的 `10`；`--rounds <N>` 只是参数占位写法。
 
 原因：
 
@@ -26,7 +34,7 @@
 - **一轮（round）**：从“读取上轮交接包”开始，到“提交本轮产物并写完交接包”结束的完整闭环。
 - **主会话（Orchestrator）**：负责调度、切分任务、轻量审阅、合并产物与最终提交；默认不在主会话里做大段实现。
 - **子代理（Worker）**：领取一个可独立完成的任务切片（含明确文件/模块范围），完成实现、验证、写汇报，交回主会话整合。
-- **交接包（Handoff Bundle）**：本轮的可续跑最小集合，至少包含：计划、测试记录、总结（含下一轮建议）、以及对应的提交信息。
+- **交接包（Handoff Bundle）**：本轮的可续跑最小集合，至少包含：总览、计划、编码/执行记录、测试记录、下一轮建议、总结、提交记录、结束记录。
 
 ---
 
@@ -43,8 +51,10 @@
    - 读出：Potter 当前内部任务状态、最近完成轮次、下一步 todo。
 3. 上一轮交接包（必须）
    - 上一轮的 `summary.md`：读出“做了什么、没做什么、为什么、下一轮建议、未解决问题”。
+   - 上一轮的 `code.md`：读出实际执行路径、文件落点、与原计划是否偏离。
    - 上一轮的 `test.md`：读出验证范围、是否有已知未覆盖的测试空洞、如何复现。
    - 上一轮的 `plan.md`：对照实际产出，识别偏离点与遗留 TODO。
+   - 上一轮的 `commit.md` / `close.md`：读出提交粒度、最终落点、索引是否已更新。
 4. 本规范：`docs/codex-potter/governance/resume-and-handoff.md`
    - 读出：本轮必须产出什么、子代理汇报格式、提交要求。
 5. 与当前方向强相关的“基线/背景”文档（按需，但通常建议读）
@@ -63,9 +73,14 @@
 
 - 为本轮创建一个明确的“轮次目录”（推荐使用 `docs/codex-potter/iterations/round-XXXX-<slug>/`）。
 - 从模板生成并填写：
+  - `round-overview.md`（本轮总览）
   - `plan.md`（本轮计划）
+  - `code.md`（本轮编码 / 执行记录）
   - `test.md`（本轮测试记录）
+  - `next-round-suggestions.md`（下一轮建议）
   - `summary.md`（本轮总结与交接）
+  - `commit.md`（本轮提交记录）
+  - `close.md`（本轮结束记录）
 
 ### 2) 切分任务并派发给子代理
 
@@ -88,6 +103,7 @@
 主会话在合并/提交前至少完成：
 
 - **范围审计**：确认改动没有越界（尤其是“只允许改动的文件列表”类约束）。
+- **入口审计**：新增控制面文档的标题下保留统一“上层入口”区块，至少回链 `MAIN.md` / 控制面总说明 / 工作流协议 / 轮次索引 其一。
 - **一致性审计**：术语、目录命名、模板字段口径一致；文档链接可跳转（相对路径正确）。
 - **可复现审计**：`test.md` 中记录的关键验证命令可运行（或明确说明为什么不能运行，比如缺私有资产）。
 - **风险确认**：总结里要写清“已知风险/未覆盖测试/需要用户提供的资产或决策”。
@@ -124,9 +140,14 @@
 
 本轮结束前，主会话必须确保以下内容齐全，并在 `summary.md` 中可一眼找到：
 
+- `round-overview.md`：本轮目标、范围、输出物、退出标准
 - `plan.md`：本轮目标、范围、约束、任务拆分、预期产物、验证计划
+- `code.md`：实际执行过程、关键落点、与原计划的偏离
 - `test.md`：实际执行的验证、环境信息、结果、失败原因（若有）、复现步骤
+- `next-round-suggestions.md`：下一轮建议、决断点、依赖与风险
 - `summary.md`：结果总结、关键决策、对指标的影响、风险与遗留、下一轮建议、提交信息
+- `commit.md`：提交计划、实际提交、审阅重点、未提交本地状态
+- `close.md`：结束检查、入口索引更新、下一轮起点
 - **代码/配置/文档改动**（若有）：与计划一致，且有最小验证证据
 
 ### 提交（Git）要求
@@ -148,11 +169,14 @@
 在结束本轮前，逐项确认：
 
 - 已读完“强制阅读清单”并在 `plan.md` 留痕
-- `plan.md` / `test.md` / `summary.md` 三件套齐全，且互相链接正确
+- `round-overview.md` / `plan.md` / `code.md` / `test.md` / `next-round-suggestions.md` / `summary.md` / `commit.md` / `close.md` 八件套齐全，且互相链接正确
+- 本轮新增的控制面文档已保留“上层入口”区块，可直接回到主入口
 - `test.md` 包含至少一个可执行的验证步骤或明确的不可执行原因
 - `summary.md` 包含：
   - 关键产出与影响（对速度/误差/效果/工程化其一或多项）
   - 风险与遗留
   - 下一轮建议（可拆成 2 到 5 条可执行任务）
   - 分支名与 commit hash
+- `commit.md` 记录了实际提交与未提交本地状态
+- `close.md` 记录了索引更新与下一轮起点
 - 本轮若引入新约束/新口径/新目录规范：已写入本规范或模板 README 中（避免“隐性流程”）

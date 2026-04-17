@@ -1,5 +1,12 @@
 # GPU 优化迭代统一指标框架（Metrics Framework）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../iterations/README.md)
+
 本文档用于规范后续所有 GPU 优化轮次（iterations / rounds）的指标口径、测量方法、输出格式与决策门槛。目标是让每一轮的“提速/降耗/提质”都能被**可复现地度量**，并能明确回答：
 
 - 变快了多少？（速度）

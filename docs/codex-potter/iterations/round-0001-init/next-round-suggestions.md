@@ -1,10 +1,17 @@
 # 下一轮建议（Round 0002+ Suggestions）与决断点
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 日期：2026-04-16
 
 本文档用于给出下一轮及后续几轮的建议写法、建议清单的最小模板，以及必须设置的决断点（decision gates）。它不是待办列表，而是“可评估、可拍板”的建议集合。
 
-统一指标口径与 Scorecard 模板见：[metrics-framework.md](/home/alpen/DEV/soma-gpu/docs/codex-potter/governance/metrics-framework.md)。
+统一指标口径与 Scorecard 模板见：[metrics-framework.md](../../governance/metrics-framework.md)。
 
 ## 1. 建议条目模板（必须按此写）
 

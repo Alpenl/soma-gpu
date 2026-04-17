@@ -10,14 +10,26 @@ repo:
     - "<commit-hash-2>"
 artifacts:
   docs:
+    - "round-overview.md"
     - "plan.md"
+    - "code.md"
     - "test.md"
+    - "next-round-suggestions.md"
     - "summary.md"
+    - "commit.md"
+    - "close.md"
   code:
     - "<optional: paths>"
 ---
 
 # 本轮总结与交接（Summary & Handoff）
+
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../iterations/README.md)
 
 ## 0. 本轮结论（TL;DR）
 
@@ -34,9 +46,14 @@ artifacts:
 
 文档：
 
+- `round-overview.md`：TODO
 - `plan.md`：TODO
+- `code.md`：TODO
 - `test.md`：TODO
+- `next-round-suggestions.md`：TODO
 - `summary.md`：本文件
+- `commit.md`：TODO
+- `close.md`：TODO
 
 代码/配置/其他：
 
@@ -109,7 +126,10 @@ artifacts:
 - `docs/codex-potter/governance/resume-and-handoff.md`
 - `docs/codex-potter/iterations/<this-round>/round-overview.md`
 - `docs/codex-potter/iterations/<this-round>/plan.md`
+- `docs/codex-potter/iterations/<this-round>/code.md`
 - `docs/codex-potter/iterations/<this-round>/test.md`
+- `docs/codex-potter/iterations/<this-round>/commit.md`
+- `docs/codex-potter/iterations/<this-round>/close.md`
 - `docs/codex-potter/iterations/<this-round>/summary.md`
 - `docs/codex-potter/iterations/<this-round>/next-round-suggestions.md`
 - （按需）TODO：其他关键背景文档/代码入口点

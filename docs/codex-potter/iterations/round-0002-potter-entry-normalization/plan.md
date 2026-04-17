@@ -20,6 +20,13 @@ scope_tags:
 
 # 本轮计划（Plan）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 ## 0. 本轮一句话目标
 
 把 CodexPotter 的 runtime progress file 与仓库根控制面入口归一化，明确标准 `resume` 命令，并同步本地内部项目状态到当前基线。
@@ -67,7 +74,7 @@ Out of Scope（本轮明确不做）：
 
 - `MAIN.md` 中新增标准 `resume` 入口说明
 - `docs/codex-potter/README.md` 与 `resume-and-handoff.md` 中新增入口区分说明
-- `docs/codex-potter/iterations/round-0002-potter-entry-normalization/` 五件套
+- `docs/codex-potter/iterations/round-0002-potter-entry-normalization/` 八件套
 - 更新后的 `.codexpotter/projects/2026/04/16/1/MAIN.md`
 
 完成定义（DoD），需可验收：
@@ -77,6 +84,7 @@ Out of Scope（本轮明确不做）：
 - [x] 仓库文档里出现当前标准续跑命令
 - [x] 内部 progress file 已同步到提交 `462f95d457e6eafcc963e613eba7b08e15241c93`
 - [x] 本轮 `test.md` 至少记录 4 条验证命令或等价验证步骤
+- [x] 本轮目录已补齐 `code.md`、`commit.md`、`close.md`
 
 ## 4. 任务拆分与派发（面向子代理）
 
@@ -97,8 +105,8 @@ Out of Scope（本轮明确不做）：
    - 验证：front matter 与任务状态更新到当前基线
 
 4. 任务：本轮交接包
-   - 目标：写完 `overview/plan/test/summary/next`
-   - 允许修改：本轮目录下五个文件
+   - 目标：写完 `overview/plan/code/test/next/summary/commit/close`
+   - 允许修改：本轮目录下八个文件
    - 验证：下一轮可直接按阅读清单继续
 
 ## 5. 风险清单（Risks）与应对

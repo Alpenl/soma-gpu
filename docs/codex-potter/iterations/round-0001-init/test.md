@@ -14,7 +14,16 @@ environment:
 
 # 本轮测试记录（Test Log）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 > 本轮只做文档初始化，因此验证重点是：文件树齐备、路径口径统一、关键入口可定位。
+>
+> 2026-04-17 补充：为配合八件套回填，本文件新增结构一致性检查，覆盖 `code.md` / `commit.md` / `close.md`。
 
 ## 1. 测试范围（What We Tested）
 
@@ -66,6 +75,18 @@ environment:
    - 结果：PASS
    - 关键输出摘要：无输出
 
+6. 命令：
+   - `find docs/codex-potter/iterations/round-0001-init -maxdepth 1 -type f | sort`
+   - 期望：目录内八件套齐全，且包含 `code.md` / `commit.md` / `close.md`
+   - 结果：PASS
+   - 关键输出摘要：目录下 8 个阶段文档齐全，八件套已补齐
+
+7. 命令：
+   - `rg -n 'code.md|commit.md|close.md' docs/codex-potter/README.md docs/codex-potter/governance docs/codex-potter/iterations/README.md docs/codex-potter/iterations/round-0001-init`
+   - 期望：控制面 README、治理文档、轮次规范与首轮样例都引用新阶段文档
+   - 结果：PASS
+   - 关键输出摘要：`README`、`resume-and-handoff.md`、`workflow-protocol.md`、`iterations/README.md` 与 `round-0001-init/*` 均命中新阶段文档引用
+
 ## 4. 失败项与排查（If Any）
 
 失败项清单：
@@ -78,10 +99,10 @@ environment:
 
 下一步建议：
 
-- 下一轮开始前先读取 `summary.md` 与 `next-round-suggestions.md`，再进入基线 bench/profiling 轮。
+- 下一轮开始前先读取 `close.md`、`summary.md` 与 `next-round-suggestions.md`，再进入基线 bench/profiling 轮。
 
 ## 5. 回归风险点（Regression Watchlist）
 
 - 轮次目录命名重新分裂为多套口径
 - 模板路径与治理文档路径不一致
-- 后续真实代码轮没有补写 `plan/test/summary` 导致续跑断裂
+- 后续真实代码轮未按八件套补写阶段文档，导致续跑断裂

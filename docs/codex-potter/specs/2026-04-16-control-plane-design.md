@@ -1,5 +1,12 @@
 # 控制面设计 Spec（初始化版）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../iterations/README.md)
+
 日期：2026-04-16  
 状态：已确认设计的结构化整理（用于后续 implementation plan 输入）
 

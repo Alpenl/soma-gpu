@@ -22,6 +22,13 @@ scope_tags:
 
 # 本轮计划（Plan）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 ## 0. 本轮一句话目标
 
 建立本仓库的 CodexPotter 控制面入口、治理规则、轮次规范与首轮交接包，使下一轮可以按文档闭环继续推进 GPU 线路优化。
@@ -48,7 +55,7 @@ In Scope（本轮要做）：
 
 - 建立 `MAIN.md` 与 `docs/codex-potter/` 文档体系
 - 固化治理文档：协议、指标、续跑规范
-- 固化模板：`plan/test/summary`
+- 固化模板：`plan/code/test/commit/close/summary`
 - 建立 `iterations/round-0001-init/` 并补齐最小交接包
 
 Out of Scope（本轮明确不做）：
@@ -81,7 +88,8 @@ Out of Scope（本轮明确不做）：
 
 - [x] 仓库存在根级 `MAIN.md`
 - [x] 治理、模板、spec、plan、iterations 文档齐备
-- [x] `round-0001-init` 包含 `round-overview.md`、`plan.md`、`test.md`、`summary.md`、`next-round-suggestions.md`
+- [x] `round-0001-init` 包含 `round-overview.md`、`plan.md`、`code.md`、`test.md`、`next-round-suggestions.md`、`summary.md`、`commit.md`、`close.md`
+- [x] `round-0001-init` 已补齐 `code.md`、`commit.md`、`close.md`
 - [x] `test.md` 至少记录 1 条可执行验证命令
 - [x] 轮次路径口径统一为 `docs/codex-potter/iterations/round-XXXX-<slug>/`
 
@@ -99,7 +107,7 @@ Out of Scope（本轮明确不做）：
    - 验证：确认四大指标、Gate A/B、candidate asset 评估口径齐全
 
 3. 任务：续跑规范与模板
-   - 目标：建立 resume/handoff 规范与模板三件套
+   - 目标：建立 resume/handoff 规范与模板体系（含 plan/code/test/commit/close/summary）
    - 允许修改：`docs/codex-potter/governance/resume-and-handoff.md`、`docs/codex-potter/templates/**`
    - 验证：确认下一轮阅读清单、汇报格式、模板字段完整
 

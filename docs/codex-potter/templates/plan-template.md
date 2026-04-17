@@ -20,6 +20,13 @@ scope_tags:
 
 # 本轮计划（Plan）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../iterations/README.md)
+
 ## 0. 本轮一句话目标
 
 用一句话描述“本轮结束时你希望仓库变成什么样”。
@@ -66,17 +73,25 @@ Out of Scope（本轮明确不做）：
 
 本轮必须产物：
 
+- `round-overview.md`
 - `plan.md`（本文件）
+- `code.md`（本轮编码 / 执行记录）
 - `test.md`（本轮测试记录）
+- `next-round-suggestions.md`（本轮下一轮建议）
 - `summary.md`（本轮总结与交接）
+- `commit.md`（本轮提交记录）
+- `close.md`（本轮结束记录）
 - 代码/配置/文档改动（若有）
 
 完成定义（DoD），需可验收：
 
 - [ ] TODO
 - [ ] TODO
+- [ ] `code.md` 记录了实际落点与计划偏离
 - [ ] `test.md` 里至少有 1 条可执行验证命令，或写清楚不可执行原因与替代验证
+- [ ] `commit.md` 记录分支名与 commit hash（至少一个），或明确“本轮无提交”
 - [ ] `summary.md` 记录分支名与 commit hash（至少一个）
+- [ ] `close.md` 指明下一轮入口与退出判断
 
 ---
 
@@ -130,4 +145,3 @@ Out of Scope（本轮明确不做）：
 - 分支：`<branch>`
 - 提交拆分：TODO（例如“先文档后代码”“按模块拆分提交”）
 - 提交信息约定：TODO（例如 `docs: ...` / `feat: ...`）
-

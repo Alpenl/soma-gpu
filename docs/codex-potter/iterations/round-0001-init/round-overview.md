@@ -1,5 +1,12 @@
 # Round 0001 (init) 概览
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 日期：2026-04-16
 
 本轮为“初始化轮”（init round），目标是为后续 GPU 优化迭代建立**统一的指标框架与轮次文档规范**，并明确如何把 `.worktrees/gpu-stageii-foundation` 作为候选实现资产纳入评估。
@@ -33,9 +40,12 @@ P0（必须产出）：
 - `docs/codex-potter/iterations/README.md`
 - `docs/codex-potter/iterations/round-0001-init/round-overview.md`
 - `docs/codex-potter/iterations/round-0001-init/plan.md`
+- `docs/codex-potter/iterations/round-0001-init/code.md`
 - `docs/codex-potter/iterations/round-0001-init/test.md`
 - `docs/codex-potter/iterations/round-0001-init/summary.md`
 - `docs/codex-potter/iterations/round-0001-init/next-round-suggestions.md`
+- `docs/codex-potter/iterations/round-0001-init/commit.md`
+- `docs/codex-potter/iterations/round-0001-init/close.md`
 
 P1（可选，若团队在本轮就已具备条件可补充，但不作为阻断项）：
 

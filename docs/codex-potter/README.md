@@ -1,5 +1,11 @@
 # Codex Potter 控制面（总说明）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../MAIN.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](./governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](./iterations/README.md)
+
 本文档是 `soma-gpu` 的“控制面”总说明，面向主会话与各阶段子代理。它提供一个稳定的、可续跑的协作框架：每轮怎么开始、怎么并行推进、怎么验证、怎么落文档、怎么收尾。
 
 仓库级入口请从：[MAIN.md](../../MAIN.md) 开始。
@@ -8,7 +14,8 @@
 
 - 人类入口：`MAIN.md`
 - runtime progress file：`.codexpotter/projects/2026/04/16/1/MAIN.md`
-- 当前标准续跑命令：`codex-potter resume 2026/04/16/1 --yolo --rounds <N>`
+- 当前默认续跑示例命令：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`
+- 如需调整轮数，只替换最后的 `10`；文档里的 `--rounds <N>` 仅表示该参数可配置。
 
 ## 1. 你在这里要解决什么问题
 
@@ -42,6 +49,17 @@
 完整协议与模板见：[docs/codex-potter/governance/workflow-protocol.md](./governance/workflow-protocol.md)。
 
 轮次目录与最小交接包规范见：[docs/codex-potter/iterations/README.md](./iterations/README.md)。
+
+每个阶段都必须落成新的结构化文档，最小集合如下：
+
+- `round-overview.md`
+- `plan.md`
+- `code.md`
+- `test.md`
+- `next-round-suggestions.md`
+- `summary.md`
+- `commit.md`
+- `close.md`
 
 ## 4. “每轮先读上一轮文档”（强制）
 

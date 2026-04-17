@@ -38,10 +38,10 @@
 
 详细规则见：[docs/codex-potter/governance/workflow-protocol.md](./docs/codex-potter/governance/workflow-protocol.md)。
 
-## 4. 仓库现状与约束（截至 2026-04-16）
+## 4. 仓库约束与实时状态提示
 
-- `main` 工作区当前无未提交修改（干净），但相对 `origin/main` 处于 `ahead` 状态（本地领先若干提交）。
-- 存在 worktree：`.worktrees/gpu-stageii-foundation/`，聚焦 torch 的 stageii（该 worktree 的职责与协作方式见工作流协议）。
+- `main` 应尽量保持干净；真正续跑前请用 `git status --short` 与 `git branch -vv` 重新确认实时状态，不要把本文档中的历史快照当作现场状态。
+- 已存在 worktree：`.worktrees/gpu-stageii-foundation/`，聚焦 torch 的 stageii（该 worktree 的职责与协作方式见工作流协议）。
 
 > 约定：控制面文档不强制要求你必须在 `main` 上开发；鼓励用 worktree 承载中大型改动，减少上下文与冲突成本。
 
@@ -53,6 +53,10 @@
 |---|---|---|---|---|---|
 | R0001 | 2026-04-16 | 控制面初始化 | 无 | `docs/codex-potter/iterations/round-0001-init/` | 完成 |
 | R0002 | 2026-04-16 | Potter 入口归一化 | `round-0001-init` | `docs/codex-potter/iterations/round-0002-potter-entry-normalization/` | 完成 |
+| R0003 | 2026-04-17 | 控制面严格复查加固 | `round-0002-potter-entry-normalization` | `docs/codex-potter/iterations/round-0003-control-plane-hardening/` | 完成 |
+| R0004 | 2026-04-17 | 活跃入口互链加固 | `round-0003-control-plane-hardening` | `docs/codex-potter/iterations/round-0004-entry-link-hardening/` | 完成 |
+| R0005 | 2026-04-17 | 控制面回链补强 | `round-0004-entry-link-hardening` | `docs/codex-potter/iterations/round-0005-control-plane-backlinks/` | 完成 |
+| R0006 | 2026-04-17 | 控制面总说明入口块补齐 | `round-0005-control-plane-backlinks` | `docs/codex-potter/iterations/round-0006-control-plane-readme-backlink/` | 完成 |
 
 后续每轮的标准产物目录：`docs/codex-potter/iterations/round-XXXX-<slug>/`。
 
@@ -63,11 +67,12 @@
 - 治理与协议入口：`docs/codex-potter/governance/workflow-protocol.md`
 - 轮次入口：`docs/codex-potter/iterations/README.md`
 
-三者必须保持互链；新增文档必须至少回链到上述其一，避免“孤儿文档”。
+上述入口必须保持互链；新增文档应在标题下保留统一的“上层入口”区块，并至少回链到上述其一，避免“孤儿文档”。
 
 ## 7. 人类入口与 Runtime 入口的区别
 
 - 仓库根 `MAIN.md` 是**人类与主会话**使用的控制面入口，已经提交到 git。
 - `.codexpotter/projects/.../MAIN.md` 是 **CodexPotter runtime progress file**，供 `codex-potter resume` 使用，默认不进 git。
-- 对当前仓库，标准续跑命令是：`codex-potter resume 2026/04/16/1 --yolo --rounds <N>`。
+- 对当前仓库，默认续跑示例命令是：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`。
+- 若要调整轮数，只替换最后的 `10`；文档中出现的 `--rounds <N>` 仅表示该参数可配置，不代表另一条入口。
 - 不要把仓库根 `MAIN.md` 直接当成 `resume` 的 `PROJECT_PATH`；根据 CodexPotter 源码，runtime progress file 必须位于 `.codexpotter/projects/...` 目录下。

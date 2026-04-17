@@ -14,6 +14,13 @@ environment:
 
 # 本轮测试记录（Test Log）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../iterations/README.md)
+
 > 原则：记录“别人拿到这份文档，能否复现你说的结论”。成功与失败都必须写。
 
 ## 1. 测试范围（What We Tested）

@@ -19,6 +19,13 @@ artifacts:
 
 # 本轮总结与交接（Summary & Handoff）
 
+上层入口：
+
+- 仓库级入口：[MAIN.md](../../../../MAIN.md)
+- 控制面总说明：[docs/codex-potter/README.md](../../README.md)
+- 工作流协议：[docs/codex-potter/governance/workflow-protocol.md](../../governance/workflow-protocol.md)
+- 轮次索引：[docs/codex-potter/iterations/README.md](../README.md)
+
 ## 0. 本轮结论（TL;DR）
 
 - 已为仓库建立根级 `MAIN.md` 与 `docs/codex-potter/` 控制面文档体系。
@@ -45,9 +52,12 @@ artifacts:
 - `docs/codex-potter/iterations/README.md`
 - `docs/codex-potter/iterations/round-0001-init/round-overview.md`
 - `docs/codex-potter/iterations/round-0001-init/plan.md`
+- `docs/codex-potter/iterations/round-0001-init/code.md`
 - `docs/codex-potter/iterations/round-0001-init/test.md`
 - `docs/codex-potter/iterations/round-0001-init/summary.md`
 - `docs/codex-potter/iterations/round-0001-init/next-round-suggestions.md`
+- `docs/codex-potter/iterations/round-0001-init/commit.md`
+- `docs/codex-potter/iterations/round-0001-init/close.md`
 
 代码/配置/其他：
 
@@ -113,7 +123,7 @@ artifacts:
 
 ### Worker: Descartes
 
-- 做了什么：起草续跑与交接规范、模板三件套
+- 做了什么：起草续跑与交接规范，以及后续扩展为完整阶段文档体系的模板集合
 - 改了哪些文件：`docs/codex-potter/governance/resume-and-handoff.md`、`docs/codex-potter/templates/**`
 - 怎么验证的：按下一轮阅读清单、交接与汇报格式自检
 - 风险与疑点：起草时出现了 `rollouts/` 路径口径，已在主会话统一修补

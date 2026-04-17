@@ -1,5 +1,7 @@
 ## SOMA: Solving Optical Marker-Based MoCap Automatically, ICCV'21
 
+> 控制面与续跑入口：如果你是来继续本仓库的 CodexPotter 协作流程，请先读 [MAIN.md](./MAIN.md)，再看 [docs/codex-potter/README.md](./docs/codex-potter/README.md)。当前 runtime progress file 位于 `.codexpotter/projects/2026/04/16/1/MAIN.md`（gitignored），默认续跑示例命令为 `codex-potter resume 2026/04/16/1 --yolo --rounds 10`。
+
 ## Installation
 
 **在2080ti上已经有安装好的conda环境： `/home/user416/miniconda3/envs/soma`**
