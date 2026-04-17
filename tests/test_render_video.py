@@ -55,6 +55,17 @@ def test_load_vertices_supports_stageii_pickle_with_loaded_npz_model(tmp_path):
     assert np.isfinite(vertices).all()
 
 
+def test_load_vertices_supports_public_legacy_stageii_sample():
+    assert hasattr(render_video, "load_render_model")
+
+    model = render_video.load_render_model(SUPPORT_ROOT / "smplx" / "male" / "model.npz")
+    vertices = render_video.load_vertices(ROOT / "support_data" / "tests" / "mosh_stageii.pkl", model)
+
+    assert vertices.shape[0] > 0
+    assert vertices.shape[2] == 3
+    assert np.isfinite(vertices).all()
+
+
 def test_build_preview_jobs_supports_single_input_and_direct_output_mp4(tmp_path):
     assert hasattr(render_video, "build_preview_jobs")
     parser = render_video.build_parser()

@@ -5,6 +5,8 @@ import pickle
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
+
 from utils.script_utils import codec_for_video_path, list_stageii_pickles
 
 CAMERA_PRESETS = {
@@ -104,25 +106,113 @@ def build_parser():
     return parser
 
 
+def _load_pickle_compat(path):
+    _ensure_legacy_pickle_compat()
+    with open(path, "rb") as handle:
+        try:
+            return pickle.load(handle)
+        except UnicodeDecodeError:
+            handle.seek(0)
+            return pickle.load(handle, encoding="latin1")
+
+
+def _coerce_frame_matrix(values, *, name):
+    array = np.asarray(values, dtype=np.float32)
+    if array.ndim == 1:
+        return array[None, :]
+    if array.ndim == 2:
+        return array
+    raise ValueError(f"{name} must be 1D or 2D, got shape {tuple(array.shape)}")
+
+
+def _coerce_optional_expression(values):
+    if values is None:
+        return None
+    return _coerce_frame_matrix(values, name="expression")
+
+
+def _broadcast_frame_rows(values, num_frames, *, name):
+    if values.shape[0] == num_frames:
+        return values
+    if values.shape[0] == 1:
+        return values.repeat(num_frames, axis=0)
+    raise ValueError(f"{name} row count {values.shape[0]} does not match num_frames {num_frames}")
+
+
+def _modern_surface_model_type(stageii_data):
+    cfg = stageii_data.get("stageii_debug_details", {}).get("cfg")
+    if cfg is None:
+        return stageii_data.get("surface_model_type", "smplx")
+    if isinstance(cfg, dict):
+        return cfg.get("surface_model", {}).get("type", "smplx")
+    try:
+        return cfg["surface_model"]["type"]
+    except Exception:
+        return "smplx"
+
+
+def _coerce_fullpose_to_smplx_layout(fullpose, surface_model_type):
+    import numpy as np
+
+    fullpose = np.asarray(fullpose, dtype=np.float32)
+    pose_dim = fullpose.shape[1]
+    if pose_dim == 165:
+        return fullpose
+    if surface_model_type == "smplh" and pose_dim == 156:
+        zeros = np.zeros((fullpose.shape[0], 9), dtype=fullpose.dtype)
+        return np.concatenate([fullpose[:, :66], zeros, fullpose[:, 66:]], axis=1)
+    raise ValueError(
+        f"Unsupported fullpose shape {tuple(fullpose.shape)} for surface_model_type={surface_model_type}"
+    )
+
+
+def _load_stageii_render_inputs(pkl_path):
+    data = _load_pickle_compat(pkl_path)
+
+    if "fullpose" in data and "trans" in data:
+        surface_model_type = _modern_surface_model_type(data)
+        fullpose = _coerce_frame_matrix(data["fullpose"], name="fullpose")
+        betas = _coerce_frame_matrix(data["betas"], name="betas")
+        trans = _coerce_frame_matrix(data["trans"], name="trans")
+        expression = _coerce_optional_expression(data.get("expression"))
+    else:
+        surface_model_type = str(data["ps"]["fitting_model"])
+        fullpose = _coerce_frame_matrix(data["pose_est_fullposes"], name="pose_est_fullposes")
+        betas = _coerce_frame_matrix(data["shape_est_betas"], name="shape_est_betas")
+        trans = _coerce_frame_matrix(data["pose_est_trans"], name="pose_est_trans")
+        expression = _coerce_optional_expression(data.get("pose_est_exprs"))
+
+    fullpose = _coerce_fullpose_to_smplx_layout(fullpose, surface_model_type)
+    num_frames = fullpose.shape[0]
+    betas = _broadcast_frame_rows(betas, num_frames, name="betas")
+    trans = _broadcast_frame_rows(trans, num_frames, name="trans")
+    if expression is not None:
+        expression = _broadcast_frame_rows(expression, num_frames, name="expression")
+
+    return {
+        "fullpose": fullpose,
+        "betas": betas,
+        "trans": trans,
+        "expression": expression,
+    }
+
+
 def load_vertices(pkl_path, model):
     import torch
 
-    with open(pkl_path, "rb") as handle:
-        data = pickle.load(handle)
-
-    num_frames = data["fullpose"].shape[0]
-    fullpose = torch.from_numpy(data["fullpose"]).float()
-    shape_components = torch.as_tensor(data["betas"]).float()
-    if shape_components.ndim == 1:
-        shape_components = shape_components.unsqueeze(0)
-    if shape_components.shape[0] == 1 and num_frames > 1:
-        shape_components = shape_components.expand(num_frames, -1)
-    trans = torch.from_numpy(data["trans"]).float()
-    expression = (
-        shape_components[:, 300:310]
-        if shape_components.shape[1] >= 310
-        else torch.zeros(num_frames, 10, dtype=shape_components.dtype)
-    )
+    stageii_inputs = _load_stageii_render_inputs(pkl_path)
+    fullpose = torch.from_numpy(stageii_inputs["fullpose"]).float()
+    shape_components = torch.from_numpy(stageii_inputs["betas"]).float()
+    trans = torch.from_numpy(stageii_inputs["trans"]).float()
+    num_frames = fullpose.shape[0]
+    if stageii_inputs["expression"] is not None:
+        expression = torch.from_numpy(stageii_inputs["expression"]).float()
+    else:
+        expression = (
+            shape_components[:, 300:310]
+            if shape_components.shape[1] >= 310
+            else torch.zeros(num_frames, 10, dtype=shape_components.dtype)
+        )
 
     ret = model(
         global_orient=fullpose[:, :3],
@@ -146,8 +236,6 @@ def build_video_path(pkl_path, input_suffix, video_suffix):
 
 
 def _ensure_legacy_pickle_compat():
-    import numpy as np
-
     legacy_aliases = {
         "bool": bool,
         "int": int,
@@ -158,7 +246,7 @@ def _ensure_legacy_pickle_compat():
         "str": str,
     }
     for name, value in legacy_aliases.items():
-        if not hasattr(np, name):
+        if name not in np.__dict__:
             setattr(np, name, value)
     if not hasattr(inspect, "getargspec"):
         inspect.getargspec = inspect.getfullargspec
