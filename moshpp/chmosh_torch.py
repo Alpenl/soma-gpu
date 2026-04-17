@@ -381,6 +381,21 @@ def _runtime_sequence_fit_options(cfg, runtime):
     )
 
 
+def _runtime_sequence_seed_options(options, runtime):
+    seed_iters = int(_runtime_get(runtime, "sequence_seed_refine_iters", 0) or 0)
+    if seed_iters <= 0:
+        return None
+
+    return TorchFrameFitOptions(
+        rigid_iters=0,
+        warmup_iters=0,
+        refine_iters=seed_iters,
+        rigid_lr=1.0,
+        warmup_lr=1.0,
+        refine_lr=float(_runtime_get(runtime, "sequence_seed_refine_lr", options.lr)),
+    )
+
+
 def _runtime_sequence_fit_weights(cfg, runtime, *, avg_visible_count, marker_count, anneal_factor):
     if TorchSequenceFitWeights is None:
         raise RuntimeError("sequence fit weights requested but torch sequence solver is unavailable")
@@ -408,6 +423,110 @@ def _loss_history_to_numpy(values):
         else:
             normalized.append(float(value))
     return np.asarray(normalized, dtype=np.float32)
+
+
+def _build_sequence_seed_cache(
+    *,
+    selected_frames,
+    sequence_markers_obs,
+    sequence_visible,
+    current_latent_pose,
+    current_transl,
+    current_expression,
+    prev_latent_pose,
+    body_model,
+    wrapper,
+    betas_tensor,
+    marker_attachment,
+    pose_prior,
+    layout,
+    hand_pca,
+    optimize_fingers,
+    optimize_face,
+    cfg,
+    markers_latent_tensor,
+    evaluator,
+    seed_options,
+):
+    if seed_options is None:
+        return None
+
+    seed_latent_pose = current_latent_pose.detach().clone()
+    seed_transl = current_transl.detach().clone()
+    seed_expression = current_expression.detach().clone() if current_expression is not None else None
+    seed_prev_latent = prev_latent_pose.detach().clone() if prev_latent_pose is not None else None
+
+    cached_latent_init = []
+    cached_transl_init = []
+    cached_expression_init = [] if optimize_face else None
+
+    for frame_pos, _frame_idx in enumerate(selected_frames):
+        frame_visible = sequence_visible[frame_pos]
+        visible_count = int(frame_visible.sum().item())
+        num_missing_markers = float(len(markers_latent_tensor) - visible_count)
+        anneal_factor = 1.0
+        if num_missing_markers > 0:
+            anneal_factor += (num_missing_markers / len(markers_latent_tensor)) * cfg.opt_settings.weights.stageii_wt_annealing
+
+        frame_weights = TorchFrameFitWeights(
+            data=cfg.opt_settings.weights.stageii_wt_data * (46 / max(visible_count, 1)),
+            pose_body=cfg.opt_settings.weights.stageii_wt_poseB * anneal_factor,
+            pose_hand=cfg.opt_settings.weights.stageii_wt_poseH * anneal_factor,
+            pose_face=cfg.opt_settings.weights.stageii_wt_poseF * anneal_factor,
+            expr=cfg.opt_settings.weights.stageii_wt_expr,
+            velocity=cfg.opt_settings.weights.stageii_wt_velo,
+        )
+
+        if frame_pos == 0:
+            seed_transl = _initial_translation(
+                sequence_markers_obs[frame_pos],
+                markers_latent_tensor,
+                visible_mask=frame_visible,
+            )
+
+        seed_result = fit_stageii_frame_torch(
+            body_model=body_model,
+            wrapper=wrapper,
+            betas=betas_tensor,
+            marker_attachment=marker_attachment,
+            marker_observations=sequence_markers_obs[frame_pos],
+            pose_prior=pose_prior,
+            layout=layout,
+            latent_pose_init=seed_latent_pose,
+            transl_init=seed_transl,
+            expression_init=seed_expression,
+            hand_pca=hand_pca,
+            optimize_fingers=optimize_fingers,
+            optimize_face=optimize_face,
+            optimize_toes=bool(cfg.moshpp.optimize_toes),
+            velocity_reference=seed_prev_latent,
+            weights=frame_weights,
+            options=seed_options,
+            rigid_init=False,
+            warmup_pose_scales=(),
+            evaluator=evaluator,
+        )
+
+        seed_latent_pose = seed_result.latent_pose.detach()
+        seed_transl = seed_result.transl.detach()
+        seed_expression = seed_result.expression.detach() if seed_result.expression is not None else None
+        seed_prev_latent = seed_result.latent_pose.detach()
+
+        cached_latent_init.append(seed_latent_pose[0])
+        cached_transl_init.append(seed_transl[0])
+        if optimize_face:
+            if seed_expression is None:
+                cached_expression_init.append(
+                    torch.zeros(cfg.surface_model.num_expressions, dtype=torch.float32, device=seed_latent_pose.device)
+                )
+            else:
+                cached_expression_init.append(seed_expression[0])
+
+    return (
+        torch.stack(cached_latent_init, dim=0),
+        torch.stack(cached_transl_init, dim=0),
+        torch.stack(cached_expression_init, dim=0) if optimize_face else None,
+    )
 
 
 def mosh_stageii_torch(
@@ -537,6 +656,42 @@ def mosh_stageii_torch(
             raise RuntimeError("sequence_chunk_size requested but fit_stageii_sequence_torch is unavailable")
 
         sequence_options = _runtime_sequence_fit_options(cfg, runtime)
+        sequence_seed_options = _runtime_sequence_seed_options(sequence_options, runtime)
+        sequence_seed_cache = None
+        if sequence_seed_options is not None:
+            try:
+                sequence_markers_obs, sequence_visible = _build_chunk_observations(
+                    chunk_frames=selected_frames,
+                    observed_markers_dict=observed_markers_dict,
+                    latent_labels=latent_labels,
+                    label_to_latent_id=label_to_latent_id,
+                    device=device,
+                )
+                sequence_seed_cache = _build_sequence_seed_cache(
+                    selected_frames=selected_frames,
+                    sequence_markers_obs=sequence_markers_obs,
+                    sequence_visible=sequence_visible,
+                    current_latent_pose=current_latent_pose,
+                    current_transl=current_transl,
+                    current_expression=current_expression,
+                    prev_latent_pose=prev_latent_pose,
+                    body_model=body_model,
+                    wrapper=wrapper,
+                    betas_tensor=betas_tensor,
+                    marker_attachment=marker_attachment,
+                    pose_prior=pose_prior,
+                    layout=layout,
+                    hand_pca=hand_pca,
+                    optimize_fingers=optimize_fingers,
+                    optimize_face=optimize_face,
+                    cfg=cfg,
+                    markers_latent_tensor=markers_latent_tensor,
+                    evaluator=evaluator,
+                    seed_options=sequence_seed_options,
+                )
+            except ValueError as exc:
+                logger.error(str(exc))
+                sequence_seed_cache = None
 
         for chunk_idx, (row_start, row_end) in enumerate(
             _sequence_chunk_ranges(len(selected_frames), sequence_chunk_size, sequence_chunk_overlap)
@@ -569,23 +724,36 @@ def mosh_stageii_torch(
                 anneal_factor=anneal_factor,
             )
 
-            chunk_latent_init = []
-            chunk_transl_init = []
-            chunk_expression_init = [] if optimize_face else None
-            for local_idx in range(len(chunk_frames)):
-                chunk_latent_init.append(current_latent_pose[0])
-                chunk_transl_init.append(
-                    _initial_translation(
-                        chunk_markers_obs[local_idx],
-                        markers_latent_tensor,
-                        visible_mask=chunk_visible[local_idx],
-                    )[0]
+            if sequence_seed_cache is None:
+                chunk_latent_init = []
+                chunk_transl_init = []
+                chunk_expression_init = [] if optimize_face else None
+                for local_idx in range(len(chunk_frames)):
+                    chunk_latent_init.append(current_latent_pose[0])
+                    chunk_transl_init.append(
+                        _initial_translation(
+                            chunk_markers_obs[local_idx],
+                            markers_latent_tensor,
+                            visible_mask=chunk_visible[local_idx],
+                        )[0]
+                    )
+                    if optimize_face:
+                        expression_init = current_expression
+                        if expression_init is None:
+                            expression_init = torch.zeros(1, cfg.surface_model.num_expressions, dtype=torch.float32, device=device)
+                        chunk_expression_init.append(expression_init[0])
+                chunk_latent_init = torch.stack(chunk_latent_init, dim=0)
+                chunk_transl_init = torch.stack(chunk_transl_init, dim=0)
+                chunk_expression_init = torch.stack(chunk_expression_init, dim=0) if optimize_face else None
+            else:
+                cached_latent_init, cached_transl_init, cached_expression_init = sequence_seed_cache
+                chunk_latent_init = cached_latent_init[row_start:row_end].detach().clone()
+                chunk_transl_init = cached_transl_init[row_start:row_end].detach().clone()
+                chunk_expression_init = (
+                    cached_expression_init[row_start:row_end].detach().clone()
+                    if optimize_face and cached_expression_init is not None
+                    else None
                 )
-                if optimize_face:
-                    expression_init = current_expression
-                    if expression_init is None:
-                        expression_init = torch.zeros(1, cfg.surface_model.num_expressions, dtype=torch.float32, device=device)
-                    chunk_expression_init.append(expression_init[0])
 
             result = fit_stageii_sequence_torch(
                 body_model=body_model,
@@ -595,9 +763,9 @@ def mosh_stageii_torch(
                 marker_observations=chunk_markers_obs,
                 pose_prior=pose_prior,
                 layout=layout,
-                latent_pose_init=torch.stack(chunk_latent_init, dim=0),
-                transl_init=torch.stack(chunk_transl_init, dim=0),
-                expression_init=torch.stack(chunk_expression_init, dim=0) if optimize_face else None,
+                latent_pose_init=chunk_latent_init,
+                transl_init=chunk_transl_init,
+                expression_init=chunk_expression_init,
                 hand_pca=hand_pca,
                 optimize_fingers=optimize_fingers,
                 optimize_face=optimize_face,
