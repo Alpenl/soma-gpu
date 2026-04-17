@@ -125,7 +125,7 @@ python save_smplx_verts.py \
   --output-dir ROOT/mesh_exports/[session] \
   --fname-filter swing
 ````
-批量模式会递归发现匹配的 `*_stageii.pkl`，按相对目录结构镜像写出 OBJ/PC2；如果目录下没有任何匹配结果，脚本会直接报错而不是静默成功。`--fname-filter` 现在也只允许和 `--input-dir` 一起使用，避免在单文件 `--input-pkl` 模式下被静默忽略。若只需要 preview MP4，可使用 `render_video.py`。
+批量模式会递归发现匹配的 `*_stageii.pkl`，按相对目录结构镜像写出 OBJ/PC2；如果目录下没有任何匹配结果，脚本会直接报错而不是静默成功。`--fname-filter` 现在也只允许和 `--input-dir` 一起使用，避免在单文件 `--input-pkl` 模式下被静默忽略。direct mesh export 现在也会拒绝两类危险路径：`OBJ/PC2` 不能覆盖输入的 `stageii.pkl`，`--obj-out` 与 `--pc2-out` 也不能解析到同一路径，避免把 stageii 或 mesh 产物互相覆写。若只需要 preview MP4，可使用 `render_video.py`。
 
 若要在复核真实 `.mcp -> stageii -> mesh` 候选时，把单样本 `stageii` 质量摘要和 baseline 的 mesh-space 对比收敛到同一份 JSON，也可直接运行：
 ````

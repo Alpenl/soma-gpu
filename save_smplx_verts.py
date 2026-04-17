@@ -73,13 +73,32 @@ def _load_render_model_with_context(model_path, *, input_pkl):
         ) from exc
 
 
+def _normalized_path(path):
+    return Path(path).expanduser().resolve(strict=False)
+
+
+def _validate_mesh_output_paths(input_pkl, *, obj_path, pc2_path):
+    input_path = _normalized_path(input_pkl)
+    normalized_obj_path = _normalized_path(obj_path)
+    normalized_pc2_path = _normalized_path(pc2_path)
+    if normalized_obj_path == input_path:
+        raise ValueError(f"OBJ output path collides with input stageii pickle: {input_pkl}")
+    if normalized_pc2_path == input_path:
+        raise ValueError(f"PC2 output path collides with input stageii pickle: {input_pkl}")
+    if normalized_obj_path == normalized_pc2_path:
+        raise ValueError(f"OBJ and PC2 outputs resolve to the same path: {obj_path}")
+
+
 def _resolve_mesh_output_paths(input_pkl, *, output_dir=None, obj_out=None, pc2_out=None):
     default_obj_out, default_pc2_out = default_stageii_output_paths(str(input_pkl))
     if output_dir is not None:
         output_dir = Path(output_dir)
         default_obj_out = str(output_dir / Path(default_obj_out).name)
         default_pc2_out = str(output_dir / Path(default_pc2_out).name)
-    return str(obj_out or default_obj_out), str(pc2_out or default_pc2_out)
+    obj_path = str(obj_out or default_obj_out)
+    pc2_path = str(pc2_out or default_pc2_out)
+    _validate_mesh_output_paths(input_pkl, obj_path=obj_path, pc2_path=pc2_path)
+    return obj_path, pc2_path
 
 
 def export_stageii_meshes(

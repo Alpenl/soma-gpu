@@ -97,6 +97,81 @@ def test_export_stageii_meshes_uses_default_output_paths_when_omitted(tmp_path):
     assert Path(expected_pc2).exists()
 
 
+@pytest.mark.parametrize(
+    ("obj_out_name", "pc2_out_name", "expected_message"),
+    [
+        (
+            "tiny_stageii.pkl",
+            "safe.pc2",
+            "OBJ output path collides with input stageii pickle",
+        ),
+        (
+            "safe.obj",
+            "tiny_stageii.pkl",
+            "PC2 output path collides with input stageii pickle",
+        ),
+    ],
+    ids=["obj_matches_input", "pc2_matches_input"],
+)
+def test_export_stageii_meshes_errors_when_output_collides_with_input_stageii(
+    monkeypatch, tmp_path, obj_out_name, pc2_out_name, expected_message
+):
+    input_path = tmp_path / "tiny_stageii.pkl"
+    input_path.write_bytes(b"placeholder")
+
+    preloaded_model = type("PreloadedModel", (), {"faces": np.array([[0, 1, 2]], dtype=np.int32)})()
+    vertices = np.zeros((2, 3, 3), dtype=np.float32)
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "save_obj_mesh",
+        lambda *args, **kwargs: pytest.fail("save_obj_mesh should not run when output collides with input"),
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "writePC2",
+        lambda *args, **kwargs: pytest.fail("writePC2 should not run when output collides with input"),
+    )
+
+    with pytest.raises(ValueError, match=expected_message):
+        save_smplx_verts.export_stageii_meshes(
+            input_pkl=input_path,
+            model=preloaded_model,
+            vertices=vertices,
+            obj_out=tmp_path / obj_out_name,
+            pc2_out=tmp_path / pc2_out_name,
+        )
+
+
+def test_export_stageii_meshes_errors_when_obj_and_pc2_outputs_match(monkeypatch, tmp_path):
+    input_path = tmp_path / "tiny_stageii.pkl"
+    input_path.write_bytes(b"placeholder")
+
+    preloaded_model = type("PreloadedModel", (), {"faces": np.array([[0, 1, 2]], dtype=np.int32)})()
+    vertices = np.zeros((2, 3, 3), dtype=np.float32)
+    shared_output = tmp_path / "shared.mesh"
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "save_obj_mesh",
+        lambda *args, **kwargs: pytest.fail("save_obj_mesh should not run when OBJ/PC2 outputs collide"),
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "writePC2",
+        lambda *args, **kwargs: pytest.fail("writePC2 should not run when OBJ/PC2 outputs collide"),
+    )
+
+    with pytest.raises(ValueError, match="OBJ and PC2 outputs resolve to the same path"):
+        save_smplx_verts.export_stageii_meshes(
+            input_pkl=input_path,
+            model=preloaded_model,
+            vertices=vertices,
+            obj_out=shared_output,
+            pc2_out=shared_output,
+        )
+
+
 def test_export_stageii_meshes_reuses_preloaded_model_without_loading_again(monkeypatch, tmp_path):
     input_path = tmp_path / "tiny_stageii.pkl"
     input_path.write_bytes(
@@ -386,6 +461,44 @@ def test_save_smplx_verts_main_uses_output_dir_for_single_input(monkeypatch, tmp
     expected_obj, expected_pc2 = default_stageii_output_paths(str(input_path))
     assert captured["obj_out"] == str(output_dir / Path(expected_obj).name)
     assert captured["pc2_out"] == str(output_dir / Path(expected_pc2).name)
+
+
+def test_save_smplx_verts_main_errors_when_obj_and_pc2_outputs_match(
+    capsys, monkeypatch, tmp_path
+):
+    input_path = tmp_path / "tiny_stageii.pkl"
+    _write_stageii_pickle(
+        input_path,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+    shared_output = tmp_path / "shared.mesh"
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "resolve_stageii_model_path",
+        lambda input_pkl, support_base_dir=None: "resolved-model.npz",
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "export_stageii_meshes",
+        lambda **kwargs: pytest.fail("export_stageii_meshes should not run when OBJ/PC2 outputs collide"),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        save_smplx_verts.main(
+            [
+                "--input-pkl",
+                str(input_path),
+                "--obj-out",
+                str(shared_output),
+                "--pc2-out",
+                str(shared_output),
+            ]
+        )
+
+    assert excinfo.value.code == 2
+    assert "OBJ and PC2 outputs resolve to the same path" in capsys.readouterr().err
 
 
 def test_save_smplx_verts_main_rejects_fname_filter_without_input_dir(
