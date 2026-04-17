@@ -66,6 +66,16 @@ def _canonical_surface_model_path(surface_model_fname: Union[str, Path]) -> str:
     return str(Path(str(surface_model_fname)).expanduser().resolve(strict=False))
 
 
+def _resolved_debug_cfg_snapshot(cfg: DictConfig) -> dict:
+    snapshot_dict = OmegaConf.to_container(cfg, resolve=False, enum_to_str=True)
+    dirs_cfg = snapshot_dict.get("dirs")
+    if isinstance(dirs_cfg, dict):
+        dirs_cfg.pop("markerlyout_basename", None)
+        dirs_cfg.pop("marker_layout_fname", None)
+    snapshot_cfg = OmegaConf.create(snapshot_dict)
+    return OmegaConf.to_container(snapshot_cfg, resolve=True, enum_to_str=True)
+
+
 class MoSh:
     """
     The role of the head is to ensure a flexible input/output to various implementations of MoSh
@@ -253,8 +263,7 @@ class MoSh:
 
             stagei_data['stagei_debug_details']['stagei_fnames'] = stagei_fnames
             stagei_data['stagei_debug_details']['stagei_frames'] = stagei_frames
-            stagei_data['stagei_debug_details']['cfg'] = OmegaConf.to_container(self.cfg, resolve=True,
-                                                                                enum_to_str=True)
+            stagei_data['stagei_debug_details']['cfg'] = _resolved_debug_cfg_snapshot(self.cfg)
 
             stagei_data['stagei_debug_details']['stagei_elapsed_time'] = stagei_elapsed_time
 
@@ -295,8 +304,7 @@ class MoSh:
             stageii_data.update(self.stagei_data)
 
             stageii_data['stageii_debug_details']['stageii_elapsed_time'] = stageii_elapsed_time
-            stageii_data['stageii_debug_details']['cfg'] = OmegaConf.to_container(self.cfg, resolve=True,
-                                                                                  enum_to_str=True)
+            stageii_data['stageii_debug_details']['cfg'] = _resolved_debug_cfg_snapshot(self.cfg)
 
             pickle.dump(stageii_data, open(makepath(self.stageii_fname, isfile=True), 'wb'))
 

@@ -82,9 +82,9 @@ dirs:
   #    has_finger: ${has_finger:${dirs.marker_layout.fname}, ${mocap.exclude_markers}, ${mocap.exclude_marker_types},${mocap.only_markers}}
   #    has_face: ${has_finger:${dirs.marker_layout.fname}, ${mocap.exclude_markers}, ${mocap.exclude_marker_types},${mocap.only_markers}}
 
-  markerlyout_basename: ${oc.deprecated:dirs.marker_layout.basename}
+  markerlyout_basename: ${dirs.marker_layout.basename}
 
-  marker_layout_fname: ${oc.deprecated:dirs.marker_layout.fname}
+  marker_layout_fname: ${dirs.marker_layout.fname}
 
   stagei_basename: ${ifelse:${moshpp.perseq_mosh_stagei}, ${mocap.basename}_${surface_model.gender}, ${surface_model.gender}}
 

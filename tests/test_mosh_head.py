@@ -3,6 +3,7 @@ import pickle
 import shutil
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -97,6 +98,34 @@ def test_prepare_cfg_resolves_mcp_subjects_without_manual_subject_overrides(tmp_
     assert cfg.mocap.multi_subject is False
 
 
+def test_prepare_cfg_keeps_marker_layout_aliases_without_deprecation_warnings(tmp_path):
+    module = importlib.import_module("moshpp.mosh_head")
+    mocap_path = tmp_path / "input" / "wolf001" / "capture.mcp"
+    mocap_path.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / "out1.c3d", mocap_path)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = module.MoSh.prepare_cfg(
+            **{
+                "mocap.fname": str(mocap_path),
+                "dirs.support_base_dir": str(tmp_path / "support_files"),
+                "dirs.work_base_dir": str(tmp_path / "work"),
+                "surface_model.gender": "male",
+            }
+        )
+        legacy_basename = cfg.dirs.markerlyout_basename
+        legacy_fname = cfg.dirs.marker_layout_fname
+
+    assert legacy_basename == cfg.dirs.marker_layout.basename
+    assert legacy_fname == cfg.dirs.marker_layout.fname
+    assert not any(
+        "'dirs.markerlyout_basename' is deprecated" in str(warning.message)
+        or "'dirs.marker_layout_fname' is deprecated" in str(warning.message)
+        for warning in caught
+    )
+
+
 def test_mosh_stagei_accepts_cached_surface_model_when_relative_and_absolute_paths_match(
     tmp_path, monkeypatch
 ):
@@ -183,3 +212,34 @@ def test_run_moshpp_once_keeps_null_rotate_when_reusing_prepared_cfg(tmp_path, m
     module.run_moshpp_once(prepared_cfg)
 
     assert seen["rotate_after_rebuild"] is None
+
+
+def test_resolved_debug_cfg_snapshot_avoids_deprecated_marker_layout_alias_warnings(tmp_path):
+    module = importlib.import_module("moshpp.mosh_head")
+
+    mocap_path = tmp_path / "input" / "wolf001" / "capture.mcp"
+    mocap_path.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / "out1.c3d", mocap_path)
+
+    cfg = module.MoSh.prepare_cfg(
+        **{
+            "mocap.fname": str(mocap_path),
+            "dirs.support_base_dir": str(tmp_path / "support_files"),
+            "dirs.work_base_dir": str(tmp_path / "work"),
+            "surface_model.gender": "male",
+        }
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        snapshot = module._resolved_debug_cfg_snapshot(cfg)
+
+    assert snapshot["dirs"]["marker_layout"]["basename"] == "input_smplx"
+    assert snapshot["dirs"]["marker_layout"]["fname"].endswith("input_smplx.json")
+    assert "markerlyout_basename" not in snapshot["dirs"]
+    assert "marker_layout_fname" not in snapshot["dirs"]
+    assert not any(
+        "'dirs.markerlyout_basename' is deprecated" in str(warning.message)
+        or "'dirs.marker_layout_fname' is deprecated" in str(warning.message)
+        for warning in caught
+    )
