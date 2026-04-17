@@ -1,6 +1,7 @@
 import importlib
 import importlib.util
 import pickle
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -140,3 +141,21 @@ def test_mosh_stageii_torch_fits_synthetic_sequence_and_returns_stageii_payload(
     assert len(stageii_data["stageii_debug_details"]["markers_obs"]) == 2
     assert len(stageii_data["stageii_debug_details"]["markers_sim"]) == 2
     assert torch.allclose(torch.as_tensor(stageii_data["trans"][1]), marker_offsets[1], atol=1e-3)
+
+
+def test_load_torch_mocap_session_supports_mcp_alias_for_c3d_payload(tmp_path):
+    module = _load_chmosh_torch_module()
+    mocap_path = tmp_path / "out1.mcp"
+    shutil.copyfile(ROOT / "out1.c3d", mocap_path)
+
+    loaded = module.load_torch_mocap_session(
+        str(mocap_path),
+        mocap_unit="m",
+        mocap_rotate=None,
+        labels_map=None,
+    )
+
+    assert loaded.markers.shape[0] > 0
+    assert loaded.markers.shape[1:] == (54, 3)
+    assert len(loaded.labels) == 54
+    assert loaded.frame_rate == torch.tensor(60.0).item()

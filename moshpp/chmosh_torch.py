@@ -61,7 +61,9 @@ def _to_string_list(labels):
 
 
 def _read_mocap_raw(mocap_fname):
-    if mocap_fname.endswith(".pkl"):
+    mocap_fname = str(mocap_fname)
+    mocap_fname_lower = mocap_fname.lower()
+    if mocap_fname_lower.endswith(".pkl"):
         data = _load_pickle_compat(mocap_fname)
         return {
             "markers": np.asarray(data["markers"]),
@@ -69,7 +71,7 @@ def _read_mocap_raw(mocap_fname):
             "labels_perframe": data.get("labels_perframe"),
             "frame_rate": float(data.get("frame_rate", 120.0)),
         }
-    if mocap_fname.endswith(".c3d"):
+    if mocap_fname_lower.endswith(".c3d") or mocap_fname_lower.endswith(".mcp"):
         with open(mocap_fname, "rb") as handle:
             reader = C3DReader(handle)
             labels = [str(label).strip() for label in reader.point_labels]

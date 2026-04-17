@@ -1,3 +1,4 @@
+import shutil
 import sys
 from pathlib import Path
 
@@ -122,6 +123,18 @@ def test_load_mocap_frame_supports_real_c3d_sample():
     assert len(loaded.labels) == 54
     assert loaded.frame_rate == pytest.approx(60.0)
     assert loaded.labels[:3] == ["0", "1", "2"]
+
+
+def test_load_mocap_frame_supports_mcp_alias_for_c3d_payload(tmp_path):
+    mocap_path = tmp_path / "out1.mcp"
+    shutil.copyfile(ROOT / "out1.c3d", mocap_path)
+
+    loaded = load_mocap_frame(mocap_path, frame_idx=0)
+
+    assert loaded.source_format == "mocap_c3d"
+    assert loaded.markers.shape == (54, 3)
+    assert len(loaded.labels) == 54
+    assert loaded.frame_rate == pytest.approx(60.0)
 
 
 def test_stageii_torch_smoke_runs_on_real_legacy_stageii_frame_with_dummy_body():

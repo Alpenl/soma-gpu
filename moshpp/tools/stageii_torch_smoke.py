@@ -187,7 +187,7 @@ def load_mocap_frame(mocap_path, frame_idx=0):
         )
         frame_rate = float(mocap_data.get("frame_rate", 120.0))
         source_format = "mocap_pkl"
-    elif suffix == ".c3d":
+    elif suffix in {".c3d", ".mcp"}:
         from moshpp.tools.c3d import Reader as C3DReader
 
         with mocap_path.open("rb") as handle:
