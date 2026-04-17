@@ -127,6 +127,11 @@ def build_parser():
         default=None,
         help="Optional mesh comparison chunk-overlap override.",
     )
+    parser.add_argument(
+        "--expected-stageii-path",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     return parser
 
 
@@ -234,6 +239,16 @@ def _require_stageii_output(stageii_path):
         raise FileNotFoundError(f"run_moshpp_once did not produce the expected stageii file: {stageii_path}")
 
 
+def _validate_expected_stageii_path(stageii_path, *, expected_stageii_path=None):
+    if expected_stageii_path is None:
+        return
+    if _normalized_path(stageii_path) != _normalized_path(expected_stageii_path):
+        raise ValueError(
+            "prepared stageii output path drifted from expected plan: "
+            f"expected {expected_stageii_path} but got {stageii_path}"
+        )
+
+
 def _resolve_mesh_export_paths(stageii_path, *, output_dir=None):
     obj_out, pc2_out = default_stageii_output_paths(str(stageii_path))
     if output_dir is None:
@@ -269,8 +284,12 @@ def run(argv=None, *, emit_json=True):
 
     try:
         cfg = MoSh.prepare_cfg(**_cfg_overrides(parser, args))
-        run_moshpp_once(cfg)
         stageii_path = Path(str(cfg.dirs.stageii_fname))
+        _validate_expected_stageii_path(
+            stageii_path,
+            expected_stageii_path=args.expected_stageii_path,
+        )
+        run_moshpp_once(cfg)
         _require_stageii_output(stageii_path)
     except OFFICIAL_RUN_CLI_ERROR_TYPES as exc:
         parser.error(str(exc))

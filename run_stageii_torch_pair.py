@@ -156,10 +156,12 @@ def _append_mesh_args(runner_args, args, *, include_mesh_reference=False):
         runner_args.extend(["--mesh-chunk-overlap", str(args.mesh_chunk_overlap)])
 
 
-def _build_baseline_runner_args(args):
+def _build_baseline_runner_args(args, *, expected_stageii_path=None):
     runner_args = _base_runner_args(args)
     runner_args.extend(["--preset", args.baseline_preset])
     runner_args.extend(["--output-suffix", args.baseline_output_suffix])
+    if expected_stageii_path is not None:
+        runner_args.extend(["--expected-stageii-path", str(expected_stageii_path)])
     _append_cfg_args(runner_args, args.cfg)
     _append_cfg_args(runner_args, args.baseline_cfg)
     _append_mesh_args(runner_args, args, include_mesh_reference=False)
@@ -175,10 +177,12 @@ def _build_baseline_runner_args(args):
     return runner_args
 
 
-def _build_candidate_runner_args(args, *, mesh_reference_path=None):
+def _build_candidate_runner_args(args, *, mesh_reference_path=None, expected_stageii_path=None):
     runner_args = _base_runner_args(args)
     runner_args.extend(["--preset", args.candidate_preset])
     runner_args.extend(["--output-suffix", args.candidate_output_suffix])
+    if expected_stageii_path is not None:
+        runner_args.extend(["--expected-stageii-path", str(expected_stageii_path)])
     _append_cfg_args(runner_args, args.cfg)
     _append_cfg_args(runner_args, args.candidate_cfg)
     _append_mesh_args(runner_args, args, include_mesh_reference=True)
@@ -422,7 +426,10 @@ def run(argv=None, *, emit_json=True):
             candidate_stageii_path=candidate_stageii_path,
         )
         baseline_payload = run_stageii_torch_official.run(
-            _build_baseline_runner_args(args),
+            _build_baseline_runner_args(
+                args,
+                expected_stageii_path=baseline_stageii_path,
+            ),
             emit_json=False,
         )
         baseline_stageii_path = _validate_baseline_actual_outputs_against_candidate_plan(
@@ -432,7 +439,11 @@ def run(argv=None, *, emit_json=True):
             candidate_stageii_path=candidate_stageii_path,
         )
         candidate_payload = run_stageii_torch_official.run(
-            _build_candidate_runner_args(args, mesh_reference_path=baseline_stageii_path),
+            _build_candidate_runner_args(
+                args,
+                mesh_reference_path=baseline_stageii_path,
+                expected_stageii_path=candidate_stageii_path,
+            ),
             emit_json=False,
         )
         _require_stageii_path(candidate_payload, label="candidate")

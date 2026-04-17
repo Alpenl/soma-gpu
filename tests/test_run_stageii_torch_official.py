@@ -859,6 +859,45 @@ def test_run_stageii_torch_official_main_errors_when_prepare_cfg_fails(tmp_path,
     assert "invalid official cfg" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_errors_when_prepared_stageii_path_drifts_from_expected_contract(
+    tmp_path, monkeypatch, capsys
+):
+    expected_stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
+    drifted_stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_drifted_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(drifted_stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run when prepared stageii path drifts from expectation"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--output-suffix",
+                "_candidate",
+                "--skip-benchmark",
+                "--expected-stageii-path",
+                str(expected_stageii_path),
+            ]
+        )
+
+    assert "prepared stageii output path drifted from expected plan" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_runtime_error(
     tmp_path, monkeypatch, capsys
 ):

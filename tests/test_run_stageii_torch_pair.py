@@ -59,6 +59,8 @@ def test_run_stageii_torch_pair_main_runs_baseline_then_candidate_with_shared_an
                 "real-mcp-baseline",
                 "--output-suffix",
                 "_baseline",
+                "--expected-stageii-path",
+                str(tmp_path / "work" / "input" / "wolf001" / "capture_baseline_stageii.pkl"),
                 "--cfg",
                 "surface_model.gender=male",
                 "--cfg",
@@ -79,6 +81,8 @@ def test_run_stageii_torch_pair_main_runs_baseline_then_candidate_with_shared_an
                 "real-mcp-transvelo100-seedvelowindow",
                 "--output-suffix",
                 "_candidate",
+                "--expected-stageii-path",
+                str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"),
                 "--cfg",
                 "surface_model.gender=male",
                 "--cfg",
@@ -149,6 +153,8 @@ def test_run_stageii_torch_pair_main_passes_returned_baseline_stageii_path_to_ca
             "real-mcp-baseline",
             "--output-suffix",
             "_baseline",
+            "--expected-stageii-path",
+            str(tmp_path / "work" / "input" / "wolf001" / "manual_baseline_baseline_stageii.pkl"),
             "--cfg",
             "mocap.basename=manual_baseline",
             "--skip-benchmark",
@@ -167,6 +173,8 @@ def test_run_stageii_torch_pair_main_passes_returned_baseline_stageii_path_to_ca
             "real-mcp-transvelo100-seedvelowindow",
             "--output-suffix",
             "_candidate",
+            "--expected-stageii-path",
+            str(tmp_path / "work" / "input" / "wolf001" / "manual_candidate_candidate_stageii.pkl"),
             "--cfg",
             "mocap.basename=manual_candidate",
             "--mesh-reference",
@@ -184,6 +192,43 @@ def test_run_stageii_torch_pair_main_passes_returned_baseline_stageii_path_to_ca
             "stageii_path": str(candidate_stageii),
         },
     }
+
+
+def test_run_stageii_torch_pair_main_passes_expected_stageii_paths_to_underlying_runs(
+    tmp_path, monkeypatch
+):
+    captured = {"calls": []}
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        preset = argv[argv.index("--preset") + 1]
+        suffix = argv[argv.index("--output-suffix") + 1]
+        return {
+            "benchmark": None if "--skip-benchmark" in argv else {"artifact": {"report_path": str(tmp_path / f"{suffix}.json")}},
+            "stageii_path": str(tmp_path / f"{preset}{suffix}_stageii.pkl"),
+        }
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+        ]
+    )
+
+    baseline_argv = captured["calls"][0][0]
+    candidate_argv = captured["calls"][1][0]
+    assert baseline_argv[baseline_argv.index("--expected-stageii-path") + 1] == str(
+        tmp_path / "work" / "input" / "wolf001" / "capture_baseline_stageii.pkl"
+    )
+    assert candidate_argv[candidate_argv.index("--expected-stageii-path") + 1] == str(
+        tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"
+    )
 
 
 def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_path, monkeypatch):
@@ -222,6 +267,8 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
             "real-mcp-baseline",
             "--output-suffix",
             "_baseline",
+            "--expected-stageii-path",
+            str(tmp_path / "work" / "input" / "wolf001" / "capture_baseline_stageii.pkl"),
             "--benchmark-output",
             str(tmp_path / "baseline_benchmark.json"),
         ],
@@ -239,6 +286,8 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
             "real-mcp-transvelo100-seedvelowindow",
             "--output-suffix",
             "_candidate",
+            "--expected-stageii-path",
+            str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"),
             "--benchmark-output",
             str(tmp_path / "candidate_benchmark.json"),
             "--mesh-reference",
@@ -298,6 +347,8 @@ def test_run_stageii_torch_pair_main_forwards_mesh_export_flags_to_both_runs(tmp
                 "real-mcp-baseline",
                 "--output-suffix",
                 "_baseline",
+                "--expected-stageii-path",
+                str(tmp_path / "work" / "input" / "wolf001" / "capture_baseline_stageii.pkl"),
                 "--export-mesh",
                 "--mesh-output-dir",
                 str(mesh_output_dir),
@@ -319,6 +370,8 @@ def test_run_stageii_torch_pair_main_forwards_mesh_export_flags_to_both_runs(tmp
                 "real-mcp-transvelo100-seedvelowindow",
                 "--output-suffix",
                 "_candidate",
+                "--expected-stageii-path",
+                str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"),
                 "--export-mesh",
                 "--mesh-output-dir",
                 str(mesh_output_dir),
