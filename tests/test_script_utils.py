@@ -7,11 +7,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from utils.script_utils import (
+    discover_stageii_pickles,
     codec_for_video_path,
     default_stageii_artifact_paths,
     default_stageii_output_paths,
     list_stageii_pickles,
     resolve_support_base_dir,
+    resolve_stageii_model_path,
 )
 
 
@@ -64,6 +66,46 @@ def test_list_stageii_pickles_returns_sorted_matches(tmp_path):
         str(tmp_path / "a_stageii.pkl"),
         str(tmp_path / "b_stageii.pkl"),
     ]
+
+
+def test_discover_stageii_pickles_recurses_and_applies_fname_filter(tmp_path):
+    dataset_root = tmp_path / "demo_ds"
+    keep_path = dataset_root / "subject01" / "swing_stageii.pkl"
+    drop_path = dataset_root / "subject01" / "serve_stageii.pkl"
+    keep_path.parent.mkdir(parents=True, exist_ok=True)
+    keep_path.write_text("")
+    drop_path.write_text("")
+
+    assert discover_stageii_pickles(str(tmp_path), "demo_ds", fname_filter=["swing"]) == [
+        str(keep_path)
+    ]
+
+
+def test_resolve_stageii_model_path_prefers_support_base_dir_assets(tmp_path):
+    support_dir = tmp_path / "support"
+    relocated_model_path = support_dir / "smplx" / "female" / "model.npz"
+    relocated_model_path.parent.mkdir(parents=True, exist_ok=True)
+    relocated_model_path.write_bytes(b"npz")
+    stageii_path = tmp_path / "demo_stageii.pkl"
+    stageii_path.write_bytes(
+        __import__("pickle").dumps(
+            {
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "female",
+                            "fname": "/old-machine/support_files/smplx/female/model.pkl",
+                        }
+                    }
+                }
+            }
+        )
+    )
+
+    assert resolve_stageii_model_path(
+        str(stageii_path), support_base_dir=str(support_dir)
+    ) == str(relocated_model_path)
 
 
 def test_codec_for_video_path_uses_mp4v_for_mp4():

@@ -2,7 +2,13 @@ import argparse
 import os.path as osp
 from glob import glob
 
-from utils.script_utils import resolve_support_base_dir
+from utils.script_utils import (
+    discover_stageii_pickles,
+    resolve_stageii_model_path,
+    resolve_support_base_dir,
+)
+
+SUPPORTED_MOCAP_SUFFIXES = (".c3d", ".mcp")
 
 
 def build_parser():
@@ -45,12 +51,48 @@ def build_parser():
         default=None,
         help="Optional mocap unit override, for example mm.",
     )
+    parser.add_argument(
+        "--export-artifacts",
+        action="store_true",
+        help="After MoSh++, export OBJ, PC2, and preview MP4 for discovered stageii pickles.",
+    )
+    parser.add_argument(
+        "--export-fps",
+        type=int,
+        default=30,
+        help="Frames per second used by stageii artifact preview rendering.",
+    )
+    parser.add_argument(
+        "--export-width",
+        type=int,
+        default=512,
+        help="Output width used by stageii artifact preview rendering.",
+    )
+    parser.add_argument(
+        "--export-height",
+        type=int,
+        default=512,
+        help="Output height used by stageii artifact preview rendering.",
+    )
+    parser.add_argument(
+        "--export-arch",
+        default="gpu",
+        help="Taichi backend used by stageii artifact preview rendering.",
+    )
+    parser.add_argument(
+        "--export-camera-preset",
+        default="frontal",
+        help="Camera preset forwarded to export_stageii_artifacts.py.",
+    )
     return parser
 
 
 def collect_mocap_fnames(mocap_base_dir, dataset_name, fname_filter):
-    pattern = osp.join(mocap_base_dir, dataset_name, "*", "*.c3d")
-    mocap_fnames = sorted(glob(pattern))
+    mocap_fnames = []
+    for suffix in SUPPORTED_MOCAP_SUFFIXES:
+        pattern = osp.join(mocap_base_dir, dataset_name, "*", "*" + suffix)
+        mocap_fnames.extend(glob(pattern))
+    mocap_fnames = sorted(mocap_fnames)
     if fname_filter:
         mocap_fnames = [
             mocap_fname
@@ -60,11 +102,42 @@ def collect_mocap_fnames(mocap_base_dir, dataset_name, fname_filter):
     return mocap_fnames
 
 
+def export_stageii_artifacts_for_dataset(
+    *,
+    work_base_dir,
+    dataset,
+    support_base_dir=None,
+    fname_filter=None,
+    fps=30,
+    width=512,
+    height=512,
+    arch="gpu",
+    camera_preset="frontal",
+):
+    import export_stageii_artifacts
+
+    results = []
+    for stageii_pkl in discover_stageii_pickles(
+        work_base_dir, dataset, fname_filter=fname_filter
+    ):
+        result = export_stageii_artifacts.export_stageii_artifacts(
+            input_pkl=stageii_pkl,
+            model_path=resolve_stageii_model_path(
+                stageii_pkl, support_base_dir=support_base_dir
+            ),
+            fps=fps,
+            width=width,
+            height=height,
+            arch=arch,
+            camera_preset=camera_preset,
+        )
+        results.append(result)
+    return results
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-
-    from soma.amass.mosh_manual import mosh_manual
 
     support_base_dir = resolve_support_base_dir(
         args.work_base_dir, args.support_base_dir
@@ -77,10 +150,12 @@ def main(argv=None):
     )
     if not mocap_fnames:
         parser.error(
-            "No .c3d files matched {}/{}/*/*.c3d".format(
+            "No .c3d or .mcp files matched under {}/{}/*/".format(
                 args.mocap_base_dir, args.dataset
             )
         )
+
+    from soma.amass.mosh_manual import mosh_manual
 
     mosh_cfg = {
         "dirs.support_base_dir": support_base_dir,
@@ -99,6 +174,19 @@ def main(argv=None):
         parallel_cfg=parallel_cfg,
         run_tasks=["mosh"],
     )
+
+    if args.export_artifacts:
+        export_stageii_artifacts_for_dataset(
+            work_base_dir=mosh_output_base_dir,
+            dataset=args.dataset,
+            support_base_dir=support_base_dir,
+            fname_filter=args.fname_filter,
+            fps=args.export_fps,
+            width=args.export_width,
+            height=args.export_height,
+            arch=args.export_arch,
+            camera_preset=args.export_camera_preset,
+        )
 
 
 if __name__ == "__main__":

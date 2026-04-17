@@ -1,9 +1,11 @@
 import argparse
 import os.path as osp
-import pickle
-from pathlib import Path
 
-from utils.script_utils import resolve_support_base_dir
+from utils.script_utils import (
+    discover_stageii_pickles,
+    resolve_stageii_model_path,
+    resolve_support_base_dir,
+)
 
 DEFAULT_EXPR_ID = "V48_02_SuperSet"
 DEFAULT_DATA_ID = "OC_05_G_03_real_000_synt_100"
@@ -111,84 +113,6 @@ def build_parser():
     )
     return parser
 
-
-def _load_pickle_compat(path):
-    with Path(path).open("rb") as handle:
-        try:
-            return pickle.load(handle)
-        except UnicodeDecodeError:
-            handle.seek(0)
-            return pickle.load(handle, encoding="latin1")
-
-
-def _matches_fname_filter(path, fname_filter):
-    if not fname_filter:
-        return True
-    path = str(path)
-    return any(token in path for token in fname_filter)
-
-
-def _discover_stageii_pickles(work_base_dir, dataset, *, fname_filter=None):
-    dataset_root = Path(work_base_dir) / dataset
-    if not dataset_root.exists():
-        return []
-    return [
-        str(path)
-        for path in sorted(dataset_root.rglob("*_stageii.pkl"))
-        if _matches_fname_filter(path, fname_filter)
-    ]
-
-
-def _stageii_surface_model_cfg(stageii_pkl):
-    stageii_data = _load_pickle_compat(stageii_pkl)
-    cfg = stageii_data.get("stageii_debug_details", {}).get("cfg")
-    if cfg is None:
-        raise KeyError(f"{stageii_pkl} does not include stageii_debug_details.cfg")
-    try:
-        return cfg["surface_model"]
-    except Exception as exc:
-        raise KeyError(f"{stageii_pkl} does not include cfg.surface_model") from exc
-
-
-def _support_model_path_candidates(surface_model_cfg, support_base_dir):
-    if not support_base_dir:
-        return []
-    model_type = surface_model_cfg.get("type")
-    gender = surface_model_cfg.get("gender")
-    if not model_type or not gender:
-        return []
-
-    base_dir = Path(support_base_dir) / str(model_type) / str(gender)
-    original_model_path = str(surface_model_cfg.get("fname", ""))
-    original_suffix = Path(original_model_path).suffix.lower()
-    suffixes = []
-    if original_suffix in {".npz", ".pkl"}:
-        suffixes.append(original_suffix)
-    for suffix in (".npz", ".pkl"):
-        if suffix not in suffixes:
-            suffixes.append(suffix)
-    return [str(base_dir / ("model" + suffix)) for suffix in suffixes]
-
-
-def _stageii_model_path(stageii_pkl, *, support_base_dir=None):
-    surface_model_cfg = _stageii_surface_model_cfg(stageii_pkl)
-    model_path = surface_model_cfg.get("fname")
-    if model_path is None:
-        raise KeyError(f"{stageii_pkl} does not include cfg.surface_model.fname")
-    model_path = str(model_path)
-    candidates = _support_model_path_candidates(surface_model_cfg, support_base_dir)
-    for candidate in candidates:
-        if Path(candidate).exists():
-            return candidate
-    if Path(model_path).exists():
-        return model_path
-    if candidates:
-        return candidates[0]
-    if not model_path:
-        raise ValueError(f"{stageii_pkl} resolved an empty cfg.surface_model.fname")
-    return model_path
-
-
 def export_stageii_artifacts_for_dataset(
     *,
     work_base_dir,
@@ -204,10 +128,14 @@ def export_stageii_artifacts_for_dataset(
     import export_stageii_artifacts
 
     results = []
-    for stageii_pkl in _discover_stageii_pickles(work_base_dir, dataset, fname_filter=fname_filter):
+    for stageii_pkl in discover_stageii_pickles(
+        work_base_dir, dataset, fname_filter=fname_filter
+    ):
         result = export_stageii_artifacts.export_stageii_artifacts(
             input_pkl=stageii_pkl,
-            model_path=_stageii_model_path(stageii_pkl, support_base_dir=support_base_dir),
+            model_path=resolve_stageii_model_path(
+                stageii_pkl, support_base_dir=support_base_dir
+            ),
             fps=fps,
             width=width,
             height=height,

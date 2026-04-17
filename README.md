@@ -83,7 +83,16 @@ python convert_tennis.py \
   --export-artifacts
 ````
 关于pkl文件内容解析，可参考`save_smplx_verts.py`
-4. 若只想对已有 `*_stageii.pkl` 单独补跑导出，也可运行：
+4. 若不需要 SOMA，只想直接对 `ROOT/mocap_raw/[session]/[subject]` 下的 `.c3d` 或 `.mcp` 跑 MoSh++，并在主流程尾部顺带导出 OBJ/PC2/preview MP4，可运行：
+````
+python convert_mosh.py \
+  --dataset [session] \
+  --mocap-base-dir ROOT/mocap_raw \
+  --work-base-dir ROOT \
+  --export-artifacts
+````
+默认会同时发现 `.c3d` 和 `.mcp` 输入；如 stageii pickle 里的模型路径来自旧机器，会优先回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`。
+5. 若只想对已有 `*_stageii.pkl` 单独补跑导出，也可运行：
 ````
 python export_stageii_artifacts.py \
   --input-pkl ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl \
