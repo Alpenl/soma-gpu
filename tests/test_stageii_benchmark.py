@@ -347,6 +347,45 @@ def test_summarize_stageii_quality_reads_legacy_marker_residual_from_public_samp
     assert quality["chunk_seam_transl_jump_l2"] is None
 
 
+def test_marker_residual_l2_samples_ignore_unobserved_markers_in_chunked_full_lattice_frames():
+    stageii_data = {
+        "latent_labels": ["A", "B"],
+        "stageii_debug_details": {
+            "markers_obs": np.asarray(
+                [
+                    [
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0],
+                    ],
+                    [
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0],
+                    ],
+                ],
+                dtype=np.float32,
+            ),
+            "markers_sim": np.asarray(
+                [
+                    [
+                        [1.0, 0.0, 0.0],
+                        [50.0, 0.0, 0.0],
+                    ],
+                    [
+                        [60.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                    ],
+                ],
+                dtype=np.float32,
+            ),
+            "labels_obs": [["A"], ["B"]],
+        },
+    }
+
+    residuals = stageii_benchmark._marker_residual_l2_samples(stageii_data)
+
+    assert residuals == pytest.approx([1.0, 1.0])
+
+
 def test_summarize_stageii_quality_omits_bulky_raw_samples(tmp_path):
     sample_path = tmp_path / "synthetic_stageii.pkl"
     sample_path.write_bytes(

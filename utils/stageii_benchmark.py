@@ -95,6 +95,26 @@ def _first_label_row(labels):
     return _string_list(labels)
 
 
+def _labels_for_frame(labels, frame_idx):
+    if labels is None:
+        return []
+    if isinstance(labels, np.ndarray):
+        if labels.ndim == 1:
+            return _string_list(labels)
+        if labels.ndim >= 2 and frame_idx < labels.shape[0]:
+            return _string_list(labels[frame_idx])
+        return []
+    if isinstance(labels, (list, tuple)):
+        if not labels:
+            return []
+        first = labels[0]
+        if isinstance(first, (list, tuple, np.ndarray)):
+            if frame_idx < len(labels):
+                return _string_list(labels[frame_idx])
+            return []
+    return _string_list(labels)
+
+
 def _get_nested(mapping, first_key, second_key, default="unknown"):
     try:
         first = mapping[first_key]
@@ -238,13 +258,39 @@ def _coerce_marker_frame(marker_frame):
     return marker_frame
 
 
+def _select_visible_marker_rows(observed_frame, simulated_frame, *, frame_labels, latent_labels):
+    if not frame_labels:
+        return observed_frame, simulated_frame
+    if observed_frame.shape[0] == len(frame_labels):
+        return observed_frame, simulated_frame
+    if observed_frame.shape[0] != len(latent_labels):
+        return observed_frame, simulated_frame
+
+    label_to_latent_id = {label: idx for idx, label in enumerate(latent_labels)}
+    marker_ids = [label_to_latent_id[label] for label in frame_labels if label in label_to_latent_id]
+    if not marker_ids:
+        empty = np.zeros((0, 3), dtype=np.float32)
+        return empty, empty
+    return observed_frame[marker_ids], simulated_frame[marker_ids]
+
+
 def _iter_marker_frames(stageii_data):
     stageii_debug = stageii_data.get("stageii_debug_details", {})
     markers_obs = stageii_debug.get("markers_obs")
     markers_sim = stageii_debug.get("markers_sim")
     if markers_obs is not None and markers_sim is not None:
-        for observed_frame, simulated_frame in zip(markers_obs, markers_sim):
-            yield _coerce_marker_frame(observed_frame), _coerce_marker_frame(simulated_frame)
+        latent_labels = _string_list(stageii_data.get("latent_labels"))
+        labels_obs = stageii_debug.get("labels_obs")
+        for frame_idx, (observed_frame, simulated_frame) in enumerate(zip(markers_obs, markers_sim)):
+            observed_frame = _coerce_marker_frame(observed_frame)
+            simulated_frame = _coerce_marker_frame(simulated_frame)
+            observed_frame, simulated_frame = _select_visible_marker_rows(
+                observed_frame,
+                simulated_frame,
+                frame_labels=_labels_for_frame(labels_obs, frame_idx),
+                latent_labels=latent_labels,
+            )
+            yield observed_frame, simulated_frame
         return
 
     legacy_obs = stageii_data.get("pose_est_obmrks")
