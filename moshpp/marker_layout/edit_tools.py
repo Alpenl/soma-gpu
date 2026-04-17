@@ -43,14 +43,11 @@ from typing import Union, List
 import numpy as np
 import scipy.sparse as sp
 import torch
-from body_visualizer.tools.vis_tools import colors
-from colour import Color
 from human_body_prior.body_model.body_model import BodyModel
 from human_body_prior.tools.omni_tools import copy2cpu as c2c
 from human_body_prior.tools.omni_tools import makepath
 from human_body_prior.tools.rotation_tools import rotate_points_xyz
 from loguru import logger
-from psbody.mesh import Mesh
 
 from moshpp.marker_layout.labels_map import general_labels_map
 from moshpp.tools.mocap_interface import write_mocap_c3d
@@ -61,8 +58,23 @@ else:
     from typing_extensions import TypedDict
 
 from typing import Dict
-from pytorch3d.structures import Meshes
 from human_body_prior.tools.omni_tools import get_support_data_dir
+
+
+def _load_marker_visualization_deps():
+    from body_visualizer.tools.vis_tools import colors
+    from psbody.mesh import Mesh
+
+    return colors, Mesh
+
+
+def _marker_color_gradient(count):
+    if count <= 0:
+        return []
+    if count == 1:
+        return [[1.0, 0.0, 0.0]]
+    ramp = np.linspace(0.0, 1.0, count, dtype=np.float32)
+    return [[float(1.0 - value), 0.0, float(value)] for value in ramp]
 
 
 class Markerlayout(TypedDict):
@@ -161,7 +173,7 @@ def marker_layout_load(marker_layout_fname: Union[str, Path],
     marker_type_mask = OrderedDict(
         {k: np.array([True if l in marker_types[k] else False for l in marker_vids.keys()]) for k in marker_types})
     marker_colors = OrderedDict(
-        {k: v.get_rgb() for k, v in zip(marker_vids, list(Color('red').range_to(Color('blue'), len(marker_vids))))})
+        {k: color for k, color in zip(marker_vids, _marker_color_gradient(len(marker_vids)))})
 
     if include_nan: marker_colors['nan'] = [0.83, 1, 0]  # yellow green
 
@@ -290,6 +302,9 @@ def marker_layout_as_mesh(surface_model_fname: Union[str, Path],
                           ceasar_pose: bool = False,
                           preserve_vertex_order: bool = False,
                           surface_model_type=None):
+    colors, Mesh = _load_marker_visualization_deps()
+    from pytorch3d.structures import Meshes
+
     marker_radius = {'body': 0.009, 'face': 0.004, 'finger': 0.005}
 
     if ceasar_pose:
@@ -525,4 +540,3 @@ def randomize_marker_layout_vids(marker_vids,
         return new_marker_vids
 
     return get_next
-

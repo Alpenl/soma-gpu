@@ -40,12 +40,17 @@ from typing import Union, List, Dict
 
 import ezc3d
 import numpy as np
-from body_visualizer.mesh.psbody_mesh_sphere import points_to_spheres
-from body_visualizer.tools.vis_tools import colors
 from human_body_prior.tools.rotation_tools import rotate_points_xyz
 from loguru import logger
-from psbody.mesh.meshviewer import MeshViewer
-from psbody.mesh.sphere import Sphere
+
+
+def _load_mocap_viewer_deps():
+    from body_visualizer.mesh.psbody_mesh_sphere import points_to_spheres
+    from body_visualizer.tools.vis_tools import colors
+    from psbody.mesh.meshviewer import MeshViewer
+    from psbody.mesh.sphere import Sphere
+
+    return points_to_spheres, colors, MeshViewer, Sphere
 
 
 def write_mocap_c3d(markers: np.ndarray, labels: list, out_mocap_fname: str, frame_rate: int = 120) -> None:
@@ -316,6 +321,8 @@ class MocapSession(object):
         :param mocap_rotate:
         :return:
         """
+        points_to_spheres, colors, MeshViewer, Sphere = _load_mocap_viewer_deps()
+
         # This is the rotation in X, Y and Z for the mesh in the viewer
         rot = [0, 0, 0] if mocap_rotate is None else mocap_rotate
 

@@ -589,15 +589,30 @@ def run_moshpp_once(cfg):
     """
     from importlib import import_module
 
-    from moshpp.chmosh import mosh_stagei, mosh_stageii
     from moshpp.mosh_head import MoSh
-    from moshpp.stageii_backend import load_stageii_backend
     from loguru import logger
     import numpy as np
 
+    def _cached_backend_placeholder(stage_name):
+        def _placeholder(*_args, **_kwargs):
+            raise RuntimeError(f'{stage_name} backend should not be invoked when cached results already exist.')
+
+        return _placeholder
+
+    def load_chumpy_backend(attr_name):
+        try:
+            return getattr(import_module("moshpp.chmosh"), attr_name)
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                f"{attr_name} requires the legacy chumpy backend dependencies to be installed"
+            ) from exc
+
     mp = MoSh(**cfg)
 
-    mp.mosh_stagei(mosh_stagei)
+    stagei_backend = _cached_backend_placeholder("stagei")
+    if not osp.exists(mp.stagei_fname):
+        stagei_backend = load_chumpy_backend("mosh_stagei")
+    mp.mosh_stagei(stagei_backend)
 
     logger.debug('Final mosh stagei loss: {}'.format(' | '.join(
         [f'{k} = {np.sum(v ** 2):2.2e}' for k, v in mp.stagei_data['stagei_debug_details']['stagei_errs'].items()])))
@@ -611,11 +626,15 @@ def run_moshpp_once(cfg):
                     "runtime.backend=torch requested but moshpp.chmosh_torch is unavailable"
                 ) from exc
 
-        stageii_backend = load_stageii_backend(
-            getattr(mp.cfg.runtime, "backend", "chumpy"),
-            mosh_stageii,
-            load_torch_backend,
-        )
+        backend_name = getattr(mp.cfg.runtime, "backend", "chumpy")
+        stageii_backend = _cached_backend_placeholder("stageii")
+        if not osp.exists(mp.stageii_fname):
+            if backend_name in (None, "chumpy"):
+                stageii_backend = load_chumpy_backend("mosh_stageii")
+            elif backend_name == "torch":
+                stageii_backend = load_torch_backend()
+            else:
+                raise ValueError(f"Unsupported stageii backend: {backend_name}")
         mp.mosh_stageii(stageii_backend)
         logger.debug('Final mosh stageii loss: {}'.format(' | '.join(
             [f'{k} = {np.sum(v ** 2):2.2e}' for k, v in

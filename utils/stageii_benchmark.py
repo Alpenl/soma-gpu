@@ -680,14 +680,28 @@ def _benchmark_artifact_bundle_export(sample_path, baseline, *, repo_root, warmu
     return _summarize_latency_samples(latency_samples)
 
 
+def _mosh_head_loader_block_reason():
+    try:
+        from moshpp.mosh_head import run_moshpp_once
+    except (ImportError, ModuleNotFoundError) as exc:
+        return f"moshpp.mosh_head.run_moshpp_once import failed: {exc}"
+    except Exception as exc:
+        return f"moshpp.mosh_head.run_moshpp_once import raised {type(exc).__name__}: {exc}"
+
+    if not callable(run_moshpp_once):
+        return "moshpp.mosh_head.run_moshpp_once is unavailable after import"
+    return None
+
+
 def _blocked_stages(repo_root):
     blocked = []
 
-    if _safe_find_spec("body_visualizer.mesh") is None:
+    mosh_head_loader_reason = _mosh_head_loader_block_reason()
+    if mosh_head_loader_reason is not None:
         blocked.append(
             {
                 "stage": "mosh_head_loader",
-                "reason": "body_visualizer.mesh is unavailable, so direct MoSh loader imports fail in this environment",
+                "reason": mosh_head_loader_reason,
             }
         )
     mesh_export_reason = _mesh_export_block_reason(repo_root)

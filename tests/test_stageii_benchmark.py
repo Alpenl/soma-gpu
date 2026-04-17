@@ -703,3 +703,16 @@ def test_blocked_stages_use_preview_render_stack_and_support_files_assets(tmp_pa
     assert "mp4_render" not in blocked_stages
     assert "mesh_export" not in blocked_stages
     assert not any("model.npz assets needed for mesh export" in reason for reason in blocked_reasons)
+
+
+def test_blocked_stages_do_not_flag_mosh_head_loader_when_entrypoint_imports(monkeypatch):
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_safe_find_spec",
+        lambda module_name: None if module_name == "body_visualizer.mesh" else object(),
+    )
+
+    blocked = stageii_benchmark._blocked_stages(ROOT)
+    blocked_stages = [entry["stage"] for entry in blocked]
+
+    assert "mosh_head_loader" not in blocked_stages
