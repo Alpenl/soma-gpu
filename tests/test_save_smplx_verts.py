@@ -72,3 +72,57 @@ def test_export_stageii_meshes_uses_default_output_paths_when_omitted(tmp_path):
     assert result == (expected_obj, expected_pc2)
     assert Path(expected_obj).exists()
     assert Path(expected_pc2).exists()
+
+
+def test_export_stageii_meshes_reuses_preloaded_model_without_loading_again(monkeypatch, tmp_path):
+    input_path = tmp_path / "tiny_stageii.pkl"
+    input_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.zeros((2, 165), dtype=np.float32),
+                "betas": np.zeros(400, dtype=np.float32),
+                "trans": np.zeros((2, 3), dtype=np.float32),
+            }
+        )
+    )
+
+    preloaded_model = type("PreloadedModel", (), {"faces": np.array([[0, 1, 2]], dtype=np.int32)})()
+    captured = {}
+
+    monkeypatch.setattr(
+        save_smplx_verts.render_video,
+        "load_render_model",
+        lambda model_path: (_ for _ in ()).throw(AssertionError("should not reload model")),
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "load_smpl_vertices",
+        lambda pkl_path, model: (
+            captured.__setitem__("model", model),
+            np.zeros((2, 3, 3), dtype=np.float32),
+        )[1],
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "save_obj_mesh",
+        lambda mesh_path, verts, faces: Path(mesh_path).write_text("obj"),
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "writePC2",
+        lambda pc2_path, vertices: Path(pc2_path).write_bytes(b"pc2"),
+    )
+
+    obj_out = tmp_path / "preloaded.obj"
+    pc2_out = tmp_path / "preloaded.pc2"
+    result = save_smplx_verts.export_stageii_meshes(
+        input_pkl=input_path,
+        model=preloaded_model,
+        obj_out=obj_out,
+        pc2_out=pc2_out,
+    )
+
+    assert result == (str(obj_out), str(pc2_out))
+    assert captured["model"] is preloaded_model
+    assert obj_out.exists()
+    assert pc2_out.exists()

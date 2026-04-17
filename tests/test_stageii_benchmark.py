@@ -189,6 +189,55 @@ def test_benchmark_mesh_export_propagates_unexpected_export_failures(monkeypatch
         )
 
 
+def test_benchmark_mesh_export_loads_model_once_and_reuses_it(monkeypatch):
+    baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
+    load_calls = []
+    export_models = []
+    preloaded_model = object()
+
+    fake_render_video = type(
+        "FakeRenderVideo",
+        (),
+        {
+            "load_render_model": staticmethod(lambda model_path: load_calls.append(model_path) or preloaded_model),
+        },
+    )
+
+    def fake_export_stageii_meshes(*, input_pkl, model_path=None, model=None, obj_out=None, pc2_out=None):
+        export_models.append(model)
+        Path(obj_out).write_text("obj")
+        Path(pc2_out).write_bytes(b"pc2")
+        return str(obj_out), str(pc2_out)
+
+    fake_save_smplx_verts = type(
+        "FakeSaveSmplxVerts",
+        (),
+        {
+            "export_stageii_meshes": staticmethod(fake_export_stageii_meshes),
+        },
+    )
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_preview_render_model_path",
+        lambda repo_root, *, gender: ROOT / "support_files/smplx/male/model.npz",
+    )
+    monkeypatch.setitem(sys.modules, "render_video", fake_render_video)
+    monkeypatch.setitem(sys.modules, "save_smplx_verts", fake_save_smplx_verts)
+
+    summary = stageii_benchmark._benchmark_mesh_export(
+        ROOT / "support_data/tests/mosh_stageii.pkl",
+        baseline,
+        repo_root=ROOT,
+        warmup_runs=1,
+        measured_runs=2,
+    )
+
+    assert summary["count"] == 2
+    assert len(load_calls) == 1
+    assert export_models == [preloaded_model, preloaded_model, preloaded_model]
+
+
 def test_blocked_stages_use_preview_render_stack_and_support_files_assets(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     preview_model = repo_root / "support_files" / "smplx" / "male" / "model.npz"

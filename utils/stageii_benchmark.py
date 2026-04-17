@@ -323,8 +323,14 @@ def _benchmark_mesh_export(sample_path, baseline, *, repo_root, warmup_runs, mea
         return None
 
     try:
+        import render_video
         import save_smplx_verts
     except (ImportError, ModuleNotFoundError):
+        return None
+
+    try:
+        model = render_video.load_render_model(model_path)
+    except (FileNotFoundError, ImportError, ModuleNotFoundError):
         return None
 
     def _export_once():
@@ -335,6 +341,7 @@ def _benchmark_mesh_export(sample_path, baseline, *, repo_root, warmup_runs, mea
             result = save_smplx_verts.export_stageii_meshes(
                 input_pkl=sample_path,
                 model_path=model_path,
+                model=model,
                 obj_out=obj_out,
                 pc2_out=pc2_out,
             )
