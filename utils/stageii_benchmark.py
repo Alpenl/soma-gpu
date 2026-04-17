@@ -397,8 +397,12 @@ def _temporal_accel_l2_samples(array_like):
 def _sequence_chunk_ranges(total_frames, chunk_size, overlap):
     if total_frames <= 0:
         return []
-    chunk_size = max(int(chunk_size), 1)
-    overlap = max(int(overlap), 0)
+    chunk_size = int(chunk_size)
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be > 0")
+    overlap = int(overlap)
+    if overlap < 0:
+        raise ValueError("chunk_overlap must be >= 0")
     step = max(chunk_size - overlap, 1)
     ranges = []
     start = 0
@@ -419,8 +423,18 @@ def _sequence_chunk_config(stageii_data):
     runtime = cfg.get("runtime")
     if not isinstance(runtime, dict):
         return None
-    chunk_size = max(int(runtime.get("sequence_chunk_size", 1) or 1), 1)
-    chunk_overlap = max(int(runtime.get("sequence_chunk_overlap", 0) or 0), 0)
+    chunk_size = runtime.get("sequence_chunk_size", 1)
+    if chunk_size is None:
+        chunk_size = 1
+    chunk_size = int(chunk_size)
+    if chunk_size <= 0:
+        raise ValueError("runtime.sequence_chunk_size must be > 0")
+    chunk_overlap = runtime.get("sequence_chunk_overlap", 0)
+    if chunk_overlap is None:
+        chunk_overlap = 0
+    chunk_overlap = int(chunk_overlap)
+    if chunk_overlap < 0:
+        raise ValueError("runtime.sequence_chunk_overlap must be >= 0")
     if chunk_size <= 1:
         return None
     return chunk_size, chunk_overlap

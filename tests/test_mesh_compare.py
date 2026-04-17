@@ -85,6 +85,57 @@ def test_load_mesh_sequence_reads_stageii_pkl_and_uses_runtime_chunk_config(tmp_
     assert captured["vertices_call"] == (str(sample_path), fake_model)
 
 
+def test_load_mesh_sequence_rejects_negative_runtime_chunk_overlap_from_stageii_metadata(
+    tmp_path, monkeypatch
+):
+    mesh_compare = _load_mesh_compare_module()
+    sample_path = tmp_path / "demo_stageii.pkl"
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.zeros((5, 165), dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.zeros((5, 3), dtype=np.float32),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                            "fname": "/old-machine/support_files/smplx/male/model.npz",
+                        },
+                        "runtime": {
+                            "sequence_chunk_size": 32,
+                            "sequence_chunk_overlap": -1,
+                        },
+                    },
+                    "markers_obs": np.zeros((5, 1, 3), dtype=np.float32),
+                    "labels_obs": [["A"]] * 5,
+                },
+            }
+        )
+    )
+    resolved_model_path = tmp_path / "resolved" / "model.npz"
+    resolved_model_path.parent.mkdir(parents=True)
+    resolved_model_path.write_bytes(b"npz")
+
+    monkeypatch.setattr(
+        mesh_compare,
+        "resolve_stageii_model_path",
+        lambda *args, **kwargs: str(resolved_model_path),
+    )
+    monkeypatch.setattr(mesh_compare.render_video, "load_render_model", lambda model_path: SimpleNamespace())
+    monkeypatch.setattr(
+        mesh_compare.render_video,
+        "load_vertices",
+        lambda stageii_pkl, model: np.zeros((5, 1, 3), dtype=np.float32),
+    )
+
+    with pytest.raises(ValueError, match="runtime.sequence_chunk_overlap must be >= 0"):
+        mesh_compare.load_mesh_sequence(sample_path, support_base_dir="/support-files")
+
+
 def test_load_mesh_sequence_falls_back_to_existing_smplx_support_model_when_resolved_path_is_missing(
     tmp_path, monkeypatch
 ):
