@@ -114,6 +114,90 @@ def test_run_stageii_torch_official_main_builds_cfg_and_wires_benchmark(tmp_path
     assert payload["benchmark"]["artifact"]["report_path"] == str(benchmark_output)
 
 
+def test_run_stageii_torch_official_main_writes_default_benchmark_report_next_to_stageii(
+    tmp_path, monkeypatch
+):
+    stageii_path = tmp_path / "work" / "input" / "wolf001" / "manual_name_candidate_stageii.pkl"
+    captured = {}
+
+    def fake_prepare_cfg(**kwargs):
+        captured["prepare_cfg"] = kwargs
+        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+
+    def fake_run_moshpp_once(cfg):
+        Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True)
+        Path(cfg.dirs.stageii_fname).write_bytes(b"stageii")
+
+    def fake_run_public_stageii_benchmark(
+        sample_path,
+        *,
+        warmup_runs,
+        measured_runs,
+        mesh_reference_path,
+        mesh_support_base_dir,
+        mesh_chunk_size,
+        mesh_chunk_overlap,
+    ):
+        captured["benchmark_call"] = {
+            "sample_path": sample_path,
+            "warmup_runs": warmup_runs,
+            "measured_runs": measured_runs,
+            "mesh_reference_path": mesh_reference_path,
+            "mesh_support_base_dir": mesh_support_base_dir,
+            "mesh_chunk_size": mesh_chunk_size,
+            "mesh_chunk_overlap": mesh_chunk_overlap,
+        }
+        return {"sample": {"path": str(sample_path)}, "artifact": {"report_path": None}}
+
+    def fake_write_benchmark_report(report, output_path):
+        captured["benchmark_output"] = (report, output_path)
+        return {
+            **report,
+            "artifact": {"report_path": str(output_path)},
+        }
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(run_stageii_torch_official, "run_moshpp_once", fake_run_moshpp_once)
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        fake_run_public_stageii_benchmark,
+    )
+    monkeypatch.setattr(run_stageii_torch_official, "write_benchmark_report", fake_write_benchmark_report)
+
+    payload = run_stageii_torch_official.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--cfg",
+            "mocap.basename=manual_name",
+            "--output-suffix",
+            "_candidate",
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+        ]
+    )
+
+    expected_output = stageii_path.with_name("manual_name_candidate_benchmark.json")
+    assert captured["benchmark_call"] == {
+        "sample_path": str(stageii_path),
+        "warmup_runs": 0,
+        "measured_runs": 1,
+        "mesh_reference_path": None,
+        "mesh_support_base_dir": str(tmp_path / "support_files"),
+        "mesh_chunk_size": None,
+        "mesh_chunk_overlap": None,
+    }
+    assert captured["benchmark_output"][1] == str(expected_output)
+    assert payload["benchmark"]["artifact"]["report_path"] == str(expected_output)
+
+
 def test_run_stageii_torch_official_main_can_resolve_mesh_reference_from_output_suffix(
     tmp_path, monkeypatch
 ):

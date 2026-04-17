@@ -149,6 +149,7 @@ python run_stageii_torch_official.py \
   --benchmark-output ROOT/benchmarks/[seq]_torch.json
 ````
 该脚本只做薄编排：基础路径参数会直接落到 `MoSh.prepare_cfg(...)`，其余 candidate-specific 参数继续通过 repeatable `--cfg key=value` 透传；默认会在官方入口结束后立即对生成的 `stageii.pkl` 复用 `benchmark_stageii_public.py` 同一套质量/mesh 对比口径。如只想先产出 `stageii.pkl`、暂时不跑 benchmark，可加 `--skip-benchmark`。
+若不显式传 `--benchmark-output`，runner 也会默认把报告写到同目录下的 `*_benchmark.json`：例如 `foo_stageii.pkl -> foo_benchmark.json`。`--benchmark-output` 现在只用于覆盖这个默认落点，而不是决定“是否写盘”。
 
 `--preset real-mcp-baseline` 会先注入当前已验证的 corrected real `.mcp` torch baseline 参数：
 `moshpp.optimize_fingers=true`、`runtime.sequence_chunk_size=32`、`runtime.sequence_chunk_overlap=4`、`runtime.sequence_seed_refine_iters=5`、`runtime.refine_lr=0.05`、`runtime.sequence_lr=0.05`、`runtime.sequence_max_iters=30`。如果要在此基础上做单变量 sweep，继续追加 `--cfg key=value` 即可；`--cfg` 会覆盖同名 preset 项，因此不需要每次重打一整串 baseline override。
