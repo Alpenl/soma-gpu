@@ -343,6 +343,28 @@ def _validate_mesh_reference_path(parser, *, stageii_path, mesh_reference_path):
         )
 
 
+def _validate_mesh_reference_export_collision(
+    parser,
+    *,
+    mesh_reference_path,
+    mesh_obj_path=None,
+    mesh_pc2_path=None,
+):
+    if mesh_reference_path is None:
+        return
+    for label, mesh_export_path in (
+        ("mesh export obj", mesh_obj_path),
+        ("mesh export pc2", mesh_pc2_path),
+    ):
+        if mesh_export_path is None:
+            continue
+        if _normalized_path(mesh_reference_path) == _normalized_path(mesh_export_path):
+            parser.error(
+                f"mesh reference resolves to {label} path; "
+                "pass a distinct baseline reference or change --mesh-output-dir"
+            )
+
+
 def _preflight_planned_output_contracts(parser, args):
     planned_stageii_path = _planned_stageii_output_path(parser, args)
     mesh_reference_path = None
@@ -389,6 +411,12 @@ def _preflight_planned_output_contracts(parser, args):
             pc2_out,
             expected_path=args.expected_mesh_pc2_path,
             label="mesh export pc2",
+        )
+        _validate_mesh_reference_export_collision(
+            parser,
+            mesh_reference_path=mesh_reference_path,
+            mesh_obj_path=obj_out,
+            mesh_pc2_path=pc2_out,
         )
 
     if mesh_reference_path is None:

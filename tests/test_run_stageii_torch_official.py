@@ -1746,6 +1746,55 @@ def test_run_stageii_torch_official_main_preflights_benchmark_output_that_matche
     assert "benchmark output resolves to mesh export obj path" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("mesh_reference_name", "expected_message"),
+    [
+        ("capture_stageii.obj", "mesh reference resolves to mesh export obj path"),
+        ("capture_stageii.pc2", "mesh reference resolves to mesh export pc2 path"),
+    ],
+    ids=["mesh_reference_matches_obj", "mesh_reference_matches_pc2"],
+)
+def test_run_stageii_torch_official_main_preflights_mesh_reference_that_matches_planned_mesh_export(
+    tmp_path, monkeypatch, capsys, mesh_reference_name, expected_message
+):
+    mesh_output_dir = tmp_path / "mesh_exports"
+    mesh_reference_path = mesh_output_dir / mesh_reference_name
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark helper should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(mesh_output_dir),
+                "--mesh-reference",
+                str(mesh_reference_path),
+                "--warmup-runs",
+                "0",
+                "--measured-runs",
+                "1",
+            ]
+        )
+
+    assert expected_message in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_rejects_mesh_chunk_overlap_without_mesh_chunk_size(
     tmp_path, monkeypatch, capsys
 ):
