@@ -45,6 +45,7 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     )
     monkeypatch.setattr(stageii_benchmark, "perf_counter", lambda: next(perf_counter_points))
     monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
 
     report = run_public_stageii_benchmark(
         ROOT / "support_data/tests/mosh_stageii.pkl",
@@ -61,6 +62,7 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert report["speed"]["latency_ms"]["p90"] == pytest.approx(160.0)
     assert report["speed"]["latency_ms"]["p99"] == pytest.approx(196.0)
     assert report["speed"]["preview_vertex_decode_ms"] is None
+    assert report["speed"]["mesh_export_ms"] is None
     assert report["error"]["repeatability"]["max_abs_diff"] == 0.0
     assert report["error"]["all_finite"] is True
 
@@ -101,6 +103,35 @@ def test_run_public_stageii_benchmark_includes_preview_vertex_decode_metric_when
     assert report["speed"]["preview_vertex_decode_ms"] == preview_metric
 
 
+def test_run_public_stageii_benchmark_includes_mesh_export_metric_when_available(monkeypatch):
+    mesh_export_metric = {
+        "count": 2,
+        "samples": [20.0, 28.0],
+        "mean": 24.0,
+        "stdev": pytest.approx(5.656854249492381),
+        "min": 20.0,
+        "max": 28.0,
+        "p50": 24.0,
+        "p90": 27.2,
+        "p99": 27.92,
+    }
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_benchmark_mesh_export",
+        lambda *args, **kwargs: mesh_export_metric,
+        raising=False,
+    )
+
+    report = run_public_stageii_benchmark(
+        ROOT / "support_data/tests/mosh_stageii.pkl",
+        warmup_runs=0,
+        measured_runs=1,
+    )
+
+    assert report["speed"]["mesh_export_ms"] == mesh_export_metric
+
+
 def test_benchmark_preview_vertex_decode_propagates_unexpected_render_failures(monkeypatch):
     baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
     fake_render_video = type(
@@ -121,6 +152,35 @@ def test_benchmark_preview_vertex_decode_propagates_unexpected_render_failures(m
 
     with pytest.raises(RuntimeError, match="boom"):
         stageii_benchmark._benchmark_preview_vertex_decode(
+            ROOT / "support_data/tests/mosh_stageii.pkl",
+            baseline,
+            repo_root=ROOT,
+            warmup_runs=0,
+            measured_runs=1,
+        )
+
+
+def test_benchmark_mesh_export_propagates_unexpected_export_failures(monkeypatch):
+    baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
+    fake_save_smplx_verts = type(
+        "FakeSaveSmplxVerts",
+        (),
+        {
+            "export_stageii_meshes": staticmethod(
+                lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+            ),
+        },
+    )
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_preview_render_model_path",
+        lambda repo_root, *, gender: ROOT / "support_files/smplx/male/model.npz",
+    )
+    monkeypatch.setitem(sys.modules, "save_smplx_verts", fake_save_smplx_verts)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        stageii_benchmark._benchmark_mesh_export(
             ROOT / "support_data/tests/mosh_stageii.pkl",
             baseline,
             repo_root=ROOT,

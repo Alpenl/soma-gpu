@@ -8,6 +8,7 @@ import statistics
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from time import perf_counter
 
 import numpy as np
@@ -316,6 +317,45 @@ def _benchmark_preview_vertex_decode(sample_path, baseline, *, repo_root, warmup
     return _summarize_latency_samples(latency_samples)
 
 
+def _benchmark_mesh_export(sample_path, baseline, *, repo_root, warmup_runs, measured_runs):
+    model_path = _preview_render_model_path(repo_root, gender=baseline.gender)
+    if model_path is None:
+        return None
+
+    try:
+        import save_smplx_verts
+    except (ImportError, ModuleNotFoundError):
+        return None
+
+    def _export_once():
+        with TemporaryDirectory() as temp_dir:
+            temp_dir = Path(temp_dir)
+            obj_out = temp_dir / "benchmark_stageii.obj"
+            pc2_out = temp_dir / "benchmark_stageii.pc2"
+            result = save_smplx_verts.export_stageii_meshes(
+                input_pkl=sample_path,
+                model_path=model_path,
+                obj_out=obj_out,
+                pc2_out=pc2_out,
+            )
+            if not obj_out.exists() or not pc2_out.exists():
+                raise FileNotFoundError(f"mesh export did not create expected outputs: {result}")
+
+    try:
+        for _ in range(warmup_runs):
+            _export_once()
+    except (FileNotFoundError, ImportError, ModuleNotFoundError):
+        return None
+
+    latency_samples = []
+    for _ in range(measured_runs):
+        started_at = perf_counter()
+        _export_once()
+        latency_samples.append((perf_counter() - started_at) * 1000.0)
+
+    return _summarize_latency_samples(latency_samples)
+
+
 def _blocked_stages(repo_root):
     blocked = []
 
@@ -377,6 +417,13 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
         warmup_runs=warmup_runs,
         measured_runs=measured_runs,
     )
+    mesh_export_summary = _benchmark_mesh_export(
+        sample_path,
+        baseline,
+        repo_root=repo_root,
+        warmup_runs=warmup_runs,
+        measured_runs=measured_runs,
+    )
 
     return {
         "sample": {
@@ -401,6 +448,7 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
             "latency_ms": latency_summary,
             "throughput_ops_s": 1000.0 / latency_summary["mean"] if latency_summary["mean"] > 0 else 0.0,
             "preview_vertex_decode_ms": preview_vertex_decode_summary,
+            "mesh_export_ms": mesh_export_summary,
         },
         "error": {
             "repeatability": {
