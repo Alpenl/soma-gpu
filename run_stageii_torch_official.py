@@ -36,6 +36,10 @@ OFFICIAL_PRESETS = {
         **REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET,
         "runtime.sequence_transl_velocity": "10",
     },
+    "real-mcp-transvelo32-seedvelowindow": {
+        **REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET,
+        "runtime.sequence_transl_velocity": "32",
+    },
     "real-mcp-transvelo100-seedvelowindow": {
         **REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET,
         "runtime.sequence_transl_velocity": "100",
@@ -84,6 +88,7 @@ def build_parser():
             "Optional named override pack applied before --cfg. "
             "Use real-mcp-baseline for the corrected real .mcp torch baseline, "
             "real-mcp-transvelo10-seedvelowindow for the low-risk translation candidate, or "
+            "real-mcp-transvelo32-seedvelowindow for the mid-risk translation candidate, or "
             "real-mcp-transvelo100-seedvelowindow for the higher-gain translation-friendly candidate."
         ),
     )

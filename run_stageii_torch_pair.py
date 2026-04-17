@@ -56,7 +56,8 @@ def build_parser():
         default=DEFAULT_CANDIDATE_PRESET,
         help=(
             "Preset used for the candidate run. Defaults to the retained high-weight translation-friendly "
-            "candidate; use real-mcp-transvelo10-seedvelowindow for the lower-risk variant."
+            "candidate; use real-mcp-transvelo32-seedvelowindow for the mid-risk variant or "
+            "real-mcp-transvelo10-seedvelowindow for the lower-risk variant."
         ),
     )
     parser.add_argument(
