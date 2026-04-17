@@ -66,6 +66,7 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert report["speed"]["latency_ms"]["p50"] == pytest.approx(50.0)
     assert report["speed"]["latency_ms"]["p90"] == pytest.approx(160.0)
     assert report["speed"]["latency_ms"]["p99"] == pytest.approx(196.0)
+    assert report["speed"]["stageii_elapsed_s"] is None
     assert report["speed"]["preview_vertex_decode_ms"] is None
     assert report["speed"]["mesh_export_ms"] is None
     assert report["speed"]["mp4_render_ms"] is None
@@ -124,6 +125,50 @@ def test_run_public_stageii_benchmark_marks_non_public_input_as_not_shipped_samp
     )
 
     assert report["artifact"]["public_sample_present"] is False
+
+
+def test_run_public_stageii_benchmark_reports_stageii_elapsed_from_stageii_debug_details(
+    tmp_path, monkeypatch
+):
+    sample_path = tmp_path / "synthetic_stageii.pkl"
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.zeros((2, 3), dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.zeros((2, 3), dtype=np.float32),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                        }
+                    },
+                    "mocap_frame_rate": 120.0,
+                    "mocap_time_length": 2,
+                    "stageii_elapsed_time": 12.34,
+                    "markers_obs": np.zeros((2, 1, 3), dtype=np.float32),
+                    "markers_sim": np.zeros((2, 1, 3), dtype=np.float32),
+                    "labels_obs": [["A"]] * 2,
+                },
+            }
+        )
+    )
+
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        sample_path,
+        warmup_runs=0,
+        measured_runs=1,
+    )
+
+    assert report["speed"]["stageii_elapsed_s"] == pytest.approx(12.34)
 
 
 def test_run_public_stageii_benchmark_includes_preview_vertex_decode_metric_when_available(monkeypatch):

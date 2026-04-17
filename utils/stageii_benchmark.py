@@ -30,6 +30,7 @@ class NormalizedStageIISample:
     sample_format: str
     gender: str
     surface_model_type: str
+    stageii_elapsed_s: float | None
     mocap_frame_rate: float
     mocap_time_length: int
     poses: np.ndarray
@@ -78,6 +79,12 @@ def _coerce_3d(array_like):
     if array.ndim == 2:
         return array[None, :, :]
     return array
+
+
+def _optional_float(value):
+    if value is None:
+        return None
+    return float(value)
 
 
 def _first_label_row(labels):
@@ -140,6 +147,7 @@ def normalize_stageii_sample(sample_path):
             surface_model_type=_get_nested(
                 cfg, "surface_model", "type", data.get("surface_model_type", "unknown")
             ),
+            stageii_elapsed_s=_optional_float(stageii_debug.get("stageii_elapsed_time")),
             mocap_frame_rate=float(stageii_debug.get("mocap_frame_rate", data.get("mocap_frame_rate", 0.0))),
             mocap_time_length=int(stageii_debug.get("mocap_time_length", len(data["trans"]))),
             poses=_coerce_2d(data["fullpose"]),
@@ -157,6 +165,7 @@ def normalize_stageii_sample(sample_path):
             sample_format="legacy_stageii_pkl",
             gender=str(cfg.get("gender", "unknown")),
             surface_model_type=str(cfg.get("fitting_model", "unknown")),
+            stageii_elapsed_s=None,
             mocap_frame_rate=float(data.get("mocap_framerate", 0.0)),
             mocap_time_length=int(data.get("mocap_timelength", len(data["pose_est_fullposes"]))),
             poses=_coerce_2d(data["pose_est_fullposes"]),
@@ -907,6 +916,7 @@ def run_public_stageii_benchmark(
         "speed": {
             "latency_ms": latency_summary,
             "throughput_ops_s": 1000.0 / latency_summary["mean"] if latency_summary["mean"] > 0 else 0.0,
+            "stageii_elapsed_s": baseline.stageii_elapsed_s,
             "preview_vertex_decode_ms": preview_vertex_decode_summary,
             "mesh_export_ms": mesh_export_summary,
             "mp4_render_ms": mp4_render_summary,
