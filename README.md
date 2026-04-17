@@ -153,6 +153,7 @@ python run_stageii_torch_official.py \
 ````
 该脚本只做薄编排：基础路径参数会直接落到 `MoSh.prepare_cfg(...)`，其余 candidate-specific 参数继续通过 repeatable `--cfg key=value` 透传；默认会在官方入口结束后立即对生成的 `stageii.pkl` 复用 `benchmark_stageii_public.py` 同一套质量/mesh 对比口径。如只想先产出 `stageii.pkl`、暂时不跑 benchmark，可加 `--skip-benchmark`。
 若当前主线想直接闭环到 mesh，可在同一条命令上再加 `--export-mesh`。默认会复用 `save_smplx_verts.export_stageii_meshes(...)`，把 OBJ/PC2 写到生成的 `stageii.pkl` 同目录；如需集中导出到独立目录，可追加 `--mesh-output-dir ROOT/mesh_exports/[session]/[subject]`。`--mesh-output-dir` 现在必须和 `--export-mesh` 一起用，避免被静默忽略。`--mesh-support-base-dir` 现在同时服务于 mesh 导出和 benchmark 里的 mesh compare；若不显式传，则默认回退到 `--support-base-dir`。
+若 mesh 导出阶段本身因为模型资产缺失、输出写盘失败等文件类问题报错，single runner 现在也会把这些异常统一收口成 CLI error，而不是直接抛 `FileNotFoundError` / `OSError` 栈。
 若不显式传 `--benchmark-output`，runner 也会默认把报告写到同目录下的 `*_benchmark.json`：例如 `foo_stageii.pkl -> foo_benchmark.json`。`--benchmark-output` 现在只用于覆盖这个默认落点，而不是决定“是否写盘”。
 若 benchmark 这段本身因为 mesh compare 参数不合法、reference 路径/模型解析失败等原因出错，single runner 现在也会把异常收口成 CLI error，避免直接抛 Python 栈。
 若官方入口 `run_moshpp_once(cfg)` 本身没有真正产出预期的 `stageii.pkl`，single runner 现在也会直接以 CLI error 退出，而不是把原始 `FileNotFoundError` 栈追踪打到终端。

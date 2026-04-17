@@ -33,6 +33,7 @@ OFFICIAL_PRESETS = {
 
 BENCHMARK_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
 OFFICIAL_RUN_CLI_ERROR_TYPES = (FileNotFoundError,)
+MESH_EXPORT_CLI_ERROR_TYPES = (KeyError, ValueError, OSError)
 
 
 def build_parser():
@@ -280,7 +281,7 @@ def run(argv=None, *, emit_json=True):
     if args.export_mesh:
         try:
             payload["mesh_export"] = _export_meshes(stageii_path, args)
-        except (KeyError, ValueError) as exc:
+        except MESH_EXPORT_CLI_ERROR_TYPES as exc:
             parser.error(str(exc))
 
     if not args.skip_benchmark:

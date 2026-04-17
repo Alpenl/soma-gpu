@@ -610,6 +610,107 @@ def test_run_stageii_torch_official_main_errors_when_mesh_export_model_path_cann
     assert "missing cfg.surface_model.fname" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_errors_when_mesh_export_model_path_file_is_missing(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "resolve_stageii_model_path",
+        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("model asset missing")),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--skip-benchmark",
+                "--export-mesh",
+            ]
+        )
+
+    assert "model asset missing" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_errors_when_mesh_export_write_fails(
+    tmp_path, monkeypatch, capsys
+):
+    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(
+            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: (
+            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
+            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
+        ),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "resolve_stageii_model_path",
+        lambda *args, **kwargs: str(tmp_path / "support_files" / "model.npz"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "export_stageii_meshes",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("mesh export write failed")),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--skip-benchmark",
+                "--export-mesh",
+            ]
+        )
+
+    assert "mesh export write failed" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_can_skip_benchmark(tmp_path, monkeypatch, capsys):
     stageii_path = tmp_path / "candidate_stageii.pkl"
 
