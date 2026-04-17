@@ -216,8 +216,26 @@ def _support_model_assets(repo_root, *, suffix):
     return sorted(_support_files_root(repo_root).glob(f"**/model{suffix}"))
 
 
-def _missing_mesh_model_assets(repo_root):
-    return not _support_model_assets(repo_root, suffix=".npz")
+def _mesh_export_block_reason(repo_root):
+    npz_models = _support_model_assets(repo_root, suffix=".npz")
+    if npz_models:
+        if _safe_find_spec("human_body_prior.body_model.body_model") is None:
+            return (
+                "save_smplx_verts.py mesh export found support_files model.npz assets but "
+                "human_body_prior.body_model.body_model is unavailable in the current Python environment"
+            )
+        return None
+
+    pkl_models = _support_model_assets(repo_root, suffix=".pkl")
+    if pkl_models:
+        if _safe_find_spec("smplx") is None:
+            return (
+                "save_smplx_verts.py mesh export found support_files model.pkl assets but "
+                "smplx is unavailable in the current Python environment"
+            )
+        return None
+
+    return "support_files does not include SMPL-X model.npz/model.pkl assets needed by save_smplx_verts.py mesh export"
 
 
 def _preview_render_block_reason(repo_root):
@@ -308,18 +326,12 @@ def _blocked_stages(repo_root):
                 "reason": "body_visualizer.mesh is unavailable, so direct MoSh loader imports fail in this environment",
             }
         )
-    if _safe_find_spec("psbody") is None:
+    mesh_export_reason = _mesh_export_block_reason(repo_root)
+    if mesh_export_reason is not None:
         blocked.append(
             {
                 "stage": "mesh_export",
-                "reason": "psbody is unavailable in the current Python environment",
-            }
-        )
-    if _missing_mesh_model_assets(repo_root):
-        blocked.append(
-            {
-                "stage": "mesh_export",
-                "reason": "support_files does not include SMPL-X model.npz assets needed for mesh export",
+                "reason": mesh_export_reason,
             }
         )
 

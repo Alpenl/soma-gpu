@@ -152,5 +152,5 @@ def test_blocked_stages_use_preview_render_stack_and_support_files_assets(tmp_pa
     blocked_reasons = [entry["reason"] for entry in blocked]
 
     assert "mp4_render" not in blocked_stages
-    assert "mesh_export" in blocked_stages
+    assert "mesh_export" not in blocked_stages
     assert not any("model.npz assets needed for mesh export" in reason for reason in blocked_reasons)

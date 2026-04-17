@@ -1,6 +1,7 @@
 import argparse
-import pickle
+from pathlib import Path
 
+import render_video
 from utils.mesh_io import save_obj_mesh, writePC2
 from utils.script_utils import default_stageii_output_paths
 
@@ -17,7 +18,7 @@ def build_parser():
     parser.add_argument(
         "--model-path",
         required=True,
-        help="Path to the SMPL-X model npz file.",
+        help="Path to the SMPL-X model .npz or .pkl file.",
     )
     parser.add_argument(
         "--obj-out",
@@ -33,46 +34,33 @@ def build_parser():
 
 
 def load_smpl_vertices(pkl_path, model):
-    import torch
+    return render_video.load_vertices(pkl_path, model)
 
-    with open(pkl_path, "rb") as handle:
-        data = pickle.load(handle)
 
-    num_frames = data["fullpose"].shape[0]
-    fullpose = torch.from_numpy(data["fullpose"]).float()
-    shape_components = torch.from_numpy(data["betas"]).float()[None]
-    trans = torch.from_numpy(data["trans"]).float()
+def export_stageii_meshes(input_pkl, model_path, *, obj_out=None, pc2_out=None):
+    model = render_video.load_render_model(model_path)
+    vertices = load_smpl_vertices(input_pkl, model)
+    default_obj_out, default_pc2_out = default_stageii_output_paths(str(input_pkl))
 
-    betas = shape_components[:, :10]
-    expression = shape_components[:, 300:310]
+    obj_path = str(obj_out or default_obj_out)
+    pc2_path = str(pc2_out or default_pc2_out)
+    Path(obj_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(pc2_path).parent.mkdir(parents=True, exist_ok=True)
 
-    ret = model(
-        global_orient=fullpose[:, :3],
-        transl=trans,
-        body_pose=fullpose[:, 3:66],
-        betas=betas,
-        expression=expression.repeat(num_frames, 1),
-        jaw_pose=fullpose[:, 66:69],
-        leye_pose=fullpose[:, 69:72],
-        reye_pose=fullpose[:, 72:75],
-        left_hand_pose=fullpose[:, 75:120],
-        right_hand_pose=fullpose[:, 120:165],
-    )
-    return ret.vertices.detach().cpu().numpy()
+    save_obj_mesh(obj_path, vertices[0], model.faces)
+    writePC2(pc2_path, vertices)
+    return obj_path, pc2_path
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-
-    import smplx
-
-    model = smplx.SMPLX(args.model_path, use_pca=False)
-    vertices = load_smpl_vertices(args.input_pkl, model)
-    obj_out, pc2_out = default_stageii_output_paths(args.input_pkl)
-
-    save_obj_mesh(args.obj_out or obj_out, vertices[0], model.faces)
-    writePC2(args.pc2_out or pc2_out, vertices)
+    export_stageii_meshes(
+        input_pkl=args.input_pkl,
+        model_path=args.model_path,
+        obj_out=args.obj_out,
+        pc2_out=args.pc2_out,
+    )
 
 
 if __name__ == "__main__":
