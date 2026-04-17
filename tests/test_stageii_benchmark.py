@@ -503,6 +503,15 @@ def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monke
             }
         ),
     )
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "write_benchmark_report",
+        lambda report, output_path: captured.update({"report_path": str(output_path)})
+        or {
+            **report,
+            "artifact": {"report_path": str(output_path)},
+        },
+    )
 
     benchmark_stageii_public.main(
         [
@@ -531,9 +540,70 @@ def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monke
         "mesh_support_base_dir": "/tmp/support_files",
         "mesh_chunk_size": 64,
         "mesh_chunk_overlap": 8,
+        "report_path": "candidate_benchmark.json",
     }
     output = json.loads(capsys.readouterr().out)
     assert output["sample"]["path"] == "candidate_stageii.pkl"
+
+
+def test_benchmark_stageii_public_main_writes_default_report_next_to_input(monkeypatch, capsys):
+    captured = {}
+
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda sample_path, *, warmup_runs, measured_runs, mesh_reference_path, mesh_support_base_dir, mesh_chunk_size, mesh_chunk_overlap: (
+            captured.update(
+                {
+                    "sample_path": sample_path,
+                    "warmup_runs": warmup_runs,
+                    "measured_runs": measured_runs,
+                    "mesh_reference_path": mesh_reference_path,
+                    "mesh_support_base_dir": mesh_support_base_dir,
+                    "mesh_chunk_size": mesh_chunk_size,
+                    "mesh_chunk_overlap": mesh_chunk_overlap,
+                }
+            )
+            or {
+                "sample": {"path": sample_path},
+                "quality": {"mesh_compare": None},
+                "artifact": {"report_path": None},
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "write_benchmark_report",
+        lambda report, output_path: captured.update({"report_path": str(output_path)})
+        or {
+            **report,
+            "artifact": {"report_path": str(output_path)},
+        },
+    )
+
+    benchmark_stageii_public.main(
+        [
+            "--input",
+            "/tmp/work/input/wolf001/candidate_stageii.pkl",
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+        ]
+    )
+
+    assert captured == {
+        "sample_path": "/tmp/work/input/wolf001/candidate_stageii.pkl",
+        "warmup_runs": 0,
+        "measured_runs": 1,
+        "mesh_reference_path": None,
+        "mesh_support_base_dir": "support_files",
+        "mesh_chunk_size": None,
+        "mesh_chunk_overlap": None,
+        "report_path": "/tmp/work/input/wolf001/candidate_benchmark.json",
+    }
+    output = json.loads(capsys.readouterr().out)
+    assert output["artifact"]["report_path"] == "/tmp/work/input/wolf001/candidate_benchmark.json"
 
 
 def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_new_format(

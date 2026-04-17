@@ -3,7 +3,11 @@ import json
 from pathlib import Path
 
 from moshpp.mosh_head import MoSh, run_moshpp_once
-from utils.stageii_benchmark import run_public_stageii_benchmark, write_benchmark_report
+from utils.stageii_benchmark import (
+    default_benchmark_output_path,
+    run_public_stageii_benchmark,
+    write_benchmark_report,
+)
 
 
 REAL_MCP_BASELINE_PRESET = {
@@ -73,10 +77,7 @@ def build_parser():
     parser.add_argument(
         "--benchmark-output",
         default=None,
-        help=(
-            "Optional JSON output path for the benchmark report. Defaults to a "
-            "*_benchmark.json file next to the produced stageii.pkl."
-        ),
+        help="Optional JSON output path for the benchmark report. Defaults to a *_benchmark.json file next to the produced stageii.pkl.",
     )
     parser.add_argument("--warmup-runs", type=int, default=1, help="Warmup runs forwarded to the stageii benchmark.")
     parser.add_argument("--measured-runs", type=int, default=5, help="Measured runs forwarded to the stageii benchmark.")
@@ -107,15 +108,6 @@ def build_parser():
         help="Optional mesh comparison chunk-overlap override.",
     )
     return parser
-
-
-def _default_benchmark_output_path(stageii_path):
-    stageii_path = Path(stageii_path)
-    if stageii_path.name.endswith("_stageii.pkl"):
-        benchmark_name = f"{stageii_path.name[: -len('_stageii.pkl')]}_benchmark.json"
-    else:
-        benchmark_name = f"{stageii_path.stem}_benchmark.json"
-    return stageii_path.with_name(benchmark_name)
 
 
 def _cfg_overrides(parser, args, *, output_suffix=None):
@@ -185,7 +177,7 @@ def main(argv=None):
             mesh_chunk_size=args.mesh_chunk_size,
             mesh_chunk_overlap=args.mesh_chunk_overlap,
         )
-        benchmark_output_path = args.benchmark_output or _default_benchmark_output_path(stageii_path)
+        benchmark_output_path = args.benchmark_output or default_benchmark_output_path(stageii_path)
         report = write_benchmark_report(report, str(benchmark_output_path))
         payload["benchmark"] = report
 

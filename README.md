@@ -136,6 +136,7 @@ python benchmark_stageii_public.py \
   --output ROOT/benchmarks/candidate_vs_baseline.json
 ````
 此时报告除了现有 `quality.marker_residual_l2` / `trans_jitter_l2` / `chunk_seam_*` 摘要外，还会在 `quality.mesh_compare` 下追加 baseline 与 candidate 的 `reference` / `candidate` / `frame_delta_l2` mesh-space 摘要；如果 `--mesh-reference` 本身也是 `stageii.pkl`，同一份 JSON 里还会额外写出 `quality.reference_stageii_quality` 与 `quality.reference_stageii_delta`，把 baseline 的 stageii 质量摘要和 candidate-reference 的关键统计量差值一起收进来。`reference_stageii_delta` 目前固定汇总 `mean/p90/max`，数值按 `candidate - reference` 计算，因此对现有 residual / jitter / seam 指标来说，负值表示 candidate 更低、更接近我们想要的方向。对于 `stageii.pkl` 输入通常不需要显式传 `--mesh-chunk-size/--mesh-chunk-overlap`；只有直接比较裸 `pc2/pc16` 缓存时才需要覆盖。
+若不显式传 `--output`，`benchmark_stageii_public.py` 现在也会默认把报告写到输入同目录下的 `*_benchmark.json`：例如 `candidate_stageii.pkl -> candidate_benchmark.json`。`--output` 仅用于覆盖这个默认落点。
 
 若想直接走官方 `run_moshpp_once(cfg)` 单序列入口，并在同一条命令里产出 `stageii.pkl + benchmark JSON`，可使用：
 ````

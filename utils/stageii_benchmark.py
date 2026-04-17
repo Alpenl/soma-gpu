@@ -922,3 +922,12 @@ def write_benchmark_report(report, output_path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return payload
+
+
+def default_benchmark_output_path(sample_path):
+    sample_path = Path(sample_path)
+    if sample_path.name.endswith("_stageii.pkl"):
+        benchmark_name = f"{sample_path.name[: -len('_stageii.pkl')]}_benchmark.json"
+    else:
+        benchmark_name = f"{sample_path.stem}_benchmark.json"
+    return sample_path.with_name(benchmark_name)

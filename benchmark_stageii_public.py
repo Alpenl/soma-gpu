@@ -1,7 +1,11 @@
 import argparse
 import json
 
-from utils.stageii_benchmark import run_public_stageii_benchmark, write_benchmark_report
+from utils.stageii_benchmark import (
+    default_benchmark_output_path,
+    run_public_stageii_benchmark,
+    write_benchmark_report,
+)
 
 
 def build_parser():
@@ -19,7 +23,10 @@ def build_parser():
     parser.add_argument(
         "--output",
         default=None,
-        help="Optional path for the JSON report. Prints to stdout when omitted.",
+        help=(
+            "Optional path for the JSON report. Defaults to a *_benchmark.json file "
+            "next to --input."
+        ),
     )
     parser.add_argument(
         "--warmup-runs",
@@ -70,12 +77,9 @@ def main(argv=None):
         mesh_chunk_overlap=args.mesh_chunk_overlap,
     )
 
-    if args.output:
-        payload = write_benchmark_report(report, args.output)
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    print(json.dumps(report, indent=2, sort_keys=True))
+    output_path = args.output or default_benchmark_output_path(args.input)
+    payload = write_benchmark_report(report, output_path)
+    print(json.dumps(payload, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
