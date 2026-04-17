@@ -9,7 +9,7 @@ commits:
     - "docs: add round-0004 entry link hardening"
     - "docs: record round-0004 commit metadata"
   actual:
-    - "68b4f5a30904317fe437e260fc110be119eb6fc9 docs: add round-0004 entry link hardening"
+    - "archived in: docs: consolidate control-plane hardening history"
 ---
 
 # 本轮提交记录（Commit Log）
@@ -24,15 +24,15 @@ commits:
 ## 1. 提交策略
 
 - 计划拆分：先提交 R0004 交接包、入口互链补丁与索引更新，再补一次 metadata/验证回填
-- 实际拆分：已先提交 R0004 主体，随后补 metadata/验证回填，并在最终本地 review 中收敛 `MAIN.md` 的主入口数量表述
+- 实际拆分：历史压缩后，R0004 的主体与相邻 docs-only 严格复查统一并入单一提交
 - 是否与计划一致：一致
 
 ## 2. 实际提交
 
-> 说明：本文件记录 R0004 的主体提交；metadata 回填提交本身不再把自己的 hash 反写回本文件，避免历史自指。
+> 说明：R0004 的主体改动现已并入控制面历史归并提交，不再单独保留一个独立 git 节点。
 
-1. `68b4f5a` `docs: add round-0004 entry link hardening`
-   - 作用：补齐活跃入口互链，新增 R0004 交接包，并更新 `MAIN.md` / `iterations/README.md` 索引
+1. `docs: consolidate control-plane hardening history`
+   - 作用：包含 R0004 的入口互链补丁、索引更新，以及同批次 control-plane 严格复查收口
    - 主要文件：`MAIN.md`、`docs/codex-potter/governance/workflow-protocol.md`、`docs/codex-potter/iterations/README.md`、`docs/codex-potter/iterations/round-0004-entry-link-hardening/*`
 
 ## 3. 审阅重点

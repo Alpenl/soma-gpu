@@ -7,8 +7,10 @@
 - 总说明（本项目的控制面总览）：[docs/codex-potter/README.md](./docs/codex-potter/README.md)
 - 工作流协议（每轮固定阶段与子代理约束）：[docs/codex-potter/governance/workflow-protocol.md](./docs/codex-potter/governance/workflow-protocol.md)
 - 轮次规范与当前轮目录：[docs/codex-potter/iterations/README.md](./docs/codex-potter/iterations/README.md)
-- CodexPotter 标准续跑命令：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`
-- CodexPotter runtime progress file（本地 gitignored）：`.codexpotter/projects/2026/04/16/1/MAIN.md`
+- 当前活跃 GPU 优化项目：`2026/04/17/1`（首轮目标：`round-0007-benchmark-baseline`）
+- CodexPotter 标准续跑命令：`codex-potter resume 2026/04/17/1 --yolo --rounds 10`
+- CodexPotter runtime progress file（本地 gitignored）：`.codexpotter/projects/2026/04/17/1/MAIN.md`
+- 已归档初始化项目：`.codexpotter/projects/2026/04/16/1/MAIN.md`
 
 ## 1. 项目目标（GPU 线路）
 
@@ -73,6 +75,8 @@
 
 - 仓库根 `MAIN.md` 是**人类与主会话**使用的控制面入口，已经提交到 git。
 - `.codexpotter/projects/.../MAIN.md` 是 **CodexPotter runtime progress file**，供 `codex-potter resume` 使用，默认不进 git。
-- 对当前仓库，默认续跑示例命令是：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`。
+- 当前活跃 GPU 优化项目是：`.codexpotter/projects/2026/04/17/1/MAIN.md`。
+- 已归档的初始化项目是：`.codexpotter/projects/2026/04/16/1/MAIN.md`，仅用于回放控制面初始化历史。
+- 对当前仓库，默认续跑示例命令是：`codex-potter resume 2026/04/17/1 --yolo --rounds 10`。
 - 若要调整轮数，只替换最后的 `10`；文档中出现的 `--rounds <N>` 仅表示该参数可配置，不代表另一条入口。
 - 不要把仓库根 `MAIN.md` 直接当成 `resume` 的 `PROJECT_PATH`；根据 CodexPotter 源码，runtime progress file 必须位于 `.codexpotter/projects/...` 目录下。

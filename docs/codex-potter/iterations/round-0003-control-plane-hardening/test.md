@@ -4,7 +4,7 @@ round:
   date: "2026-04-17"
 repo:
   branch: "main"
-  head_commit: "6eeae6d43f481e79295b01730d63b74964e9bd3a"
+  head_commit: "archived in: docs: consolidate control-plane hardening history"
 environment:
   os: "Linux 6.8.0-94-generic"
   python: "Python 3.10.12 (python3)"
@@ -46,9 +46,9 @@ environment:
 
 1. 命令：
    - `git log --oneline -- MAIN.md README.md docs/codex-potter | head -n 12`
-   - 期望：能看到新加入的 `6eeae6d`，以及其后连续的严格复查修正链
+   - 期望：能看到归并后的统一提交 `docs: consolidate control-plane hardening history`，以及其后的活跃项目切换提交
    - 结果：PASS
-   - 关键输出摘要：提交链显示 `6eeae6d docs: add round-0003 control plane hardening` 位于 `0bf9512` 之上，其后依次是 quick links、相对路径、模板术语、metrics 链接、entrypoints 与 handoff bundle 修正
+   - 关键输出摘要：提交链显示 `docs: consolidate control-plane hardening history` 承载了这组控制面严格复查修正，其上再叠加活跃 GPU 项目切换提交
 
 2. 命令：
    - `rg -n -- "--rounds <N>|--rounds 10" README.md MAIN.md docs/codex-potter/README.md docs/codex-potter/governance docs/codex-potter/iterations .codexpotter/projects/2026/04/16/1/MAIN.md`

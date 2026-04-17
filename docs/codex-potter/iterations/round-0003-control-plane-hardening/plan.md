@@ -6,7 +6,7 @@ round:
 repo:
   branch: "main"
   base_commit: "216d47fb8d07025126fc6e2933e5e3332671d534"
-  head_commit: "6eeae6d43f481e79295b01730d63b74964e9bd3a"
+  head_commit: "archived in: docs: consolidate control-plane hardening history"
 roles:
   orchestrator: "main-session"
   workers:
@@ -43,7 +43,7 @@ scope_tags:
 
 阅读结论（要点）：
 
-- `78ab839` 到 `0bf9512` 这组提交都属于控制面严格复查加固，但仓库索引仍停留在 R0002。
+- 初始化收口后那组控制面严格复查提交都属于同一类加固动作，但仓库索引仍停留在 R0002。
 - 继续把这些修正只记在 runtime progress file 中，会让 git 内的 round 历史与真实提交链长期分叉。
 - 最小且可审计的补救方式不是重写 R0002，而是新增一个回填型 R0003，把严格复查加固正式纳入轮次体系。
 
@@ -53,7 +53,7 @@ In Scope（本轮要做）：
 
 - 新建 `docs/codex-potter/iterations/round-0003-control-plane-hardening/` 八件套
 - 更新 `MAIN.md` 与 `docs/codex-potter/iterations/README.md`，让运行索引和快速入口指向 R0003
-- 记录并解释 `78ab839`、`5391542`、`b4d786d`、`4d390bc`、`c6ede83`、`0bf9512` 这组提交的作用
+- 记录并解释初始化收口后那组控制面严格复查提交的作用
 - 在本地 progress file / KB 中写回严格复查结论
 
 Out of Scope（本轮明确不做）：
@@ -115,7 +115,7 @@ Out of Scope（本轮明确不做）：
 
 - 风险：为追求“历史干净”而重写 R0002
   - 影响：历史结论被篡改，审计链变差
-  - 触发信号：试图把 `78ab839` 之后的提交重新塞回 R0002
+  - 触发信号：试图把初始化收口后的严格复查提交重新塞回 R0002
   - 应对：保留 R0002 原样，在 R0003 说明“为什么插入这一轮”
 
 ## 6. 验证计划（Test Plan）

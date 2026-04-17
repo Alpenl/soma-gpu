@@ -16,7 +16,7 @@
 
 ## 2. 实际完成
 
-- 用 `git log` / `git show --stat` 还原 `78ab839` 到 `0bf9512` 的控制面修正链。
+- 用 `git log` / `git show --stat` 还原初始化收口后那组控制面修正链。
 - 新建 `docs/codex-potter/iterations/round-0003-control-plane-hardening/` 八件套。
 - 更新 `MAIN.md` 与 `docs/codex-potter/iterations/README.md`，让运行索引与快速入口收录 R0003。
 - 更新本地 `.codexpotter` progress file 与 KB，记录这次严格复查的结论。
@@ -38,7 +38,7 @@
 
 ## 5. 关键实现 / 文档决策
 
-- 决策：把 `78ab839` 到 `0bf9512` 视为同一轮“控制面严格复查加固”
+- 决策：把初始化收口后那组控制面修正视为同一轮“控制面严格复查加固”
   - 原因：这些提交都围绕 handoff bundle、入口命令、相对路径、模板术语与轮次入口一致性
   - 影响：后续审计时可以直接从 R0003 读取整组修正的背景与验证，不再需要翻 `progress file` 的 Done 长列表
 

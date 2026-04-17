@@ -6,7 +6,7 @@ round:
 repo:
   branch: "main"
   commits:
-    - "8aea51f8321336916de439356f2275d729e8da7a docs: add round-0006 control plane readme backlink"
+    - "archived in: docs: consolidate control-plane hardening history"
 artifacts:
   docs:
     - "round-overview.md"
@@ -35,7 +35,7 @@ artifacts:
 
 - 已确认：`docs/codex-potter/README.md` 是 R0005 之后唯一仍缺少统一“上层入口”区块的控制面文档。
 - 已完成：该文件现已补齐到 `MAIN.md`、工作流协议、轮次索引的可点击回链，并新增 `round-0006-control-plane-readme-backlink` 记录这次最小 docs-only 收尾。
-- 已提交：主体改动已落为 `8aea51f8321336916de439356f2275d729e8da7a`（`docs: add round-0006 control plane readme backlink`）。
+- 已提交：R0006 的主体改动现已归并到 `docs: consolidate control-plane hardening history`。
 
 ## 1. 产出清单（Deliverables）
 

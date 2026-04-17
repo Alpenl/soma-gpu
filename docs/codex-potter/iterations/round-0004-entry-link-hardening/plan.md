@@ -5,8 +5,8 @@ round:
   status: "done"
 repo:
   branch: "control-plane-entry-links"
-  base_commit: "7fe544d758e39e2fa7fcc9aa960aca02f4ee3c93"
-  head_commit: "68b4f5a30904317fe437e260fc110be119eb6fc9"
+  base_commit: "216d47fb8d07025126fc6e2933e5e3332671d534"
+  head_commit: "archived in: docs: consolidate control-plane hardening history"
 roles:
   orchestrator: "main-session"
   workers:

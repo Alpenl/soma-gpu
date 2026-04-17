@@ -6,7 +6,7 @@ round:
 repo:
   branch: "main"
   commits:
-    - "4643c20bab6cc7c15b5c0843b02dea1ab59dbf66 docs: add round-0005 control plane backlinks"
+    - "archived in: docs: consolidate control-plane hardening history"
 artifacts:
   docs:
     - "round-overview.md"
@@ -36,7 +36,7 @@ artifacts:
 - 已确认：四大主入口互链虽已稳定，但大量治理 / 模板 / round 文档仍缺少对主入口的可点击回链，实际续跑时仍会形成“落进去就难出来”的孤页。
 - 已完成：批量为 43 个既有控制面文档补齐统一“上层入口”区块，并在 `MAIN.md`、`iterations/README.md`、`resume-and-handoff.md`、`templates/README.md` 写明后续要求。
 - 已登记：新增 `round-0005-control-plane-backlinks`，把这次 docs-only 严格复查正式纳入 round 历史。
-- 已提交：主体改动已落为 `4643c20bab6cc7c15b5c0843b02dea1ab59dbf66`（`docs: add round-0005 control plane backlinks`）。
+- 已提交：R0005 的主体改动现已归并到 `docs: consolidate control-plane hardening history`。
 
 ## 1. 产出清单（Deliverables）
 

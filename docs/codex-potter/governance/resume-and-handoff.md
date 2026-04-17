@@ -18,8 +18,9 @@
 对当前仓库，CodexPotter 的 `resume` 入口必须使用 `.codexpotter/projects/.../MAIN.md` 这一类 progress file，而不是仓库根 `MAIN.md`。
 
 - 人类控制面入口：`MAIN.md`
-- 当前 runtime progress file：`.codexpotter/projects/2026/04/16/1/MAIN.md`
-- 当前默认续跑示例命令：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`
+- 当前活跃 runtime progress file：`.codexpotter/projects/2026/04/17/1/MAIN.md`
+- 已归档初始化项目：`.codexpotter/projects/2026/04/16/1/MAIN.md`
+- 当前默认续跑示例命令：`codex-potter resume 2026/04/17/1 --yolo --rounds 10`
 - 若需要不同轮数，只替换最后的 `10`；`--rounds <N>` 只是参数占位写法。
 
 原因：
@@ -47,7 +48,7 @@
 1. `MAIN.md`（仓库主控文档）
    - 读出：当前长期目标、阶段目标、分支策略、指标口径、当前优先级与约束。
 2. 当前 CodexPotter runtime progress file（必须）
-   - 推荐路径：`.codexpotter/projects/2026/04/16/1/MAIN.md`
+   - 推荐路径：`.codexpotter/projects/2026/04/17/1/MAIN.md`
    - 读出：Potter 当前内部任务状态、最近完成轮次、下一步 todo。
 3. 上一轮交接包（必须）
    - 上一轮的 `summary.md`：读出“做了什么、没做什么、为什么、下一轮建议、未解决问题”。

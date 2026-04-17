@@ -6,7 +6,7 @@ round:
 repo:
   branch: "control-plane-entry-links"
   commits:
-    - "68b4f5a30904317fe437e260fc110be119eb6fc9"
+    - "archived in: docs: consolidate control-plane hardening history"
 artifacts:
   docs:
     - "round-overview.md"
@@ -34,7 +34,7 @@ artifacts:
 ## 0. 本轮结论（TL;DR）
 
 - 已确认：`MAIN.md` 虽已声明 4 个主入口要保持互链，但 `workflow-protocol.md` 与 `iterations/README.md` 仍存在活跃缺链。
-- 已完成：补齐两处入口回链，并通过提交 `68b4f5a30904317fe437e260fc110be119eb6fc9` 新增 `round-0004-entry-link-hardening`，把这次最小 docs-only 严格复查正式纳入 round 历史。
+- 已完成：补齐两处入口回链，并通过归并提交 `docs: consolidate control-plane hardening history` 保留 `round-0004-entry-link-hardening` 的最终状态，把这次最小 docs-only 严格复查正式纳入 round 历史。
 - 已补做最终收尾：将 `MAIN.md` 第 6 节的“三者必须保持互链”改为不依赖入口数量的“上述入口必须保持互链”。
 - 已重新验证：活跃入口互链、R0004 索引、Markdown 链接与四轮八件套结构保持一致。
 

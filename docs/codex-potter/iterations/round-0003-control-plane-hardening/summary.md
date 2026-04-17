@@ -6,13 +6,7 @@ round:
 repo:
   branch: "main"
   commits:
-    - "6eeae6d43f481e79295b01730d63b74964e9bd3a"
-    - "78ab839c6b767e8557e3764b00d94d315cbcc8ba"
-    - "5391542a8cb5a4326cd9c487c08b444c682349be"
-    - "b4d786d811af86640785520e6baef8cf4f0b4160"
-    - "4d390bc70787d9d2f81b5b3c63cb9c48cb2402a7"
-    - "c6ede83cdd7d69fbb70d6e972d9ddb133e4116ad"
-    - "0bf9512f20938ede195d64b33d94c05c8f544014"
+    - "archived in: docs: consolidate control-plane hardening history"
 artifacts:
   docs:
     - "round-overview.md"
@@ -40,7 +34,7 @@ artifacts:
 ## 0. 本轮结论（TL;DR）
 
 - 已确认：R0002 之后实际又发生了 6 次控制面严格复查修正提交，但仓库内没有对应的新 round 目录。
-- 已新增 `round-0003-control-plane-hardening`，并以提交 `6eeae6d43f481e79295b01730d63b74964e9bd3a` 把这组修正正式回填为可续跑的轮次记录，同时更新 `MAIN.md` 与轮次 README 的入口索引。
+- 已新增 `round-0003-control-plane-hardening`，并以归并提交 `docs: consolidate control-plane hardening history` 把这组修正正式回填为可续跑的轮次记录，同时更新 `MAIN.md` 与轮次 README 的入口索引。
 - 已重新验证：活跃入口命令、相对路径、术语口径、Markdown 链接和三轮八件套结构均保持一致。
 - 初始化任务到此应视为收口完成；下一轮最推荐回到 benchmark / profiling，而不是继续扩张 docs-only 工作。
 
@@ -71,7 +65,7 @@ artifacts:
 ## 3. 关键决策与取舍（Decisions）
 
 - 决策：新增一个回填型 R0003，而不是回改 R0002
-  - 备选方案：把 `78ab839` 到 `0bf9512` 的修正重新塞回 R0002
+  - 备选方案：把初始化收口后那组控制面严格复查修正重新塞回 R0002
   - 取舍原因：R0002 的真实目标是入口归一化；后续严格复查修正是新发现问题后的新增工作，应该以独立 round 记录
 
 - 决策：把 6 次严格复查修正合并为同一轮“control-plane-hardening”

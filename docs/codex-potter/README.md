@@ -13,8 +13,9 @@
 运行 CodexPotter 时，请把**仓库根 `MAIN.md`** 和 **runtime progress file** 区分开：
 
 - 人类入口：`MAIN.md`
-- runtime progress file：`.codexpotter/projects/2026/04/16/1/MAIN.md`
-- 当前默认续跑示例命令：`codex-potter resume 2026/04/16/1 --yolo --rounds 10`
+- 当前活跃 runtime progress file：`.codexpotter/projects/2026/04/17/1/MAIN.md`
+- 已归档初始化项目：`.codexpotter/projects/2026/04/16/1/MAIN.md`
+- 当前默认续跑示例命令：`codex-potter resume 2026/04/17/1 --yolo --rounds 10`
 - 如需调整轮数，只替换最后的 `10`；文档里的 `--rounds <N>` 仅表示该参数可配置。
 
 ## 1. 你在这里要解决什么问题

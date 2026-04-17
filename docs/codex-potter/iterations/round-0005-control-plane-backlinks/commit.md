@@ -9,7 +9,7 @@ commits:
     - "docs: add round-0005 control plane backlinks"
     - "docs: record round-0005 commit metadata"
   actual:
-    - "4643c20bab6cc7c15b5c0843b02dea1ab59dbf66 docs: add round-0005 control plane backlinks"
+    - "archived in: docs: consolidate control-plane hardening history"
 ---
 
 # 本轮提交记录（Commit Log）
@@ -24,15 +24,15 @@ commits:
 ## 1. 提交策略
 
 - 计划拆分：先提交全量回链补丁、规则更新、R0005 交接包与索引更新，再回填 commit metadata
-- 实际拆分：已先提交主体改动，当前提交只回填 metadata 与运行记录，不把自己的 hash 反写回本文件
+- 实际拆分：历史压缩后，R0005 的主体与相邻 docs-only 严格复查统一并入单一提交
 - 是否与计划一致：一致
 
 ## 2. 实际提交
 
-> 说明：本文件记录 R0005 的主体提交；metadata 回填提交本身不再把自己的 hash 反写回本文件，避免历史自指。
+> 说明：R0005 的主体改动现已并入控制面历史归并提交，不再单独保留一个独立 git 节点。
 
-1. `4643c20` `docs: add round-0005 control plane backlinks`
-   - 作用：补齐 control-plane 文档的主入口回链，固化“上层入口”规则，并新增 R0005 交接包与索引
+1. `docs: consolidate control-plane hardening history`
+   - 作用：包含 R0005 的全量回链补丁、规则固化、索引更新，以及同批次 control-plane 严格复查收口
    - 主要文件：`MAIN.md`、`docs/codex-potter/governance/*.md`、`docs/codex-potter/iterations/*.md`、`docs/codex-potter/templates/*.md`、`docs/codex-potter/iterations/round-0005-control-plane-backlinks/*`
 
 ## 3. 审阅重点

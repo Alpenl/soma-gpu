@@ -9,7 +9,7 @@ commits:
     - "docs: add round-0006 control plane readme backlink"
     - "docs: record round-0006 commit metadata"
   actual:
-    - "8aea51f8321336916de439356f2275d729e8da7a docs: add round-0006 control plane readme backlink"
+    - "archived in: docs: consolidate control-plane hardening history"
 ---
 
 # 本轮提交记录（Commit Log）
@@ -24,15 +24,15 @@ commits:
 ## 1. 提交策略
 
 - 计划拆分：先提交 README 入口块补丁、R0006 交接包与索引更新，再回填主体提交 hash
-- 实际拆分：已先提交主体改动，当前提交只回填 metadata 与运行记录，不把自己的 hash 反写回本文件
+- 实际拆分：历史压缩后，R0006 的主体与相邻 docs-only 严格复查统一并入单一提交
 - 是否与计划一致：一致
 
 ## 2. 实际提交
 
-> 说明：主体提交完成后回填其 hash；metadata 回填提交本身不再把自己的 hash 反写回本文件，避免历史自指。
+> 说明：R0006 的主体改动现已并入控制面历史归并提交，不再单独保留一个独立 git 节点。
 
-1. `8aea51f` `docs: add round-0006 control plane readme backlink`
-   - 作用：补齐 `docs/codex-potter/README.md` 的统一入口块，并新增 R0006 交接包与索引
+1. `docs: consolidate control-plane hardening history`
+   - 作用：包含 R0006 的 README 入口块补丁、索引更新，以及同批次 control-plane 严格复查收口
    - 主要文件：`docs/codex-potter/README.md`、`MAIN.md`、`docs/codex-potter/iterations/README.md`、`docs/codex-potter/iterations/round-0006-control-plane-readme-backlink/*`
 
 ## 3. 审阅重点
