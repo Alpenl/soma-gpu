@@ -233,6 +233,15 @@ def _resolve_mesh_reference_path(parser, args):
     return str(planned_stageii_output_path_from_overrides(reference_overrides))
 
 
+def _planned_stageii_output_path(parser, args):
+    if args.expected_stageii_path is not None:
+        return Path(str(args.expected_stageii_path))
+    try:
+        return planned_stageii_output_path_from_overrides(_cfg_overrides(parser, args))
+    except ValueError:
+        return None
+
+
 def _normalized_path(path):
     return Path(path).expanduser().resolve(strict=False)
 
@@ -245,6 +254,21 @@ def _validate_mesh_reference_path(parser, *, stageii_path, mesh_reference_path):
             "mesh reference resolves to the current stageii output; "
             "pass a distinct baseline stageii.pkl or .pc2/.pc16 reference"
         )
+
+
+def _preflight_mesh_reference_path(parser, args):
+    if args.skip_benchmark:
+        return None
+
+    mesh_reference_path = _resolve_mesh_reference_path(parser, args)
+    planned_stageii_path = _planned_stageii_output_path(parser, args)
+    if planned_stageii_path is not None:
+        _validate_mesh_reference_path(
+            parser,
+            stageii_path=planned_stageii_path,
+            mesh_reference_path=mesh_reference_path,
+        )
+    return mesh_reference_path
 
 
 def _mesh_support_base_dir(args):
@@ -344,6 +368,10 @@ def run(argv=None, *, emit_json=True):
     args = parser.parse_args(argv)
     _validate_mesh_cli_args(parser, args)
     _validate_mesh_reference_output_suffix(parser, args)
+    try:
+        mesh_reference_path = _preflight_mesh_reference_path(parser, args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     try:
         cfg = MoSh.prepare_cfg(**_cfg_overrides(parser, args))
@@ -370,7 +398,6 @@ def run(argv=None, *, emit_json=True):
 
     if not args.skip_benchmark:
         try:
-            mesh_reference_path = _resolve_mesh_reference_path(parser, args)
             _validate_mesh_reference_path(
                 parser,
                 stageii_path=stageii_path,

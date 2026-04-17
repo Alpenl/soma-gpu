@@ -181,7 +181,7 @@ python run_stageii_torch_official.py \
   --cfg surface_model.gender=male \
   --benchmark-output ROOT/benchmarks/[seq]_candidate_vs_baseline.json
 ````
-`--mesh-reference-output-suffix` 会按同一套 `preset < --cfg < dedicated args` 解析逻辑静态推导 baseline 的默认 `stageii.pkl` 路径，不会再额外调用一次 `MoSh.prepare_cfg(...)`；因此适合“baseline/candidate 共用一个 work dir，只靠 basename suffix 分名”的主线复现，也能避免为参考路径规划重复触发 resolver。如果 baseline 根本不在同一命名规则下，再继续显式传 `--mesh-reference`。现在当你同时通过 `--cfg dirs.stageii_fname=...` 显式改了输出路径时，runner 会直接拒绝 `--mesh-reference-output-suffix`，避免再按错误的 basename 规则去推导 baseline 路径。并且无论你是显式传 `--mesh-reference`，还是让 `--mesh-reference-output-suffix` 去推导，只要它最终指回了当前这次输出的 `stageii.pkl`，runner 也会直接报错，避免 candidate benchmark 退化成“拿自己跟自己比”的伪零差值结果。
+`--mesh-reference-output-suffix` 会按同一套 `preset < --cfg < dedicated args` 解析逻辑静态推导 baseline 的默认 `stageii.pkl` 路径，不会再额外调用一次 `MoSh.prepare_cfg(...)`；因此适合“baseline/candidate 共用一个 work dir，只靠 basename suffix 分名”的主线复现，也能避免为参考路径规划重复触发 resolver。如果 baseline 根本不在同一命名规则下，再继续显式传 `--mesh-reference`。现在当你同时通过 `--cfg dirs.stageii_fname=...` 显式改了输出路径时，runner 会直接拒绝 `--mesh-reference-output-suffix`，避免再按错误的 basename 规则去推导 baseline 路径。并且无论你是显式传 `--mesh-reference`，还是让 `--mesh-reference-output-suffix` 去推导，只要它最终指回了当前这次输出的 `stageii.pkl`，runner 都会直接报错，避免 candidate benchmark 退化成“拿自己跟自己比”的伪零差值结果；当当前输出路径能静态推导出来时，这个错误现在会在 `MoSh.prepare_cfg(...)` / `run_moshpp_once(cfg)` 之前就触发，不再白跑一整次 official entry。
 
 如果当前主线就是“先跑 corrected baseline，再跑一个候选并立刻做 stageii / mesh 对照”，可以直接改用成对入口：
 ````

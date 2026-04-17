@@ -1183,6 +1183,48 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_wi
         )
 
 
+def test_run_stageii_torch_official_main_preflights_explicit_mesh_reference_that_matches_planned_stageii(
+    tmp_path, monkeypatch, capsys
+):
+    planned_stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should not run for self mesh compare"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--mesh-reference",
+                str(planned_stageii_path),
+                "--warmup-runs",
+                "0",
+                "--measured-runs",
+                "1",
+            ]
+        )
+
+    assert "mesh reference resolves to the current stageii output" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_rejects_explicit_mesh_reference_that_matches_output_stageii(
     tmp_path, monkeypatch, capsys
 ):
@@ -1281,15 +1323,7 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_th
             ]
         )
 
-    assert captured["prepare_cfg_calls"] == [
-        {
-            "mocap.basename": "manual_name_candidate",
-            "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "dirs.support_base_dir": str(tmp_path / "support_files"),
-            "dirs.work_base_dir": str(tmp_path / "work"),
-            "runtime.backend": "torch",
-        }
-    ]
+    assert captured["prepare_cfg_calls"] == []
     assert "mesh reference resolves to the current stageii output" in capsys.readouterr().err
 
 
