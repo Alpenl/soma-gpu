@@ -151,3 +151,5 @@ python run_stageii_torch_official.py \
 
 `--preset real-mcp-baseline` 会先注入当前已验证的 corrected real `.mcp` torch baseline 参数：
 `moshpp.optimize_fingers=true`、`runtime.sequence_chunk_size=32`、`runtime.sequence_chunk_overlap=4`、`runtime.sequence_seed_refine_iters=5`、`runtime.refine_lr=0.05`、`runtime.sequence_lr=0.05`、`runtime.sequence_max_iters=30`。如果要在此基础上做单变量 sweep，继续追加 `--cfg key=value` 即可；`--cfg` 会覆盖同名 preset 项，因此不需要每次重打一整串 baseline override。
+
+如果想直接复现当前保留的 translation-friendly 候选，可把 preset 换成 `real-mcp-transvelo100-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=100` 与 `runtime.sequence_boundary_transl_velocity_reference=true`。这样就能配合现有 `--mesh-reference` / `--benchmark-output` 直接做 baseline vs candidate 的 stageii / mesh 对照，而不需要再手工维护第二串高权重 velocity overrides。

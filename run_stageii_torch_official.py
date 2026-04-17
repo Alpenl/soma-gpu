@@ -6,16 +6,23 @@ from moshpp.mosh_head import MoSh, run_moshpp_once
 from utils.stageii_benchmark import run_public_stageii_benchmark, write_benchmark_report
 
 
+REAL_MCP_BASELINE_PRESET = {
+    "moshpp.optimize_fingers": "true",
+    "runtime.sequence_chunk_size": "32",
+    "runtime.sequence_chunk_overlap": "4",
+    "runtime.sequence_seed_refine_iters": "5",
+    "runtime.refine_lr": "0.05",
+    "runtime.sequence_lr": "0.05",
+    "runtime.sequence_max_iters": "30",
+}
+
 OFFICIAL_PRESETS = {
-    "real-mcp-baseline": {
-        "moshpp.optimize_fingers": "true",
-        "runtime.sequence_chunk_size": "32",
-        "runtime.sequence_chunk_overlap": "4",
-        "runtime.sequence_seed_refine_iters": "5",
-        "runtime.refine_lr": "0.05",
-        "runtime.sequence_lr": "0.05",
-        "runtime.sequence_max_iters": "30",
-    }
+    "real-mcp-baseline": REAL_MCP_BASELINE_PRESET,
+    "real-mcp-transvelo100-seedvelowindow": {
+        **REAL_MCP_BASELINE_PRESET,
+        "runtime.sequence_transl_velocity": "100",
+        "runtime.sequence_boundary_transl_velocity_reference": "true",
+    },
 }
 
 
@@ -46,7 +53,8 @@ def build_parser():
         default=None,
         help=(
             "Optional named override pack applied before --cfg. "
-            "Use real-mcp-baseline to reproduce the corrected real .mcp torch candidate defaults."
+            "Use real-mcp-baseline for the corrected real .mcp torch baseline or "
+            "real-mcp-transvelo100-seedvelowindow for the translation-friendly candidate."
         ),
     )
     parser.add_argument(
