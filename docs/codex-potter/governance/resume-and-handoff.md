@@ -22,6 +22,7 @@
 - 已归档初始化项目：`.codexpotter/projects/2026/04/16/1/MAIN.md`
 - 当前默认续跑示例命令：`codex-potter resume 2026/04/17/1 --yolo --rounds 10`
 - 若需要不同轮数，只替换最后的 `10`；`--rounds <N>` 只是参数占位写法。
+- 若运行中出现 `Current project is interrupted` 弹窗，必须在弹窗中选择 `I made some changes, continue iterate`，或按 `2` 再回车；不要把普通文本 `继续` 发送进会话，否则 CodexPotter 会把它当成新的 `user_message`，新建一个新的 `.codexpotter/projects/...` 项目。
 
 原因：
 
