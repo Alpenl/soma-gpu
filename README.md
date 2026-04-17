@@ -144,6 +144,7 @@ python run_stageii_torch_official.py \
   --support-base-dir support_files \
   --work-base-dir ROOT/work \
   --preset real-mcp-baseline \
+  --output-suffix _baseline \
   --cfg surface_model.gender=male \
   --benchmark-output ROOT/benchmarks/[seq]_torch.json
 ````
@@ -153,3 +154,5 @@ python run_stageii_torch_official.py \
 `moshpp.optimize_fingers=true`、`runtime.sequence_chunk_size=32`、`runtime.sequence_chunk_overlap=4`、`runtime.sequence_seed_refine_iters=5`、`runtime.refine_lr=0.05`、`runtime.sequence_lr=0.05`、`runtime.sequence_max_iters=30`。如果要在此基础上做单变量 sweep，继续追加 `--cfg key=value` 即可；`--cfg` 会覆盖同名 preset 项，因此不需要每次重打一整串 baseline override。
 
 如果想直接复现当前保留的 translation-friendly 候选，可把 preset 换成 `real-mcp-transvelo100-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=100` 与 `runtime.sequence_boundary_transl_velocity_reference=true`。这样就能配合现有 `--mesh-reference` / `--benchmark-output` 直接做 baseline vs candidate 的 stageii / mesh 对照，而不需要再手工维护第二串高权重 velocity overrides。
+
+当 baseline 和 candidate 共用同一个 `--work-base-dir` 时，建议同时给 `--output-suffix`，例如 `_baseline` / `_seedvelowindow`。这个后缀会在 preset/`--cfg` 解析完成后追加到 `mocap.basename`，从而让默认生成的 `stageii/log` 文件名分开；如果你已经显式用 `--cfg mocap.basename=...` 固定了名字，suffix 会继续在那个 basename 后面追加。

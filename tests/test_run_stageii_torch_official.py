@@ -230,6 +230,55 @@ def test_run_stageii_torch_official_main_applies_translation_friendly_candidate_
     }
 
 
+def test_run_stageii_torch_official_main_appends_output_suffix_to_cfg_basename(tmp_path, monkeypatch):
+    stageii_path = tmp_path / "candidate_stageii.pkl"
+    captured = {}
+
+    def fake_prepare_cfg(**kwargs):
+        captured["prepare_cfg"] = kwargs
+        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: stageii_path.write_bytes(b"stageii"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+
+    payload = run_stageii_torch_official.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--cfg",
+            "mocap.basename=manual_name",
+            "--output-suffix",
+            "_candidate",
+            "--skip-benchmark",
+        ]
+    )
+
+    assert captured["prepare_cfg"] == {
+        "mocap.basename": "manual_name_candidate",
+        "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+        "dirs.support_base_dir": str(tmp_path / "support_files"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "runtime.backend": "torch",
+    }
+    assert payload == {
+        "benchmark": None,
+        "stageii_path": str(stageii_path),
+    }
+
+
 def test_run_stageii_torch_official_main_can_skip_benchmark(tmp_path, monkeypatch, capsys):
     stageii_path = tmp_path / "candidate_stageii.pkl"
 

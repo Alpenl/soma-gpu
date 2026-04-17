@@ -48,6 +48,14 @@ def build_parser():
         help="Repeatable dotlist override such as surface_model.gender=male or runtime.sequence_lr=0.05.",
     )
     parser.add_argument(
+        "--output-suffix",
+        default=None,
+        help=(
+            "Optional suffix appended to mocap.basename after preset/--cfg resolution so repeated "
+            "runs can keep distinct stageii/log outputs under one work directory."
+        ),
+    )
+    parser.add_argument(
         "--preset",
         choices=sorted(OFFICIAL_PRESETS),
         default=None,
@@ -98,6 +106,12 @@ def _cfg_overrides(parser, args):
         if not key:
             parser.error(f"--cfg entries must include a non-empty key, got: {entry}")
         overrides[key] = value
+
+    if args.output_suffix:
+        basename = overrides.get("mocap.basename")
+        if basename is None:
+            basename = Path(args.mocap_fname).stem
+        overrides["mocap.basename"] = f"{basename}{args.output_suffix}"
 
     overrides["mocap.fname"] = args.mocap_fname
     overrides["dirs.support_base_dir"] = args.support_base_dir
