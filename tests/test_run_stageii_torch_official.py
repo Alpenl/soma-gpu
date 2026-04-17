@@ -12,6 +12,17 @@ if str(ROOT) not in sys.path:
 import run_stageii_torch_official
 
 
+def _required_official_runner_args(tmp_path):
+    return [
+        "--mocap-fname",
+        str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+        "--support-base-dir",
+        str(tmp_path / "support_files"),
+        "--work-base-dir",
+        str(tmp_path / "work"),
+    ]
+
+
 def test_run_stageii_torch_official_main_builds_cfg_and_wires_benchmark(tmp_path, monkeypatch):
     stageii_path = tmp_path / "candidate_stageii.pkl"
     benchmark_output = tmp_path / "candidate_benchmark.json"
@@ -918,3 +929,109 @@ def test_run_stageii_torch_official_main_rejects_mesh_output_dir_without_export_
         )
 
     assert "--mesh-output-dir requires --export-mesh" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_rejects_benchmark_output_when_skip_benchmark(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--skip-benchmark",
+                "--benchmark-output",
+                str(tmp_path / "candidate_benchmark.json"),
+            ]
+        )
+
+    assert "--benchmark-output requires benchmark to be enabled" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_rejects_mesh_reference_when_skip_benchmark(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--skip-benchmark",
+                "--mesh-reference",
+                str(tmp_path / "baseline_stageii.pkl"),
+            ]
+        )
+
+    assert "--mesh-reference requires benchmark to be enabled" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_rejects_mesh_chunk_size_without_mesh_reference(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--mesh-chunk-size",
+                "32",
+            ]
+        )
+
+    assert "--mesh-chunk-size requires --mesh-reference or --mesh-reference-output-suffix" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_rejects_mesh_support_base_dir_without_export_or_mesh_reference(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--mesh-support-base-dir",
+                str(tmp_path / "mesh_support"),
+            ]
+        )
+
+    assert "--mesh-support-base-dir requires --export-mesh or --mesh-reference/--mesh-reference-output-suffix" in capsys.readouterr().err

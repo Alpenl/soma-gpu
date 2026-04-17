@@ -154,6 +154,8 @@ python run_stageii_torch_official.py \
 若当前主线想直接闭环到 mesh，可在同一条命令上再加 `--export-mesh`。默认会复用 `save_smplx_verts.export_stageii_meshes(...)`，把 OBJ/PC2 写到生成的 `stageii.pkl` 同目录；如需集中导出到独立目录，可追加 `--mesh-output-dir ROOT/mesh_exports/[session]/[subject]`。`--mesh-output-dir` 现在必须和 `--export-mesh` 一起用，避免被静默忽略。`--mesh-support-base-dir` 现在同时服务于 mesh 导出和 benchmark 里的 mesh compare；若不显式传，则默认回退到 `--support-base-dir`。
 若不显式传 `--benchmark-output`，runner 也会默认把报告写到同目录下的 `*_benchmark.json`：例如 `foo_stageii.pkl -> foo_benchmark.json`。`--benchmark-output` 现在只用于覆盖这个默认落点，而不是决定“是否写盘”。
 若 benchmark 这段本身因为 mesh compare 参数不合法、reference 路径/模型解析失败等原因出错，single runner 现在也会把异常收口成 CLI error，避免直接抛 Python 栈。
+若显式传了 `--skip-benchmark`，single runner 现在也会同步拒绝所有 benchmark-only 参数：例如 `--benchmark-output`、`--warmup-runs`、`--measured-runs`、`--mesh-reference` / `--mesh-reference-output-suffix`、`--mesh-chunk-*`。这样不会再出现“命令看起来要求了 compare/report，但其实整段 benchmark 被跳过”的 silent no-op。
+若 benchmark 仍开启，但你没有提供 `--mesh-reference` / `--mesh-reference-output-suffix`，single runner 现在也会拒绝纯 mesh-compare 参数：`--mesh-chunk-size`、`--mesh-chunk-overlap`，以及在既不导 mesh、也不做 mesh compare 时单独传入的 `--mesh-support-base-dir`。这些参数只有在真正进入 mesh compare 或 mesh 导出时才允许出现。
 
 `--preset real-mcp-baseline` 会先注入当前已验证的 corrected real `.mcp` torch baseline 参数：
 `moshpp.optimize_fingers=true`、`runtime.sequence_chunk_size=32`、`runtime.sequence_chunk_overlap=4`、`runtime.sequence_seed_refine_iters=5`、`runtime.refine_lr=0.05`、`runtime.sequence_lr=0.05`、`runtime.sequence_max_iters=30`。如果要在此基础上做单变量 sweep，继续追加 `--cfg key=value` 即可；`--cfg` 会覆盖同名 preset 项，因此不需要每次重打一整串 baseline override。

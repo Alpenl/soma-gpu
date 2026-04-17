@@ -165,6 +165,30 @@ def _validate_mesh_reference_output_suffix(parser, args):
 def _validate_mesh_cli_args(parser, args):
     if args.mesh_output_dir is not None and not args.export_mesh:
         parser.error("--mesh-output-dir requires --export-mesh")
+    if args.benchmark_output is not None and args.skip_benchmark:
+        parser.error("--benchmark-output requires benchmark to be enabled")
+    if args.warmup_runs != 1 and args.skip_benchmark:
+        parser.error("--warmup-runs requires benchmark to be enabled")
+    if args.measured_runs != 5 and args.skip_benchmark:
+        parser.error("--measured-runs requires benchmark to be enabled")
+    if args.mesh_reference is not None and args.skip_benchmark:
+        parser.error("--mesh-reference requires benchmark to be enabled")
+    if args.mesh_reference_output_suffix is not None and args.skip_benchmark:
+        parser.error("--mesh-reference-output-suffix requires benchmark to be enabled")
+
+    has_mesh_reference = args.mesh_reference is not None or args.mesh_reference_output_suffix is not None
+    if args.mesh_chunk_size is not None:
+        if args.skip_benchmark:
+            parser.error("--mesh-chunk-size requires benchmark to be enabled")
+        if not has_mesh_reference:
+            parser.error("--mesh-chunk-size requires --mesh-reference or --mesh-reference-output-suffix")
+    if args.mesh_chunk_overlap is not None:
+        if args.skip_benchmark:
+            parser.error("--mesh-chunk-overlap requires benchmark to be enabled")
+        if not has_mesh_reference:
+            parser.error("--mesh-chunk-overlap requires --mesh-reference or --mesh-reference-output-suffix")
+    if args.mesh_support_base_dir is not None and not args.export_mesh and not has_mesh_reference:
+        parser.error("--mesh-support-base-dir requires --export-mesh or --mesh-reference/--mesh-reference-output-suffix")
 
 
 def _resolve_mesh_reference_path(parser, args):
