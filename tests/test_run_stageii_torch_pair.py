@@ -524,3 +524,34 @@ def test_run_stageii_torch_pair_main_rejects_explicit_colliding_stageii_output_p
     assert (
         "baseline and candidate resolve to the same stageii output path" in capsys.readouterr().err
     )
+
+
+def test_run_stageii_torch_pair_main_rejects_colliding_mesh_outputs_under_shared_mesh_output_dir(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_pair.run_stageii_torch_official,
+        "run",
+        lambda *args, **kwargs: pytest.fail("underlying runner should not run when mesh outputs collide"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(tmp_path / "mesh_exports"),
+                "--baseline-cfg",
+                f"dirs.stageii_fname={tmp_path / 'baseline' / 'shared_stageii.pkl'}",
+                "--candidate-cfg",
+                f"dirs.stageii_fname={tmp_path / 'candidate' / 'shared_stageii.pkl'}",
+            ]
+        )
+
+    assert "baseline and candidate resolve to the same mesh export output path" in capsys.readouterr().err

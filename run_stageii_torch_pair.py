@@ -280,7 +280,7 @@ def _normalized_path(path):
     return Path(path).expanduser().resolve(strict=False)
 
 
-def _validate_distinct_stageii_output_paths(parser, args):
+def _planned_stageii_output_paths(parser, args):
     baseline_stageii_path = _planned_stageii_output_path_from_overrides(
         _planned_stageii_output_overrides(
             parser,
@@ -299,10 +299,35 @@ def _validate_distinct_stageii_output_paths(parser, args):
             output_suffix=args.candidate_output_suffix,
         )
     )
+    return baseline_stageii_path, candidate_stageii_path
+
+
+def _validate_distinct_stageii_output_paths(parser, *, baseline_stageii_path, candidate_stageii_path):
     if _normalized_path(baseline_stageii_path) == _normalized_path(candidate_stageii_path):
         parser.error(
             "baseline and candidate resolve to the same stageii output path; "
             "adjust output suffixes or explicit basename/stageii path overrides"
+        )
+
+
+def _validate_distinct_mesh_output_paths(parser, args, *, baseline_stageii_path, candidate_stageii_path):
+    if not args.export_mesh or args.mesh_output_dir is None:
+        return
+    baseline_obj_path, baseline_pc2_path = run_stageii_torch_official._resolve_mesh_export_paths(
+        baseline_stageii_path,
+        output_dir=args.mesh_output_dir,
+    )
+    candidate_obj_path, candidate_pc2_path = run_stageii_torch_official._resolve_mesh_export_paths(
+        candidate_stageii_path,
+        output_dir=args.mesh_output_dir,
+    )
+    if (
+        _normalized_path(baseline_obj_path) == _normalized_path(candidate_obj_path)
+        or _normalized_path(baseline_pc2_path) == _normalized_path(candidate_pc2_path)
+    ):
+        parser.error(
+            "baseline and candidate resolve to the same mesh export output path under --mesh-output-dir; "
+            "adjust stageii basenames/paths or choose separate export directories"
         )
 
 
@@ -322,7 +347,18 @@ def run(argv=None, *, emit_json=True):
         parser.error("--baseline-output-suffix and --candidate-output-suffix must be different")
 
     try:
-        _validate_distinct_stageii_output_paths(parser, args)
+        baseline_stageii_path, candidate_stageii_path = _planned_stageii_output_paths(parser, args)
+        _validate_distinct_stageii_output_paths(
+            parser,
+            baseline_stageii_path=baseline_stageii_path,
+            candidate_stageii_path=candidate_stageii_path,
+        )
+        _validate_distinct_mesh_output_paths(
+            parser,
+            args,
+            baseline_stageii_path=baseline_stageii_path,
+            candidate_stageii_path=candidate_stageii_path,
+        )
         baseline_payload = run_stageii_torch_official.run(
             _build_baseline_runner_args(args),
             emit_json=False,
