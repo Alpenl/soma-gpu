@@ -96,6 +96,19 @@ python convert_mosh.py \
 ````
 python export_stageii_artifacts.py \
   --input-pkl ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl \
-  --model-path support_files/smplx/[gender]/model.npz
+  --support-base-dir support_files
 ````
+此时脚本会优先从 stageii pickle 内嵌的 `stageii_debug_details.cfg.surface_model.fname` 解析模型路径；若该路径来自旧机器，则会优先回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`。如需强制指定单一模型，仍可显式传 `--model-path`。
+
+若想递归扫描整个 session / 目录下的现有 stageii 结果并批量补导出，可运行：
+````
+python export_stageii_artifacts.py \
+  --input-dir ROOT/mosh_results_tracklet/[session] \
+  --support-base-dir support_files \
+  --fname-filter swing
+````
+批量模式会递归发现匹配的 `*_stageii.pkl` 并逐个在原路径旁生成 OBJ/PC2/preview MP4；如果目录下没有任何匹配结果，脚本会直接报错而不是静默成功。
+
+`convert_tennis.py --export-artifacts` 和 `convert_mosh.py --export-artifacts` 现在也采用同一套批量导出逻辑：若 `fname_filter`/dataset 最终没有匹配到任何 stageii 结果，会直接报错，避免“主流程成功但没有任何导出产物”的静默空跑。
+
 若只需要 OBJ/PC2，可继续使用 `save_smplx_verts.py`；若只需要 preview MP4，可使用 `render_video.py`。

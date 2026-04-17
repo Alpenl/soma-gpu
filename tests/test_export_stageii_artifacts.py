@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -12,6 +13,25 @@ import export_stageii_artifacts
 from utils.script_utils import default_stageii_artifact_paths
 
 SUPPORT_ROOT = ROOT / "support_files"
+
+
+def _write_stageii_pickle(path, *, model_path, surface_model_type="smplx", gender="male"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        pickle.dumps(
+            {
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": surface_model_type,
+                            "fname": str(model_path),
+                            "gender": gender,
+                        }
+                    }
+                }
+            }
+        )
+    )
 
 
 def test_export_stageii_artifacts_uses_default_output_paths_and_shared_render_inputs(monkeypatch, tmp_path):
@@ -149,3 +169,135 @@ def test_export_stageii_artifacts_reuses_preloaded_model_and_vertices_without_lo
     }
     assert captured["mesh"] == (preloaded_model, predecoded_vertices)
     assert captured["video"] == (predecoded_vertices, preloaded_model.faces)
+
+
+def test_export_stageii_artifacts_batch_resolves_model_path_per_stageii(monkeypatch, tmp_path):
+    support_dir = tmp_path / "support"
+    male_model = support_dir / "smplx" / "male" / "model.npz"
+    female_model = support_dir / "smplx" / "female" / "model.pkl"
+    male_model.parent.mkdir(parents=True, exist_ok=True)
+    female_model.parent.mkdir(parents=True, exist_ok=True)
+    male_model.write_bytes(b"npz")
+    female_model.write_bytes(b"pkl")
+
+    swing_stageii = tmp_path / "exports" / "subject01" / "swing_stageii.pkl"
+    serve_stageii = tmp_path / "exports" / "subject02" / "serve_stageii.pkl"
+    _write_stageii_pickle(
+        swing_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+    _write_stageii_pickle(
+        serve_stageii,
+        model_path="/old-machine/support_files/smplx/female/model.npz",
+        gender="female",
+    )
+
+    calls = []
+
+    def fake_export_stageii_artifacts(**kwargs):
+        calls.append(kwargs)
+        return {
+            "obj_path": str(Path(kwargs["input_pkl"]).with_suffix(".obj")),
+            "pc2_path": str(Path(kwargs["input_pkl"]).with_suffix(".pc2")),
+            "video_path": str(Path(kwargs["input_pkl"]).with_suffix(".mp4")),
+        }
+
+    monkeypatch.setattr(
+        export_stageii_artifacts,
+        "export_stageii_artifacts",
+        fake_export_stageii_artifacts,
+    )
+
+    results = export_stageii_artifacts.export_stageii_artifacts_batch(
+        input_pkls=[swing_stageii, serve_stageii],
+        support_base_dir=support_dir,
+        fps=15,
+        width=160,
+        height=120,
+        arch="cpu",
+    )
+
+    assert len(results) == 2
+    assert [call["input_pkl"] for call in calls] == [str(swing_stageii), str(serve_stageii)]
+    assert [call["model_path"] for call in calls] == [str(male_model), str(female_model)]
+    assert all(call["fps"] == 15 for call in calls)
+    assert all(call["width"] == 160 for call in calls)
+    assert all(call["height"] == 120 for call in calls)
+    assert all(call["arch"] == "cpu" for call in calls)
+
+
+def test_export_stageii_artifacts_main_supports_recursive_input_dir(monkeypatch, tmp_path):
+    support_dir = tmp_path / "support"
+    matching_stageii = tmp_path / "exports" / "subject01" / "swing_stageii.pkl"
+    ignored_stageii = tmp_path / "exports" / "subject01" / "serve_stageii.pkl"
+    _write_stageii_pickle(
+        matching_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+    _write_stageii_pickle(
+        ignored_stageii,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    captured = {}
+
+    def fake_export_stageii_artifacts_batch(**kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        export_stageii_artifacts,
+        "export_stageii_artifacts_batch",
+        fake_export_stageii_artifacts_batch,
+    )
+
+    export_stageii_artifacts.main(
+        [
+            "--input-dir",
+            str(tmp_path / "exports"),
+            "--support-base-dir",
+            str(support_dir),
+            "--fname-filter",
+            "swing",
+            "--fps",
+            "15",
+        ]
+    )
+
+    assert captured["input_pkls"] == [str(matching_stageii)]
+    assert captured["support_base_dir"] == str(support_dir)
+    assert captured["fps"] == 15
+
+
+def test_export_stageii_artifacts_main_errors_when_input_dir_matches_no_stageii_pickles(tmp_path):
+    with pytest.raises(SystemExit) as excinfo:
+        export_stageii_artifacts.main(
+            [
+                "--input-dir",
+                str(tmp_path / "exports"),
+                "--fname-filter",
+                "swing",
+            ]
+        )
+
+    assert excinfo.value.code == 2
+
+
+def test_export_stageii_artifacts_main_errors_when_single_input_cannot_resolve_model_path(
+    tmp_path,
+):
+    input_path = tmp_path / "broken_stageii.pkl"
+    input_path.write_bytes(pickle.dumps({"fullpose": [], "betas": [], "trans": []}))
+
+    with pytest.raises(SystemExit) as excinfo:
+        export_stageii_artifacts.main(
+            [
+                "--input-pkl",
+                str(input_path),
+            ]
+        )
+
+    assert excinfo.value.code == 2

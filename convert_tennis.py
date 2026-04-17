@@ -5,7 +5,7 @@ from pathlib import Path
 
 from utils.script_utils import (
     discover_stageii_pickles,
-    resolve_stageii_model_path,
+    format_stageii_match_error,
     resolve_support_base_dir,
 )
 
@@ -188,23 +188,25 @@ def export_stageii_artifacts_for_dataset(
 ):
     import export_stageii_artifacts
 
-    results = []
-    for stageii_pkl in discover_stageii_pickles(
+    stageii_pickles = discover_stageii_pickles(
         work_base_dir, dataset, fname_filter=fname_filter
-    ):
-        result = export_stageii_artifacts.export_stageii_artifacts(
-            input_pkl=stageii_pkl,
-            model_path=resolve_stageii_model_path(
-                stageii_pkl, support_base_dir=support_base_dir
-            ),
-            fps=fps,
-            width=width,
-            height=height,
-            arch=arch,
-            camera_preset=camera_preset,
+    )
+    if not stageii_pickles:
+        raise ValueError(
+            format_stageii_match_error(
+                Path(work_base_dir) / dataset,
+                fname_filter=fname_filter,
+            )
         )
-        results.append(result)
-    return results
+    return export_stageii_artifacts.export_stageii_artifacts_batch(
+        input_pkls=stageii_pickles,
+        support_base_dir=support_base_dir,
+        fps=fps,
+        width=width,
+        height=height,
+        arch=arch,
+        camera_preset=camera_preset,
+    )
 
 
 def main(argv=None):
@@ -290,17 +292,20 @@ def main(argv=None):
             )
 
     if args.export_artifacts:
-        export_stageii_artifacts_for_dataset(
-            work_base_dir=args.soma_work_base_dir,
-            dataset=args.dataset,
-            support_base_dir=support_base_dir,
-            fname_filter=args.fname_filter,
-            fps=args.export_fps,
-            width=args.export_width,
-            height=args.export_height,
-            arch=args.export_arch,
-            camera_preset=args.export_camera_preset,
-        )
+        try:
+            export_stageii_artifacts_for_dataset(
+                work_base_dir=args.soma_work_base_dir,
+                dataset=args.dataset,
+                support_base_dir=support_base_dir,
+                fname_filter=args.fname_filter,
+                fps=args.export_fps,
+                width=args.export_width,
+                height=args.export_height,
+                arch=args.export_arch,
+                camera_preset=args.export_camera_preset,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
 
 
 if __name__ == "__main__":

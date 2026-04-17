@@ -56,13 +56,27 @@ def _matches_fname_filter(path, fname_filter):
 
 def discover_stageii_pickles(work_base_dir, dataset, *, fname_filter=None, suffix="_stageii.pkl"):
     dataset_root = Path(work_base_dir) / dataset
-    if not dataset_root.exists():
+    return discover_stageii_pickles_in_dir(
+        dataset_root, fname_filter=fname_filter, suffix=suffix
+    )
+
+
+def discover_stageii_pickles_in_dir(input_dir, *, fname_filter=None, suffix="_stageii.pkl"):
+    input_root = Path(input_dir)
+    if not input_root.exists():
         return []
     return [
         str(path)
-        for path in sorted(dataset_root.rglob("*" + suffix))
+        for path in sorted(input_root.rglob("*" + suffix))
         if _matches_fname_filter(path, fname_filter)
     ]
+
+
+def format_stageii_match_error(search_root, *, fname_filter=None, suffix="_stageii.pkl"):
+    message = f"No *{suffix} files matched under {search_root}"
+    if fname_filter:
+        message += " with fname_filter={}".format(", ".join(str(token) for token in fname_filter))
+    return message
 
 
 def _stageii_surface_model_cfg(stageii_pkl):

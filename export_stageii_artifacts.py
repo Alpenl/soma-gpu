@@ -3,22 +3,43 @@ from pathlib import Path
 
 import render_video
 import save_smplx_verts
-from utils.script_utils import default_stageii_artifact_paths
+from utils.script_utils import (
+    default_stageii_artifact_paths,
+    discover_stageii_pickles_in_dir,
+    format_stageii_match_error,
+    resolve_stageii_model_path,
+)
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Export OBJ, PC2, and preview MP4 artifacts from a stageii pickle."
     )
-    parser.add_argument(
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
         "--input-pkl",
-        required=True,
         help="Path to the *_stageii.pkl file.",
+    )
+    input_group.add_argument(
+        "--input-dir",
+        default=None,
+        help="Recursive root used to discover *_stageii.pkl files for batch export.",
     )
     parser.add_argument(
         "--model-path",
-        required=True,
-        help="Path to the SMPL-X model .npz or .pkl file.",
+        default=None,
+        help="Optional path to the SMPL-X model .npz or .pkl file. Auto-resolved when omitted.",
+    )
+    parser.add_argument(
+        "--support-base-dir",
+        default=None,
+        help="Optional support_files root used to relocate stageii model paths.",
+    )
+    parser.add_argument(
+        "--fname-filter",
+        nargs="*",
+        default=[],
+        help="Optional list of substrings used to filter discovered *_stageii.pkl paths.",
     )
     parser.add_argument(
         "--output-dir",
@@ -157,6 +178,63 @@ def export_stageii_artifacts(
     }
 
 
+def export_stageii_artifacts_batch(
+    *,
+    input_pkls,
+    support_base_dir=None,
+    fps=30,
+    width=512,
+    height=512,
+    arch="gpu",
+    camera_preset="frontal",
+    show_progress=True,
+    **camera_overrides,
+):
+    input_pkls = [str(Path(input_pkl)) for input_pkl in input_pkls]
+    if not input_pkls:
+        raise ValueError("No *_stageii.pkl files matched for artifact export.")
+
+    results = []
+    for input_pkl in input_pkls:
+        try:
+            resolved_model_path = resolve_stageii_model_path(
+                input_pkl, support_base_dir=support_base_dir
+            )
+        except (KeyError, ValueError) as exc:
+            raise ValueError(f"{input_pkl}: {exc}") from exc
+        results.append(
+            export_stageii_artifacts(
+                input_pkl=input_pkl,
+                model_path=resolved_model_path,
+                fps=fps,
+                width=width,
+                height=height,
+                arch=arch,
+                camera_preset=camera_preset,
+                show_progress=show_progress,
+                **camera_overrides,
+            )
+        )
+    return results
+
+
+def _batch_only_args_error(args):
+    unsupported_args = []
+    if args.model_path is not None:
+        unsupported_args.append("--model-path")
+    if args.output_dir is not None:
+        unsupported_args.append("--output-dir")
+    if args.obj_out is not None:
+        unsupported_args.append("--obj-out")
+    if args.pc2_out is not None:
+        unsupported_args.append("--pc2-out")
+    if args.video_out is not None:
+        unsupported_args.append("--video-out")
+    if unsupported_args:
+        return "{} only support --input-pkl.".format(", ".join(unsupported_args))
+    return None
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -165,9 +243,43 @@ def main(argv=None):
         for field in render_video.CAMERA_FIELDS
         if getattr(args, field) is not None
     }
+    if args.input_dir:
+        input_dir_error = _batch_only_args_error(args)
+        if input_dir_error is not None:
+            parser.error(input_dir_error)
+        input_pkls = discover_stageii_pickles_in_dir(
+            args.input_dir,
+            fname_filter=args.fname_filter,
+        )
+        if not input_pkls:
+            parser.error(
+                format_stageii_match_error(
+                    args.input_dir,
+                    fname_filter=args.fname_filter,
+                )
+            )
+        export_stageii_artifacts_batch(
+            input_pkls=input_pkls,
+            support_base_dir=args.support_base_dir,
+            fps=args.fps,
+            width=args.width,
+            height=args.height,
+            arch=args.arch,
+            camera_preset=args.camera_preset,
+            **camera_overrides,
+        )
+        return
+
+    try:
+        resolved_model_path = args.model_path or resolve_stageii_model_path(
+            args.input_pkl,
+            support_base_dir=args.support_base_dir,
+        )
+    except (KeyError, ValueError) as exc:
+        parser.error(str(exc))
     export_stageii_artifacts(
         input_pkl=args.input_pkl,
-        model_path=args.model_path,
+        model_path=resolved_model_path,
         output_dir=args.output_dir,
         obj_out=args.obj_out,
         pc2_out=args.pc2_out,

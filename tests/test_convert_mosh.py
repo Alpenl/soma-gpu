@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import convert_mosh
+from utils.script_utils import resolve_stageii_model_path
 
 
 def _install_fake_mosh_manual_module(monkeypatch, calls):
@@ -42,7 +43,21 @@ def _install_fake_export_module(monkeypatch, calls):
             "video_path": str(Path(kwargs["input_pkl"]).with_suffix(".mp4")),
         }
 
+    def fake_export_stageii_artifacts_batch(*, input_pkls, support_base_dir=None, **kwargs):
+        return [
+            fake_export_stageii_artifacts(
+                input_pkl=input_pkl,
+                model_path=resolve_stageii_model_path(
+                    input_pkl,
+                    support_base_dir=support_base_dir,
+                ),
+                **kwargs,
+            )
+            for input_pkl in input_pkls
+        ]
+
     export_module.export_stageii_artifacts = fake_export_stageii_artifacts
+    export_module.export_stageii_artifacts_batch = fake_export_stageii_artifacts_batch
     monkeypatch.setitem(sys.modules, "export_stageii_artifacts", export_module)
 
 
@@ -201,6 +216,37 @@ def test_convert_mosh_export_relocates_model_path_under_support_base_dir(
     assert len(mosh_calls) == 1
     assert len(export_calls) == 1
     assert export_calls[0]["model_path"] == str(relocated_model_path)
+
+
+def test_convert_mosh_errors_when_export_artifacts_finds_no_stageii_pickles(
+    monkeypatch, tmp_path
+):
+    dataset = "demo_ds"
+    work_dir = tmp_path / "work"
+    mocap_base_dir = tmp_path / "mocap"
+    mocap_path = mocap_base_dir / dataset / "subject03" / "missing_stageii.mcp"
+
+    mosh_calls = []
+    _install_fake_mosh_manual_module(monkeypatch, mosh_calls)
+
+    mocap_path.parent.mkdir(parents=True, exist_ok=True)
+    mocap_path.write_bytes(b"mcp")
+
+    with pytest.raises(SystemExit) as excinfo:
+        convert_mosh.main(
+            [
+                "--dataset",
+                dataset,
+                "--mocap-base-dir",
+                str(mocap_base_dir),
+                "--work-base-dir",
+                str(work_dir),
+                "--export-artifacts",
+            ]
+        )
+
+    assert excinfo.value.code == 2
+    assert len(mosh_calls) == 1
 
 
 def test_convert_mosh_errors_when_no_c3d_or_mcp_inputs_match(tmp_path):

@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import convert_tennis
+from utils.script_utils import resolve_stageii_model_path
 
 
 def _install_fake_run_soma_module(monkeypatch, calls):
@@ -42,7 +43,21 @@ def _install_fake_export_module(monkeypatch, calls):
             "video_path": str(Path(kwargs["input_pkl"]).with_suffix(".mp4")),
         }
 
+    def fake_export_stageii_artifacts_batch(*, input_pkls, support_base_dir=None, **kwargs):
+        return [
+            fake_export_stageii_artifacts(
+                input_pkl=input_pkl,
+                model_path=resolve_stageii_model_path(
+                    input_pkl,
+                    support_base_dir=support_base_dir,
+                ),
+                **kwargs,
+            )
+            for input_pkl in input_pkls
+        ]
+
     export_module.export_stageii_artifacts = fake_export_stageii_artifacts
+    export_module.export_stageii_artifacts_batch = fake_export_stageii_artifacts_batch
     monkeypatch.setitem(sys.modules, "export_stageii_artifacts", export_module)
 
 
@@ -206,6 +221,35 @@ def test_convert_tennis_can_export_existing_stageii_when_mosh_is_skipped(monkeyp
     assert len(export_calls) == 1
     assert export_calls[0]["input_pkl"] == str(stageii_path)
     assert export_calls[0]["model_path"] == str(model_path)
+
+
+def test_convert_tennis_errors_when_export_artifacts_finds_no_stageii_pickles(
+    monkeypatch, tmp_path
+):
+    dataset = "demo_ds"
+    work_dir = tmp_path / "work"
+    mocap_base_dir = tmp_path / "mocap"
+    run_calls = []
+    _install_fake_run_soma_module(monkeypatch, run_calls)
+
+    _write_mocap_file(mocap_base_dir / dataset / "subject04" / "missing_stageii.c3d")
+
+    with pytest.raises(SystemExit) as excinfo:
+        convert_tennis.main(
+            [
+                "--dataset",
+                dataset,
+                "--mocap-base-dir",
+                str(mocap_base_dir),
+                "--soma-work-base-dir",
+                str(work_dir),
+                "--skip-mosh",
+                "--export-artifacts",
+            ]
+        )
+
+    assert excinfo.value.code == 2
+    assert [call["run_tasks"] for call in run_calls] == [["soma"]]
 
 
 def test_convert_tennis_errors_when_no_c3d_or_mcp_inputs_match_before_importing_soma(tmp_path):
