@@ -27,6 +27,7 @@ ipython
 markdown
 pandas
 pycodestyle
+pytest
 pytorch_lightning==1.4.0
 pytorch3d
 torchmetrics==0.4
