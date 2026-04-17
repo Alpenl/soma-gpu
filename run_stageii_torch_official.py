@@ -7,6 +7,7 @@ from save_smplx_verts import export_stageii_meshes
 from utils.stageii_benchmark import (
     default_benchmark_output_path,
     run_public_stageii_benchmark,
+    validate_benchmark_output_path,
     write_benchmark_report,
 )
 from utils.script_utils import (
@@ -311,6 +312,19 @@ def _preflight_planned_output_contracts(parser, args):
             expected_path=args.expected_benchmark_output,
             label="benchmark output",
         )
+        mesh_obj_path = mesh_pc2_path = None
+        if args.export_mesh:
+            mesh_obj_path, mesh_pc2_path = _resolve_mesh_export_paths(
+                planned_stageii_path,
+                output_dir=args.mesh_output_dir,
+            )
+        _validate_benchmark_output_collision(
+            benchmark_output_path,
+            stageii_path=planned_stageii_path,
+            mesh_reference_path=mesh_reference_path,
+            mesh_obj_path=mesh_obj_path,
+            mesh_pc2_path=mesh_pc2_path,
+        )
     if args.export_mesh:
         obj_out, pc2_out = _resolve_mesh_export_paths(
             planned_stageii_path,
@@ -393,6 +407,25 @@ def _resolve_benchmark_output_path(stageii_path, *, output_path=None):
     return Path(default_benchmark_output_path(stageii_path))
 
 
+def _validate_benchmark_output_collision(
+    benchmark_output_path,
+    *,
+    stageii_path,
+    mesh_reference_path=None,
+    mesh_obj_path=None,
+    mesh_pc2_path=None,
+):
+    validate_benchmark_output_path(
+        benchmark_output_path,
+        protected_paths=(
+            ("current stageii output", stageii_path),
+            ("mesh reference", mesh_reference_path),
+            ("mesh export obj", mesh_obj_path),
+            ("mesh export pc2", mesh_pc2_path),
+        ),
+    )
+
+
 def _export_meshes(stageii_path, args):
     model_path = resolve_stageii_model_path(
         str(stageii_path),
@@ -472,6 +505,27 @@ def run(argv=None, *, emit_json=True):
                 stageii_path=stageii_path,
                 mesh_reference_path=mesh_reference_path,
             )
+            benchmark_output_path = _resolve_benchmark_output_path(
+                stageii_path,
+                output_path=args.benchmark_output,
+            )
+            _validate_expected_output_path(
+                benchmark_output_path,
+                expected_path=args.expected_benchmark_output,
+                label="benchmark output",
+            )
+            mesh_export = payload.get("mesh_export") if args.export_mesh else None
+            mesh_obj_path = mesh_pc2_path = None
+            if isinstance(mesh_export, dict):
+                mesh_obj_path = mesh_export.get("obj_path")
+                mesh_pc2_path = mesh_export.get("pc2_path")
+            _validate_benchmark_output_collision(
+                benchmark_output_path,
+                stageii_path=stageii_path,
+                mesh_reference_path=mesh_reference_path,
+                mesh_obj_path=mesh_obj_path,
+                mesh_pc2_path=mesh_pc2_path,
+            )
             report = run_public_stageii_benchmark(
                 str(stageii_path),
                 warmup_runs=args.warmup_runs,
@@ -481,15 +535,6 @@ def run(argv=None, *, emit_json=True):
                 mesh_chunk_size=args.mesh_chunk_size,
                 mesh_chunk_overlap=args.mesh_chunk_overlap,
                 lean_benchmark=args.lean_benchmark,
-            )
-            benchmark_output_path = _resolve_benchmark_output_path(
-                stageii_path,
-                output_path=args.benchmark_output,
-            )
-            _validate_expected_output_path(
-                benchmark_output_path,
-                expected_path=args.expected_benchmark_output,
-                label="benchmark output",
             )
             report = write_benchmark_report(report, str(benchmark_output_path))
             report_path = None

@@ -1494,6 +1494,86 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_th
     assert "mesh reference resolves to the current stageii output" in capsys.readouterr().err
 
 
+def test_run_stageii_torch_official_main_preflights_benchmark_output_that_matches_planned_stageii(
+    tmp_path, monkeypatch, capsys
+):
+    planned_stageii_path = tmp_path / "work" / "input" / "wolf001" / "capture_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark helper should not run"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "write_benchmark_report",
+        lambda *args, **kwargs: pytest.fail("write_benchmark_report should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--benchmark-output",
+                str(planned_stageii_path),
+            ]
+        )
+
+    assert "benchmark output resolves to current stageii output path" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_preflights_benchmark_output_that_matches_planned_mesh_export(
+    tmp_path, monkeypatch, capsys
+):
+    mesh_output_dir = tmp_path / "mesh_exports"
+    planned_mesh_obj_path = mesh_output_dir / "capture_stageii.obj"
+
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark helper should not run"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "write_benchmark_report",
+        lambda *args, **kwargs: pytest.fail("write_benchmark_report should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--export-mesh",
+                "--mesh-output-dir",
+                str(mesh_output_dir),
+                "--benchmark-output",
+                str(planned_mesh_obj_path),
+            ]
+        )
+
+    assert "benchmark output resolves to mesh export obj path" in capsys.readouterr().err
+
+
 def test_run_stageii_torch_official_main_rejects_mesh_chunk_overlap_without_mesh_chunk_size(
     tmp_path, monkeypatch, capsys
 ):

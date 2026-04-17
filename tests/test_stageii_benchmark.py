@@ -933,6 +933,66 @@ def test_benchmark_stageii_public_main_errors_when_mesh_reference_matches_input(
     assert "mesh_reference_path resolves to sample_path" in capsys.readouterr().err
 
 
+def test_benchmark_stageii_public_main_rejects_output_matching_input(monkeypatch, capsys):
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: {
+            "sample": {"path": "candidate_stageii.pkl"},
+            "artifact": {"report_path": None},
+        },
+    )
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "write_benchmark_report",
+        lambda *args, **kwargs: pytest.fail("write_benchmark_report should not run when output matches input"),
+    )
+
+    with pytest.raises(SystemExit):
+        benchmark_stageii_public.main(
+            [
+                "--input",
+                "candidate_stageii.pkl",
+                "--output",
+                "candidate_stageii.pkl",
+            ]
+        )
+
+    assert "benchmark output resolves to benchmark input path" in capsys.readouterr().err
+
+
+def test_benchmark_stageii_public_main_rejects_output_matching_mesh_reference(monkeypatch, capsys):
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: {
+            "sample": {"path": "candidate_stageii.pkl"},
+            "artifact": {"report_path": None},
+        },
+    )
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "write_benchmark_report",
+        lambda *args, **kwargs: pytest.fail(
+            "write_benchmark_report should not run when output matches mesh reference"
+        ),
+    )
+
+    with pytest.raises(SystemExit):
+        benchmark_stageii_public.main(
+            [
+                "--input",
+                "candidate_stageii.pkl",
+                "--mesh-reference",
+                "baseline_stageii.pkl",
+                "--output",
+                "baseline_stageii.pkl",
+            ]
+        )
+
+    assert "benchmark output resolves to mesh reference path" in capsys.readouterr().err
+
+
 def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_new_format(
     tmp_path,
 ):

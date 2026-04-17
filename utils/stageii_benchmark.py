@@ -210,6 +210,15 @@ def _validate_mesh_reference_path(*, sample_path, mesh_reference_path):
         raise ValueError(f"mesh_reference_path resolves to sample_path: {sample_path}")
 
 
+def validate_benchmark_output_path(output_path, *, protected_paths):
+    output_path = Path(output_path)
+    for label, protected_path in protected_paths:
+        if protected_path is None:
+            continue
+        if _normalized_path(output_path) == _normalized_path(protected_path):
+            raise ValueError(f"benchmark output resolves to {label} path: {protected_path}")
+
+
 def _max_abs_diff(lhs, rhs):
     lhs = np.nan_to_num(np.asarray(lhs, dtype=np.float64), copy=False)
     rhs = np.nan_to_num(np.asarray(rhs, dtype=np.float64), copy=False)

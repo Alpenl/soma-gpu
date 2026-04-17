@@ -4,6 +4,7 @@ import json
 from utils.stageii_benchmark import (
     default_benchmark_output_path,
     run_public_stageii_benchmark,
+    validate_benchmark_output_path,
     write_benchmark_report,
 )
 
@@ -96,7 +97,15 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     _validate_mesh_cli_args(parser, args)
+    output_path = args.output or default_benchmark_output_path(args.input)
     try:
+        validate_benchmark_output_path(
+            output_path,
+            protected_paths=(
+                ("benchmark input", args.input),
+                ("mesh reference", args.mesh_reference),
+            ),
+        )
         report = run_public_stageii_benchmark(
             args.input,
             warmup_runs=args.warmup_runs,
@@ -107,8 +116,6 @@ def main(argv=None):
             mesh_chunk_overlap=args.mesh_chunk_overlap,
             lean_benchmark=args.lean_benchmark,
         )
-
-        output_path = args.output or default_benchmark_output_path(args.input)
         payload = write_benchmark_report(report, output_path)
     except BENCHMARK_CLI_ERROR_TYPES as exc:
         parser.error(str(exc))
