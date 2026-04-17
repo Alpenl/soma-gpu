@@ -6,6 +6,7 @@ import run_stageii_torch_official
 
 DEFAULT_BASELINE_PRESET = "real-mcp-baseline"
 DEFAULT_CANDIDATE_PRESET = "real-mcp-transvelo100-seedvelowindow"
+PAIR_RUNNER_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
 
 
 def build_parser():
@@ -197,6 +198,13 @@ def _validate_mesh_cli_args(parser, args):
         parser.error("--mesh-output-dir requires --export-mesh")
 
 
+def _require_stageii_path(payload, *, label):
+    stageii_path = payload.get("stageii_path")
+    if not stageii_path:
+        raise ValueError(f"{label} runner did not return stageii_path")
+    return stageii_path
+
+
 def run(argv=None, *, emit_json=True):
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -205,17 +213,19 @@ def run(argv=None, *, emit_json=True):
     if args.baseline_output_suffix == args.candidate_output_suffix:
         parser.error("--baseline-output-suffix and --candidate-output-suffix must be different")
 
-    baseline_payload = run_stageii_torch_official.run(
-        _build_baseline_runner_args(args),
-        emit_json=False,
-    )
-    baseline_stageii_path = baseline_payload.get("stageii_path")
-    if not baseline_stageii_path:
-        raise ValueError("baseline runner did not return stageii_path")
-    candidate_payload = run_stageii_torch_official.run(
-        _build_candidate_runner_args(args, mesh_reference_path=baseline_stageii_path),
-        emit_json=False,
-    )
+    try:
+        baseline_payload = run_stageii_torch_official.run(
+            _build_baseline_runner_args(args),
+            emit_json=False,
+        )
+        baseline_stageii_path = _require_stageii_path(baseline_payload, label="baseline")
+        candidate_payload = run_stageii_torch_official.run(
+            _build_candidate_runner_args(args, mesh_reference_path=baseline_stageii_path),
+            emit_json=False,
+        )
+        _require_stageii_path(candidate_payload, label="candidate")
+    except PAIR_RUNNER_CLI_ERROR_TYPES as exc:
+        parser.error(str(exc))
 
     payload = {
         "baseline": baseline_payload,

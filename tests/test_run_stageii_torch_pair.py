@@ -380,3 +380,81 @@ def test_run_stageii_torch_pair_main_rejects_mesh_output_dir_without_export_mesh
         )
 
     assert "--mesh-output-dir requires --export-mesh" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_baseline_runner_omits_stageii_path(
+    tmp_path, monkeypatch, capsys
+):
+    def fake_run(argv, *, emit_json):
+        preset = argv[argv.index("--preset") + 1]
+        if preset == "real-mcp-baseline":
+            return {"benchmark": None}
+        pytest.fail("candidate runner should not run when baseline payload is incomplete")
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert "baseline runner did not return stageii_path" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_candidate_runner_omits_stageii_path(
+    tmp_path, monkeypatch, capsys
+):
+    def fake_run(argv, *, emit_json):
+        preset = argv[argv.index("--preset") + 1]
+        if preset == "real-mcp-baseline":
+            return {"benchmark": None, "stageii_path": str(tmp_path / "baseline_stageii.pkl")}
+        return {"benchmark": {"artifact": {"report_path": "candidate.json"}}}
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert "candidate runner did not return stageii_path" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_errors_when_underlying_runner_raises_runtime_error(
+    tmp_path, monkeypatch, capsys
+):
+    def fake_run(argv, *, emit_json):
+        preset = argv[argv.index("--preset") + 1]
+        if preset == "real-mcp-baseline":
+            return {"benchmark": None, "stageii_path": str(tmp_path / "baseline_stageii.pkl")}
+        raise FileNotFoundError("candidate stageii missing")
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+            ]
+        )
+
+    assert "candidate stageii missing" in capsys.readouterr().err

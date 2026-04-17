@@ -193,6 +193,7 @@ python run_stageii_torch_pair.py \
 - baseline 侧默认使用 `--preset real-mcp-baseline --output-suffix _baseline`，并默认只产 `stageii.pkl`，不重复跑 standalone benchmark
 - candidate 侧默认使用 `--preset real-mcp-transvelo100-seedvelowindow --output-suffix _candidate`，并自动把 baseline 那次真实返回的 `stageii_path` 显式传给 `--mesh-reference`，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要；即使 baseline 侧额外用了 `--baseline-cfg mocap.basename=...` 这类只影响路径命名的覆盖，也不会再被 candidate 侧的配置重推导错
 - 若加了 `--export-mesh`，pair runner 会把同一套 mesh 导出参数同时透传给 baseline 和 candidate；由于两侧默认 `mocap.basename` suffix 不同，即使共用一个 `--mesh-output-dir`，OBJ/PC2 也会自动分名，不需要再手工分两个导出目录。若没开 `--export-mesh` 却传了 `--mesh-output-dir`，pair runner 现在会直接报错，而不是静默忽略。
+- 若 baseline / candidate 任一侧的 single runner 运行失败，或者返回 payload 缺失 `stageii_path`，pair runner 现在也会统一以 CLI error 退出，而不是把 `ValueError` / `FileNotFoundError` 栈直接打到终端。
 
 若要在同一条命令里继续做 sweep，可用：
 - `--candidate-cfg key=value`：只改 candidate
