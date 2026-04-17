@@ -75,6 +75,15 @@ def _coerce_velocity_reference(reference, like):
     )
 
 
+def _coerce_reference_index(reference_index, *, num_frames, name):
+    if reference_index is None:
+        return None
+    reference_index = int(reference_index)
+    if reference_index < 0 or reference_index >= num_frames:
+        raise ValueError(f"{name} must be in [0, {num_frames}), got {reference_index}")
+    return reference_index
+
+
 class StageIISequenceEvaluator(torch.nn.Module):
     def __init__(
         self,
@@ -108,6 +117,7 @@ class StageIISequenceEvaluator(torch.nn.Module):
         weights,
         velocity_reference,
         transl_velocity_reference=None,
+        transl_velocity_reference_index=None,
         latent_pose_reference=None,
         transl_reference=None,
         expression_reference=None,
@@ -161,12 +171,19 @@ class StageIISequenceEvaluator(torch.nn.Module):
             if transl_velocity_reference is not None:
                 transl_velocity_reference = _coerce_velocity_reference(transl_velocity_reference, transl)
                 if transl_velocity_reference.shape[0] == 1:
-                    transl_velocity_term[0] = torch.sum(
-                        ((transl[0] - transl_velocity_reference[0]) * transl_velocity_weight) ** 2
+                    seam_idx = _coerce_reference_index(
+                        transl_velocity_reference_index,
+                        num_frames=transl.shape[0],
+                        name="transl_velocity_reference_index",
                     )
+                    if seam_idx is None:
+                        seam_idx = 0
                     if transl.shape[0] >= 2:
                         diffs = transl[1:] - transl[:-1]
                         transl_velocity_term[1:] = torch.sum((diffs * transl_velocity_weight) ** 2, dim=1)
+                    transl_velocity_term[seam_idx] = torch.sum(
+                        ((transl[seam_idx] - transl_velocity_reference[0]) * transl_velocity_weight) ** 2
+                    )
                 else:
                     transl_velocity_term = torch.sum(
                         ((transl - transl_velocity_reference) * transl_velocity_weight) ** 2,
@@ -251,6 +268,7 @@ def evaluate_stageii_sequence(
     weights,
     velocity_reference,
     transl_velocity_reference=None,
+    transl_velocity_reference_index=None,
     latent_pose_reference=None,
     transl_reference=None,
     expression_reference=None,
@@ -267,6 +285,7 @@ def evaluate_stageii_sequence(
         weights=weights,
         velocity_reference=velocity_reference,
         transl_velocity_reference=transl_velocity_reference,
+        transl_velocity_reference_index=transl_velocity_reference_index,
         latent_pose_reference=latent_pose_reference,
         transl_reference=transl_reference,
         expression_reference=expression_reference,

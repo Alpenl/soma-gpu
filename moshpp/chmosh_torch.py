@@ -823,6 +823,14 @@ def mosh_stageii_torch(
                 anneal_factor=anneal_factor,
             )
             chunk_overlap_count = 0 if chunk_idx == 0 else min(sequence_chunk_overlap, row_end - row_start)
+            chunk_length = row_end - row_start
+            transl_velocity_reference_index = None
+            if (
+                sequence_boundary_transl_velocity_reference
+                and prev_transl is not None
+                and chunk_overlap_count < chunk_length
+            ):
+                transl_velocity_reference_index = chunk_overlap_count
 
             if sequence_seed_cache is None:
                 chunk_latent_init = []
@@ -903,6 +911,7 @@ def mosh_stageii_torch(
                 optimize_toes=bool(cfg.moshpp.optimize_toes),
                 velocity_reference=prev_latent_pose if sequence_boundary_velocity_reference else None,
                 transl_velocity_reference=prev_transl if sequence_boundary_transl_velocity_reference else None,
+                transl_velocity_reference_index=transl_velocity_reference_index,
                 visible_mask=chunk_visible,
                 weights=sequence_weights,
                 options=sequence_options,

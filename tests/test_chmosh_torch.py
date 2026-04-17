@@ -1380,6 +1380,7 @@ def test_mosh_stageii_torch_sequence_solver_receives_boundary_references_from_pr
                 "transl_velocity_reference": None
                 if kwargs.get("transl_velocity_reference") is None
                 else torch.as_tensor(kwargs["transl_velocity_reference"], dtype=torch.float32).clone(),
+                "transl_velocity_reference_index": kwargs.get("transl_velocity_reference_index"),
                 "latent_pose_reference": None
                 if kwargs.get("latent_pose_reference") is None
                 else torch.as_tensor(kwargs["latent_pose_reference"], dtype=torch.float32).clone(),
@@ -1444,6 +1445,7 @@ def test_mosh_stageii_torch_sequence_solver_receives_boundary_references_from_pr
         torch.tensor([[201.0, 201.0, 201.0]], dtype=torch.float32),
         atol=0.0,
     )
+    assert second_chunk["transl_velocity_reference_index"] == 1
     assert torch.allclose(
         second_chunk["latent_pose_reference"][:, :1],
         torch.tensor([[101.0], [12.0]], dtype=torch.float32),

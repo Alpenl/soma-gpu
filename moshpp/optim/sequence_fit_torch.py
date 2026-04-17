@@ -105,6 +105,15 @@ def _coerce_optional_reference(reference, *, device, dtype, feature_shape, num_f
     )
 
 
+def _coerce_optional_index(index, *, num_frames, name):
+    if index is None:
+        return None
+    index = int(index)
+    if index < 0 or index >= num_frames:
+        raise ValueError(f"{name} must be in [0, {num_frames}), got {index}")
+    return index
+
+
 def _run_adam(*, params, closure_fn, max_iters, lr):
     if max_iters <= 0:
         return
@@ -193,6 +202,7 @@ def fit_stageii_sequence_torch(
     optimize_toes=False,
     velocity_reference=None,
     transl_velocity_reference=None,
+    transl_velocity_reference_index=None,
     visible_mask=None,
     marker_data_weights=None,
     evaluator=None,
@@ -263,6 +273,11 @@ def fit_stageii_sequence_torch(
     )
     if transl_velocity_reference is not None:
         transl_velocity_reference = transl_velocity_reference.detach().clone()
+    transl_velocity_reference_index = _coerce_optional_index(
+        transl_velocity_reference_index,
+        num_frames=num_frames,
+        name="transl_velocity_reference_index",
+    )
 
     latent_pose_reference = _coerce_optional_reference(
         latent_pose_reference,
@@ -339,6 +354,7 @@ def fit_stageii_sequence_torch(
             weights=weights,
             velocity_reference=velocity_reference,
             transl_velocity_reference=transl_velocity_reference,
+            transl_velocity_reference_index=transl_velocity_reference_index,
             latent_pose_reference=latent_pose_reference,
             transl_reference=transl_reference,
             expression_reference=expression_reference,
@@ -360,6 +376,7 @@ def fit_stageii_sequence_torch(
         weights=weights,
         velocity_reference=velocity_reference,
         transl_velocity_reference=transl_velocity_reference,
+        transl_velocity_reference_index=transl_velocity_reference_index,
         latent_pose_reference=latent_pose_reference,
         transl_reference=transl_reference,
         expression_reference=expression_reference,

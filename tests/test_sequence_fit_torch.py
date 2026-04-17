@@ -367,3 +367,60 @@ def test_fit_stageii_sequence_torch_passes_explicit_transl_velocity_reference():
     )
 
     assert torch.allclose(seen["transl_velocity_reference"], transl_velocity_reference)
+
+
+def test_fit_stageii_sequence_torch_passes_explicit_transl_velocity_reference_index():
+    module = _load_sequence_fit_module()
+    canonical_markers, marker_attachment, layout, _, marker_observations = _make_minimal_problem(num_frames=4)
+
+    seen = {}
+
+    class RecordingEvaluator:
+        def __call__(self, **kwargs):
+            seen["transl_velocity_reference_index"] = kwargs["transl_velocity_reference_index"]
+            total = kwargs["latent_pose"].sum() * 0.0 + kwargs["transl"].sum() * 0.0
+            num_frames = kwargs["latent_pose"].shape[0]
+            predicted_markers = kwargs["marker_observations"]
+            body_output = DummyBodyOutput(
+                vertices=predicted_markers.detach().clone(),
+                joints=torch.zeros(num_frames, 3, 3, dtype=predicted_markers.dtype),
+            )
+            terms = {
+                "data": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "poseB": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "poseH": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "poseF": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "expr": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "velo": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "veloT": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "accel": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+            }
+            fullpose = torch.zeros(num_frames, 165, dtype=predicted_markers.dtype)
+            return total, terms, fullpose, body_output, predicted_markers
+
+    module.fit_stageii_sequence_torch(
+        body_model=TranslOnlyBodyModel(canonical_markers),
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        pose_prior=ZeroPosePrior(63),
+        layout=layout,
+        latent_pose_init=torch.zeros(marker_observations.shape[0], layout.latent_dim),
+        transl_init=torch.zeros(marker_observations.shape[0], 3),
+        transl_velocity_reference=torch.tensor([[9.0, 8.0, 7.0]], dtype=torch.float32),
+        transl_velocity_reference_index=2,
+        weights=module.TorchSequenceFitWeights(
+            data=0.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+            transl_velocity=1.0,
+            temporal_accel=0.0,
+        ),
+        options=module.TorchSequenceFitOptions(max_iters=0, lr=0.01, optimizer="adam"),
+        evaluator=RecordingEvaluator(),
+    )
+
+    assert seen["transl_velocity_reference_index"] == 2
