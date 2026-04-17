@@ -178,8 +178,11 @@ def build_stageii_sequence_evaluator(
     pose_prior,
     optimize_fingers,
     optimize_face,
+    compile_module=False,
+    compile_mode="reduce-overhead",
+    compile_fullgraph=False,
 ):
-    return StageIISequenceEvaluator(
+    evaluator = StageIISequenceEvaluator(
         wrapper=wrapper,
         layout=layout,
         hand_pca=hand_pca,
@@ -187,6 +190,9 @@ def build_stageii_sequence_evaluator(
         optimize_fingers=optimize_fingers,
         optimize_face=optimize_face,
     )
+    if compile_module and hasattr(torch, "compile"):
+        return torch.compile(evaluator, mode=compile_mode, fullgraph=compile_fullgraph)
+    return evaluator
 
 
 def evaluate_stageii_sequence(

@@ -302,6 +302,99 @@ def test_mosh_stageii_torch_routes_to_sequence_solver_when_chunking_enabled(tmp_
     assert stageii_data["fullpose"].shape == (4, 165)
 
 
+def test_mosh_stageii_torch_sequence_chunking_runs_with_real_sequence_evaluator(tmp_path):
+    module = _load_chmosh_torch_module()
+
+    markers_latent = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    ).numpy()
+    latent_labels = ["A", "B", "C", "D"]
+    marker_offsets = torch.tensor(
+        [
+            [0.10, 0.00, 0.00],
+            [0.25, -0.15, 0.35],
+            [0.05, 0.20, -0.10],
+            [-0.15, 0.10, 0.05],
+        ],
+        dtype=torch.float32,
+    )
+    markers = markers_latent[None, :, :] + marker_offsets[:, None, :].numpy()
+    mocap_fname = tmp_path / "synthetic_sequence_real_eval.pkl"
+    with mocap_fname.open("wb") as handle:
+        pickle.dump({"markers": markers, "labels": latent_labels, "frame_rate": 120.0}, handle)
+
+    cfg = _ns(
+        {
+            "mocap": {
+                "unit": "m",
+                "rotate": None,
+                "subject_name": None,
+                "multi_subject": False,
+                "start_fidx": 0,
+                "end_fidx": -1,
+                "ds_rate": 1,
+            },
+            "surface_model": {
+                "type": "smplx",
+                "num_betas": 10,
+                "dof_per_hand": 24,
+                "num_expressions": 10,
+                "use_hands_mean": True,
+                "betas_expr_start_id": 300,
+            },
+            "moshpp": {
+                "optimize_fingers": False,
+                "optimize_face": False,
+                "optimize_toes": False,
+                "optimize_dynamics": False,
+                "verbosity": 0,
+            },
+            "opt_settings": {
+                "maxiter": 0,
+                "weights": {
+                    "stageii_wt_data": 1.0,
+                    "stageii_wt_poseB": 0.0,
+                    "stageii_wt_poseH": 0.0,
+                    "stageii_wt_poseF": 0.0,
+                    "stageii_wt_expr": 0.0,
+                    "stageii_wt_dmpl": 0.0,
+                    "stageii_wt_velo": 0.0,
+                    "stageii_wt_annealing": 0.0,
+                },
+            },
+            "runtime": {
+                "backend": "torch",
+                "device": "cpu",
+                "sequence_chunk_size": 2,
+                "sequence_chunk_overlap": 1,
+                "sequence_optimizer": "adam",
+            },
+        }
+    )
+
+    stageii_data = module.mosh_stageii_torch(
+        mocap_fname=str(mocap_fname),
+        cfg=cfg,
+        markers_latent=markers_latent,
+        latent_labels=latent_labels,
+        betas=torch.zeros(10).numpy(),
+        marker_meta={"marker_type_mask": {}, "marker_type": {}, "surface_model_type": "smplx"},
+        body_model_factory=lambda: TranslOnlyBodyModel(torch.as_tensor(markers_latent, dtype=torch.float32)),
+        pose_prior=ZeroPosePrior(63),
+        device="cpu",
+    )
+
+    assert stageii_data["fullpose"].shape == (4, 165)
+    assert stageii_data["trans"].shape == (4, 3)
+    assert stageii_data["stageii_debug_details"]["stageii_errs"]["data"].shape == (4,)
+
+
 def test_mosh_stageii_torch_builds_stageii_evaluator_once_and_reuses_it(tmp_path, monkeypatch):
     module = _load_chmosh_torch_module()
 
