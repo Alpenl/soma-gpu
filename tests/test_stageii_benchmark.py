@@ -44,6 +44,7 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
         ]
     )
     monkeypatch.setattr(stageii_benchmark, "perf_counter", lambda: next(perf_counter_points))
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
 
     report = run_public_stageii_benchmark(
         ROOT / "support_data/tests/mosh_stageii.pkl",
@@ -59,6 +60,7 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert report["speed"]["latency_ms"]["p50"] == pytest.approx(50.0)
     assert report["speed"]["latency_ms"]["p90"] == pytest.approx(160.0)
     assert report["speed"]["latency_ms"]["p99"] == pytest.approx(196.0)
+    assert report["speed"]["preview_vertex_decode_ms"] is None
     assert report["error"]["repeatability"]["max_abs_diff"] == 0.0
     assert report["error"]["all_finite"] is True
 
@@ -69,6 +71,34 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert loaded["sample"]["sha256"] == report["sample"]["sha256"]
     assert loaded["artifact"]["report_path"].endswith("report.json")
     assert loaded["speed"]["latency_ms"]["samples"] == pytest.approx([5.0, 20.0, 50.0, 100.0, 200.0])
+
+
+def test_run_public_stageii_benchmark_includes_preview_vertex_decode_metric_when_available(monkeypatch):
+    preview_metric = {
+        "count": 2,
+        "samples": [10.0, 14.0],
+        "mean": 12.0,
+        "stdev": pytest.approx(2.8284271247461903),
+        "min": 10.0,
+        "max": 14.0,
+        "p50": 12.0,
+        "p90": 13.6,
+        "p99": 13.96,
+    }
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_benchmark_preview_vertex_decode",
+        lambda *args, **kwargs: preview_metric,
+        raising=False,
+    )
+
+    report = run_public_stageii_benchmark(
+        ROOT / "support_data/tests/mosh_stageii.pkl",
+        warmup_runs=0,
+        measured_runs=1,
+    )
+
+    assert report["speed"]["preview_vertex_decode_ms"] == preview_metric
 
 
 def test_blocked_stages_use_preview_render_stack_and_support_files_assets(tmp_path, monkeypatch):

@@ -169,6 +169,22 @@ def _percentile(values, q):
     return float(np.percentile(np.asarray(values, dtype=np.float64), q))
 
 
+def _summarize_latency_samples(latency_samples):
+    latency_mean = statistics.mean(latency_samples)
+    latency_stdev = statistics.stdev(latency_samples) if len(latency_samples) > 1 else 0.0
+    return {
+        "count": len(latency_samples),
+        "samples": [float(latency_ms) for latency_ms in latency_samples],
+        "mean": latency_mean,
+        "stdev": latency_stdev,
+        "min": min(latency_samples),
+        "max": max(latency_samples),
+        "p50": _percentile(latency_samples, 50),
+        "p90": _percentile(latency_samples, 90),
+        "p99": _percentile(latency_samples, 99),
+    }
+
+
 def _numeric_arrays(sample):
     return {
         "poses": sample.poses,
@@ -231,6 +247,54 @@ def _preview_render_block_reason(repo_root):
     return "support_files does not include SMPL-X model.npz/model.pkl assets needed by render_video.py preview renderer"
 
 
+def _preview_render_model_path(repo_root, *, gender):
+    support_root = _support_files_root(repo_root) / "smplx"
+    candidate_genders = [gender, "neutral"]
+    for candidate_gender in candidate_genders:
+        if not candidate_gender or candidate_gender == "unknown":
+            continue
+        npz_path = support_root / candidate_gender / "model.npz"
+        if npz_path.exists():
+            return npz_path
+        pkl_path = support_root / candidate_gender / "model.pkl"
+        if pkl_path.exists():
+            return pkl_path
+
+    npz_assets = _support_model_assets(repo_root, suffix=".npz")
+    if npz_assets:
+        return npz_assets[0]
+
+    pkl_assets = _support_model_assets(repo_root, suffix=".pkl")
+    if pkl_assets:
+        return pkl_assets[0]
+
+    return None
+
+
+def _benchmark_preview_vertex_decode(sample_path, baseline, *, repo_root, warmup_runs, measured_runs):
+    model_path = _preview_render_model_path(repo_root, gender=baseline.gender)
+    if model_path is None:
+        return None
+
+    try:
+        import render_video
+
+        model = render_video.load_render_model(model_path)
+    except Exception:
+        return None
+
+    for _ in range(warmup_runs):
+        render_video.load_vertices(sample_path, model)
+
+    latency_samples = []
+    for _ in range(measured_runs):
+        started_at = perf_counter()
+        render_video.load_vertices(sample_path, model)
+        latency_samples.append((perf_counter() - started_at) * 1000.0)
+
+    return _summarize_latency_samples(latency_samples)
+
+
 def _blocked_stages(repo_root):
     blocked = []
 
@@ -289,10 +353,15 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
         for key, baseline_array in _numeric_arrays(baseline).items():
             repeatability_max = max(repeatability_max, _max_abs_diff(baseline_array, _numeric_arrays(current)[key]))
 
-    latency_mean = statistics.mean(latencies_ms)
-    latency_stdev = statistics.stdev(latencies_ms) if len(latencies_ms) > 1 else 0.0
-    latency_samples = [float(latency_ms) for latency_ms in latencies_ms]
     repo_root = Path(__file__).resolve().parents[1]
+    latency_summary = _summarize_latency_samples(latencies_ms)
+    preview_vertex_decode_summary = _benchmark_preview_vertex_decode(
+        sample_path,
+        baseline,
+        repo_root=repo_root,
+        warmup_runs=warmup_runs,
+        measured_runs=measured_runs,
+    )
 
     return {
         "sample": {
@@ -314,18 +383,9 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
             "measured_runs": measured_runs,
         },
         "speed": {
-            "latency_ms": {
-                "count": len(latency_samples),
-                "samples": latency_samples,
-                "mean": latency_mean,
-                "stdev": latency_stdev,
-                "min": min(latency_samples),
-                "max": max(latency_samples),
-                "p50": _percentile(latency_samples, 50),
-                "p90": _percentile(latency_samples, 90),
-                "p99": _percentile(latency_samples, 99),
-            },
-            "throughput_ops_s": 1000.0 / latency_mean if latency_mean > 0 else 0.0,
+            "latency_ms": latency_summary,
+            "throughput_ops_s": 1000.0 / latency_summary["mean"] if latency_summary["mean"] > 0 else 0.0,
+            "preview_vertex_decode_ms": preview_vertex_decode_summary,
         },
         "error": {
             "repeatability": {
