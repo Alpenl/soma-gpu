@@ -150,7 +150,7 @@ def _resolve_mesh_reference_path(parser, args):
     return str(reference_cfg.dirs.stageii_fname)
 
 
-def main(argv=None):
+def run(argv=None, *, emit_json=True):
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -181,8 +181,13 @@ def main(argv=None):
         report = write_benchmark_report(report, str(benchmark_output_path))
         payload["benchmark"] = report
 
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    if emit_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
     return payload
+
+
+def main(argv=None):
+    return run(argv, emit_json=True)
 
 
 if __name__ == "__main__":

@@ -172,3 +172,22 @@ python run_stageii_torch_official.py \
   --benchmark-output ROOT/benchmarks/[seq]_candidate_vs_baseline.json
 ````
 `--mesh-reference-output-suffix` 会按同一套 `preset < --cfg < dedicated args` 解析逻辑重新推导 baseline 的 `cfg.dirs.stageii_fname`，因此适合“baseline/candidate 共用一个 work dir，只靠 basename suffix 分名”的主线复现；如果 baseline 根本不在同一命名规则下，再继续显式传 `--mesh-reference`。
+
+如果当前主线就是“先跑 corrected baseline，再跑一个候选并立刻做 stageii / mesh 对照”，可以直接改用成对入口：
+````
+python run_stageii_torch_pair.py \
+  --mocap-fname ROOT/mocap_raw/[session]/[subject]/[seq].mcp \
+  --support-base-dir support_files \
+  --work-base-dir ROOT/work \
+  --cfg surface_model.gender=male
+````
+这个脚本会顺序调用现有 `run_stageii_torch_official.py` 两次：
+- baseline 侧默认使用 `--preset real-mcp-baseline --output-suffix _baseline`，并默认只产 `stageii.pkl`，不重复跑 standalone benchmark
+- candidate 侧默认使用 `--preset real-mcp-transvelo100-seedvelowindow --output-suffix _candidate`，并自动把 `--mesh-reference-output-suffix` 指到 baseline，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要
+
+若要在同一条命令里继续做 sweep，可用：
+- `--candidate-cfg key=value`：只改 candidate
+- `--baseline-cfg key=value`：只改 baseline
+- `--cfg key=value`：两侧共享
+
+如果确实也想落 baseline 的 standalone benchmark JSON，再额外传 `--baseline-benchmark-output ...`；否则 pair runner 会默认跳过 baseline benchmark，避免把同一轮 mesh compare 多算一遍。

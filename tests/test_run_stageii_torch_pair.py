@@ -1,0 +1,184 @@
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import run_stageii_torch_pair
+
+
+def test_run_stageii_torch_pair_main_runs_baseline_then_candidate_with_shared_and_side_cfgs(
+    tmp_path, monkeypatch, capsys
+):
+    captured = {"calls": []}
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        preset = argv[argv.index("--preset") + 1]
+        suffix = argv[argv.index("--output-suffix") + 1]
+        return {
+            "benchmark": None if "--skip-benchmark" in argv else {"artifact": {"report_path": str(tmp_path / f"{suffix}.json")}},
+            "stageii_path": str(tmp_path / f"{preset}{suffix}_stageii.pkl"),
+        }
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    payload = run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--cfg",
+            "surface_model.gender=male",
+            "--baseline-cfg",
+            "moshpp.optimize_fingers=true",
+            "--candidate-cfg",
+            "runtime.sequence_transl_velocity=120",
+        ]
+    )
+
+    printed = json.loads(capsys.readouterr().out)
+    assert payload == printed
+    assert captured["calls"] == [
+        (
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--preset",
+                "real-mcp-baseline",
+                "--output-suffix",
+                "_baseline",
+                "--cfg",
+                "surface_model.gender=male",
+                "--cfg",
+                "moshpp.optimize_fingers=true",
+                "--skip-benchmark",
+            ],
+            False,
+        ),
+        (
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--preset",
+                "real-mcp-transvelo100-seedvelowindow",
+                "--output-suffix",
+                "_candidate",
+                "--cfg",
+                "surface_model.gender=male",
+                "--cfg",
+                "runtime.sequence_transl_velocity=120",
+                "--mesh-reference-output-suffix",
+                "_baseline",
+            ],
+            False,
+        ),
+    ]
+    assert payload == {
+        "baseline": {
+            "benchmark": None,
+            "stageii_path": str(tmp_path / "real-mcp-baseline_baseline_stageii.pkl"),
+        },
+        "candidate": {
+            "benchmark": {"artifact": {"report_path": str(tmp_path / "_candidate.json")}},
+            "stageii_path": str(
+                tmp_path / "real-mcp-transvelo100-seedvelowindow_candidate_stageii.pkl"
+            ),
+        },
+    }
+
+
+def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_path, monkeypatch):
+    captured = {"calls": []}
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        return {"benchmark": {"artifact": {"report_path": "report.json"}}, "stageii_path": "stageii.pkl"}
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    payload = run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--baseline-benchmark-output",
+            str(tmp_path / "baseline_benchmark.json"),
+            "--candidate-benchmark-output",
+            str(tmp_path / "candidate_benchmark.json"),
+        ]
+    )
+
+    assert captured["calls"][0] == (
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-baseline",
+            "--output-suffix",
+            "_baseline",
+            "--benchmark-output",
+            str(tmp_path / "baseline_benchmark.json"),
+        ],
+        False,
+    )
+    assert captured["calls"][1] == (
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-transvelo100-seedvelowindow",
+            "--output-suffix",
+            "_candidate",
+            "--benchmark-output",
+            str(tmp_path / "candidate_benchmark.json"),
+            "--mesh-reference-output-suffix",
+            "_baseline",
+        ],
+        False,
+    )
+    assert payload["baseline"]["benchmark"]["artifact"]["report_path"] == "report.json"
+
+
+def test_run_stageii_torch_pair_main_rejects_matching_output_suffixes():
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                "capture.mcp",
+                "--support-base-dir",
+                "support_files",
+                "--work-base-dir",
+                "work",
+                "--baseline-output-suffix",
+                "_same",
+                "--candidate-output-suffix",
+                "_same",
+            ]
+        )
