@@ -1943,6 +1943,47 @@ def test_build_chunk_full_transl_velocity_reference_translates_full_seed_profile
     )
 
 
+def test_build_chunk_full_velocity_reference_translates_full_seed_profile():
+    module = _load_chmosh_torch_module()
+
+    base_reference = torch.tensor(
+        [
+            [22.0, 220.0],
+            [23.0, 230.0],
+            [24.0, 240.0],
+            [25.0, 250.0],
+        ],
+        dtype=torch.float32,
+    )
+    previous_tail = torch.tensor(
+        [
+            [202.0, 2002.0],
+            [203.0, 2003.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    reference = module._build_chunk_full_velocity_reference(
+        base_reference,
+        previous_tail,
+        2,
+    )
+
+    assert torch.allclose(
+        reference,
+        torch.tensor(
+            [
+                [202.0, 1993.0],
+                [203.0, 2003.0],
+                [204.0, 2013.0],
+                [205.0, 2023.0],
+            ],
+            dtype=torch.float32,
+        ),
+        atol=0.0,
+    )
+
+
 def test_mosh_stageii_torch_sequence_solver_receives_local_velocity_window_reference_from_previous_chunk(
     tmp_path,
     monkeypatch,

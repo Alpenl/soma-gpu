@@ -542,6 +542,61 @@ def test_evaluate_stageii_sequence_full_transl_velocity_reference_matches_veloci
     assert torch.allclose(result.loss_terms["veloT"], expected)
 
 
+def test_evaluate_stageii_sequence_full_velocity_reference_matches_velocity_profile_not_absolute_positions():
+    module = _load_sequence_evaluator_module()
+    canonical_markers, marker_attachment, layout, transl, marker_observations = _make_problem(num_frames=4)
+    evaluator = module.build_stageii_sequence_evaluator(
+        wrapper=TranslOnlyWrapper(canonical_markers),
+        layout=layout,
+        hand_pca=None,
+        pose_prior=ZeroPosePrior(63),
+        optimize_fingers=False,
+        optimize_face=False,
+    )
+
+    latent_pose = torch.zeros(marker_observations.shape[0], layout.latent_dim, dtype=torch.float32)
+    latent_pose[:, 0] = torch.tensor([1.0, 3.0, 6.0, 10.0], dtype=torch.float32)
+    weights = SimpleNamespace(
+        data=0.0,
+        pose_body=0.0,
+        pose_hand=0.0,
+        pose_face=0.0,
+        expr=0.0,
+        velocity=2.0,
+        transl_velocity=0.0,
+        temporal_accel=0.0,
+    )
+
+    velocity_reference = torch.zeros((4, layout.latent_dim), dtype=torch.float32)
+    velocity_reference[:, 0] = torch.tensor([9.0, 11.0, 14.0, 18.0], dtype=torch.float32)
+
+    result = module.evaluate_stageii_sequence(
+        evaluator=evaluator,
+        latent_pose=latent_pose,
+        transl=transl,
+        expression=None,
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        visible_mask=torch.ones(marker_observations.shape[:2], dtype=torch.bool),
+        marker_data_weights=None,
+        weights=weights,
+        velocity_reference=velocity_reference,
+    )
+
+    expected = torch.tensor(
+        [
+            ((1.0 - 9.0) * weights.velocity) ** 2,
+            0.0,
+            0.0,
+            0.0,
+        ],
+        dtype=torch.float32,
+    )
+
+    assert torch.allclose(result.loss_terms["velo"], expected)
+
+
 def test_evaluate_stageii_sequence_delta_terms_match_manual_l2_with_seed_broadcast():
     module = _load_sequence_evaluator_module()
     canonical_markers, marker_attachment, layout, transl, marker_observations = _make_problem(num_frames=3)
