@@ -1453,6 +1453,6 @@ def test_mosh_stageii_torch_sequence_solver_receives_boundary_references_from_pr
     )
     assert torch.allclose(
         second_chunk["transl_reference"],
-        torch.tensor([[201.0, 201.0, 201.0], [22.0, 22.0, 22.0]], dtype=torch.float32),
+        torch.tensor([[201.0, 201.0, 201.0], [201.0, 201.0, 201.0]], dtype=torch.float32),
         atol=0.0,
     )

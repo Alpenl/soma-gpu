@@ -594,11 +594,13 @@ def _build_sequence_seed_cache(
     )
 
 
-def _splice_chunk_overlap_reference(base_reference, previous_tail, overlap_count):
+def _splice_chunk_overlap_reference(base_reference, previous_tail, overlap_count, *, include_keep_seam=False):
     if base_reference is None or previous_tail is None or overlap_count <= 0:
         return base_reference
     reference = base_reference.detach().clone()
     reference[:overlap_count] = previous_tail[-overlap_count:].detach().clone()
+    if include_keep_seam and overlap_count < reference.shape[0]:
+        reference[overlap_count] = previous_tail[-1].detach().clone()
     return reference
 
 
@@ -878,6 +880,7 @@ def mosh_stageii_torch(
                         chunk_transl_init,
                         previous_chunk_transl_tail,
                         chunk_overlap_count,
+                        include_keep_seam=True,
                     )
                 if (
                     optimize_face
