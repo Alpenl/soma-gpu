@@ -28,7 +28,7 @@ class LoadedMeshSequence:
 
 def _explicit_chunk_config(chunk_size=None, chunk_overlap=None):
     if chunk_size is None:
-        if chunk_overlap not in (None, 0):
+        if chunk_overlap is not None:
             raise ValueError("chunk_overlap requires chunk_size")
         return None
     chunk_size = int(chunk_size)
@@ -220,7 +220,7 @@ def build_parser():
     parser.add_argument(
         "--chunk-overlap",
         type=int,
-        default=0,
+        default=None,
         help="Optional chunk overlap override paired with --chunk-size.",
     )
     parser.add_argument(
@@ -230,15 +230,30 @@ def build_parser():
     return parser
 
 
+def _validate_cli_args(parser, args):
+    if args.chunk_size is not None and args.chunk_size <= 0:
+        parser.error("--chunk-size must be > 0")
+    if args.chunk_overlap is not None:
+        if args.chunk_size is None:
+            parser.error("--chunk-overlap requires --chunk-size")
+        if args.chunk_overlap < 0:
+            parser.error("--chunk-overlap must be >= 0")
+
+
 def main(argv=None):
-    args = build_parser().parse_args(argv)
-    report = compare_mesh_sequences(
-        args.reference,
-        args.candidate,
-        support_base_dir=args.support_base_dir,
-        chunk_size=args.chunk_size,
-        chunk_overlap=args.chunk_overlap,
-    )
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    _validate_cli_args(parser, args)
+    try:
+        report = compare_mesh_sequences(
+            args.reference,
+            args.candidate,
+            support_base_dir=args.support_base_dir,
+            chunk_size=args.chunk_size,
+            chunk_overlap=args.chunk_overlap,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     report_json = json.dumps(report, indent=2, sort_keys=True)
     if args.output:
         output_path = Path(args.output)

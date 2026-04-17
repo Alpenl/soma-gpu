@@ -247,6 +247,18 @@ def test_load_mesh_sequence_rejects_negative_explicit_chunk_overlap(tmp_path):
         )
 
 
+def test_load_mesh_sequence_rejects_explicit_zero_chunk_overlap_without_chunk_size(tmp_path):
+    mesh_compare = _load_mesh_compare_module()
+    pc2_path = tmp_path / "demo.pc2"
+    writePC2(str(pc2_path), np.zeros((2, 1, 3), dtype=np.float32))
+
+    with pytest.raises(ValueError, match="chunk_overlap requires chunk_size"):
+        mesh_compare.load_mesh_sequence(
+            pc2_path,
+            chunk_overlap=0,
+        )
+
+
 def test_compare_mesh_sequences_reports_mesh_accel_seam_and_frame_delta_summaries(tmp_path):
     mesh_compare = _load_mesh_compare_module()
     reference_path = tmp_path / "reference.pc2"
@@ -346,3 +358,28 @@ def test_mesh_compare_main_writes_json_report(tmp_path, monkeypatch):
 
     assert result == expected_report
     assert json.loads(output_path.read_text()) == expected_report
+
+
+def test_mesh_compare_main_rejects_chunk_overlap_without_chunk_size_even_when_zero(
+    monkeypatch, capsys
+):
+    mesh_compare = _load_mesh_compare_module()
+    monkeypatch.setattr(
+        mesh_compare,
+        "compare_mesh_sequences",
+        lambda *args, **kwargs: pytest.fail("compare_mesh_sequences should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        mesh_compare.main(
+            [
+                "--reference",
+                "reference.pc2",
+                "--candidate",
+                "candidate.pc2",
+                "--chunk-overlap",
+                "0",
+            ]
+        )
+
+    assert "--chunk-overlap requires --chunk-size" in capsys.readouterr().err
