@@ -1902,6 +1902,47 @@ def test_build_chunk_transl_velocity_reference_preserves_seed_boundary_velocity(
     )
 
 
+def test_build_chunk_full_transl_velocity_reference_translates_full_seed_profile():
+    module = _load_chmosh_torch_module()
+
+    base_reference = torch.tensor(
+        [
+            [22.0, 22.0, 22.0],
+            [23.0, 23.0, 23.0],
+            [24.0, 24.0, 24.0],
+            [25.0, 25.0, 25.0],
+        ],
+        dtype=torch.float32,
+    )
+    previous_tail = torch.tensor(
+        [
+            [202.0, 202.0, 202.0],
+            [203.0, 203.0, 203.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    reference = module._build_chunk_full_transl_velocity_reference(
+        base_reference,
+        previous_tail,
+        2,
+    )
+
+    assert torch.allclose(
+        reference,
+        torch.tensor(
+            [
+                [202.0, 202.0, 202.0],
+                [203.0, 203.0, 203.0],
+                [204.0, 204.0, 204.0],
+                [205.0, 205.0, 205.0],
+            ],
+            dtype=torch.float32,
+        ),
+        atol=0.0,
+    )
+
+
 def test_mosh_stageii_torch_sequence_solver_receives_local_velocity_window_reference_from_previous_chunk(
     tmp_path,
     monkeypatch,
@@ -2062,5 +2103,200 @@ def test_mosh_stageii_torch_sequence_solver_receives_local_velocity_window_refer
     assert torch.allclose(
         recorded["sequence_kwargs"][1]["velocity_reference"][:, :1],
         torch.tensor([[103.0], [104.0], [105.0]], dtype=torch.float32),
+        atol=0.0,
+    )
+
+
+def test_mosh_stageii_torch_sequence_solver_can_request_full_boundary_velocity_profiles(
+    tmp_path,
+    monkeypatch,
+):
+    module = _load_chmosh_torch_module()
+
+    markers_latent = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    ).numpy()
+    latent_labels = ["A", "B", "C", "D"]
+    marker_offsets = torch.tensor(
+        [
+            [0.10, 0.00, 0.00],
+            [0.25, -0.15, 0.35],
+            [0.05, 0.20, -0.10],
+            [-0.15, 0.10, 0.05],
+            [0.30, 0.05, -0.20],
+            [-0.05, -0.10, 0.15],
+        ],
+        dtype=torch.float32,
+    )
+    markers = markers_latent[None, :, :] + marker_offsets[:, None, :].numpy()
+    mocap_fname = tmp_path / "synthetic_sequence_full_velocity_profile.pkl"
+    with mocap_fname.open("wb") as handle:
+        pickle.dump({"markers": markers, "labels": latent_labels, "frame_rate": 120.0}, handle)
+
+    cfg = _ns(
+        {
+            "mocap": {
+                "unit": "m",
+                "rotate": None,
+                "subject_name": None,
+                "multi_subject": False,
+                "start_fidx": 0,
+                "end_fidx": -1,
+                "ds_rate": 1,
+            },
+            "surface_model": {
+                "type": "smplx",
+                "num_betas": 10,
+                "dof_per_hand": 24,
+                "num_expressions": 10,
+                "use_hands_mean": True,
+                "betas_expr_start_id": 300,
+            },
+            "moshpp": {
+                "optimize_fingers": False,
+                "optimize_face": False,
+                "optimize_toes": False,
+                "optimize_dynamics": False,
+                "verbosity": 0,
+            },
+            "opt_settings": {
+                "maxiter": 0,
+                "weights": {
+                    "stageii_wt_data": 1.0,
+                    "stageii_wt_poseB": 0.0,
+                    "stageii_wt_poseH": 0.0,
+                    "stageii_wt_poseF": 0.0,
+                    "stageii_wt_expr": 0.0,
+                    "stageii_wt_dmpl": 0.0,
+                    "stageii_wt_velo": 1.0,
+                    "stageii_wt_annealing": 0.0,
+                },
+            },
+            "runtime": {
+                "backend": "torch",
+                "device": "cpu",
+                "sequence_chunk_size": 4,
+                "sequence_chunk_overlap": 2,
+                "sequence_optimizer": "adam",
+                "sequence_seed_refine_iters": 1,
+                "sequence_boundary_velocity_reference": True,
+                "sequence_boundary_velocity_reference_full_length": True,
+                "sequence_boundary_transl_velocity_reference": True,
+                "sequence_boundary_transl_velocity_reference_full_length": True,
+                "sequence_transl_velocity": 7.0,
+            },
+        }
+    )
+
+    frame_call_idx = {"value": 0}
+    recorded = {"sequence_kwargs": []}
+
+    def fake_fit_stageii_frame_torch(**kwargs):
+        call_idx = frame_call_idx["value"]
+        frame_call_idx["value"] += 1
+        markers_obs = torch.as_tensor(kwargs["marker_observations"], dtype=torch.float32)
+        latent_pose = torch.zeros(1, kwargs["layout"].latent_dim, dtype=torch.float32)
+        latent_pose[0, 0] = 10.0 + float(call_idx)
+        transl = torch.full((1, 3), 20.0 + float(call_idx), dtype=torch.float32)
+        return SimpleNamespace(
+            latent_pose=latent_pose,
+            fullpose=torch.zeros(1, 165, dtype=torch.float32),
+            transl=transl,
+            expression=None,
+            predicted_markers=markers_obs.clone(),
+            vertices=markers_obs.unsqueeze(0).clone(),
+            joints=torch.zeros(1, 3, 3, dtype=torch.float32),
+            loss_terms={"data": 0.0, "poseB": 0.0, "poseH": 0.0, "poseF": 0.0, "expr": 0.0, "velo": 0.0},
+        )
+
+    def fake_fit_stageii_sequence_torch(**kwargs):
+        chunk_idx = len(recorded["sequence_kwargs"])
+        recorded["sequence_kwargs"].append(
+            {
+                "velocity_reference": None
+                if kwargs.get("velocity_reference") is None
+                else torch.as_tensor(kwargs["velocity_reference"], dtype=torch.float32).clone(),
+                "velocity_reference_index": kwargs.get("velocity_reference_index"),
+                "transl_velocity_reference": None
+                if kwargs.get("transl_velocity_reference") is None
+                else torch.as_tensor(kwargs["transl_velocity_reference"], dtype=torch.float32).clone(),
+                "transl_velocity_reference_index": kwargs.get("transl_velocity_reference_index"),
+            }
+        )
+        markers_obs = torch.as_tensor(kwargs["marker_observations"], dtype=torch.float32)
+        transl = torch.as_tensor(kwargs["transl_init"], dtype=torch.float32).clone()
+        latent_pose = torch.as_tensor(kwargs["latent_pose_init"], dtype=torch.float32).clone()
+        if chunk_idx == 0:
+            latent_pose[:, 0] = torch.tensor([100.0, 101.0, 102.0, 103.0], dtype=torch.float32)
+            transl[:] = torch.tensor(
+                [
+                    [200.0, 200.0, 200.0],
+                    [201.0, 201.0, 201.0],
+                    [202.0, 202.0, 202.0],
+                    [203.0, 203.0, 203.0],
+                ],
+                dtype=torch.float32,
+            )
+        return SimpleNamespace(
+            latent_pose=latent_pose,
+            fullpose=torch.zeros(markers_obs.shape[0], 165, dtype=torch.float32),
+            transl=transl,
+            expression=None,
+            predicted_markers=markers_obs.clone(),
+            vertices=markers_obs.clone(),
+            joints=torch.zeros(markers_obs.shape[0], 3, 3, dtype=torch.float32),
+            loss_terms={
+                "data": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseB": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseH": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseF": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "expr": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "velo": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "veloT": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "accel": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+            },
+        )
+
+    monkeypatch.setattr(module, "fit_stageii_frame_torch", fake_fit_stageii_frame_torch)
+    monkeypatch.setattr(module, "fit_stageii_sequence_torch", fake_fit_stageii_sequence_torch, raising=False)
+
+    stageii_data = module.mosh_stageii_torch(
+        mocap_fname=str(mocap_fname),
+        cfg=cfg,
+        markers_latent=markers_latent,
+        latent_labels=latent_labels,
+        betas=torch.zeros(10).numpy(),
+        marker_meta={"marker_type_mask": {}, "marker_type": {}, "surface_model_type": "smplx"},
+        body_model_factory=lambda: TranslOnlyBodyModel(torch.as_tensor(markers_latent, dtype=torch.float32)),
+        pose_prior=ZeroPosePrior(63),
+        device="cpu",
+    )
+
+    assert stageii_data["fullpose"].shape == (6, 165)
+    assert len(recorded["sequence_kwargs"]) == 2
+    assert recorded["sequence_kwargs"][1]["velocity_reference_index"] is None
+    assert torch.allclose(
+        recorded["sequence_kwargs"][1]["velocity_reference"][:, :1],
+        torch.tensor([[102.0], [103.0], [104.0], [105.0]], dtype=torch.float32),
+        atol=0.0,
+    )
+    assert recorded["sequence_kwargs"][1]["transl_velocity_reference_index"] is None
+    assert torch.allclose(
+        recorded["sequence_kwargs"][1]["transl_velocity_reference"],
+        torch.tensor(
+            [
+                [202.0, 202.0, 202.0],
+                [203.0, 203.0, 203.0],
+                [204.0, 204.0, 204.0],
+                [205.0, 205.0, 205.0],
+            ],
+            dtype=torch.float32,
+        ),
         atol=0.0,
     )

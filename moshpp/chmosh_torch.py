@@ -632,12 +632,35 @@ def _build_chunk_velocity_reference(base_reference, previous_tail, overlap_count
     return anchor + seam_positions
 
 
+def _build_chunk_full_velocity_reference(base_reference, previous_tail, overlap_count):
+    if previous_tail is None:
+        return None
+    if base_reference is None or overlap_count <= 0:
+        return previous_tail[-1:].detach().clone()
+    if overlap_count > base_reference.shape[0]:
+        raise ValueError(
+            f"overlap_count={overlap_count} exceeds base reference length {base_reference.shape[0]}"
+        )
+    reference = base_reference.detach().clone()
+    seam_anchor = previous_tail[-1:].detach().clone()
+    seam_shift = seam_anchor - reference[overlap_count - 1 : overlap_count].clone()
+    return reference + seam_shift
+
+
 def _build_chunk_transl_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
     return _build_chunk_velocity_reference(
         base_reference,
         previous_tail,
         overlap_count,
         keep_seam_window=keep_seam_window,
+    )
+
+
+def _build_chunk_full_transl_velocity_reference(base_reference, previous_tail, overlap_count):
+    return _build_chunk_full_velocity_reference(
+        base_reference,
+        previous_tail,
+        overlap_count,
     )
 
 
@@ -752,8 +775,14 @@ def mosh_stageii_torch(
     sequence_chunk_size = max(int(_runtime_get(runtime, "sequence_chunk_size", 1) or 1), 1)
     sequence_chunk_overlap = max(int(_runtime_get(runtime, "sequence_chunk_overlap", 0) or 0), 0)
     sequence_boundary_velocity_reference = bool(_runtime_get(runtime, "sequence_boundary_velocity_reference", False))
+    sequence_boundary_velocity_reference_full_length = bool(
+        _runtime_get(runtime, "sequence_boundary_velocity_reference_full_length", False)
+    )
     sequence_boundary_transl_velocity_reference = bool(
         _runtime_get(runtime, "sequence_boundary_transl_velocity_reference", False)
+    )
+    sequence_boundary_transl_velocity_reference_full_length = bool(
+        _runtime_get(runtime, "sequence_boundary_transl_velocity_reference_full_length", False)
     )
     compile_evaluator = bool(_runtime_get(runtime, "compile_evaluator", False))
     compile_mode = str(_runtime_get(runtime, "compile_mode", "default"))
@@ -902,16 +931,23 @@ def mosh_stageii_torch(
                 and prev_latent_pose is not None
                 and chunk_overlap_count < chunk_length
             ):
-                velocity_reference_index = chunk_overlap_count
-                velocity_reference = prev_latent_pose
-                keep_seam_window = min(chunk_overlap_count, chunk_length - chunk_overlap_count)
-                if previous_chunk_latent_tail is not None and keep_seam_window > 1:
-                    velocity_reference = _build_chunk_velocity_reference(
+                if sequence_boundary_velocity_reference_full_length and previous_chunk_latent_tail is not None:
+                    velocity_reference = _build_chunk_full_velocity_reference(
                         chunk_latent_init,
                         previous_chunk_latent_tail,
                         chunk_overlap_count,
-                        keep_seam_window=keep_seam_window,
                     )
+                else:
+                    velocity_reference_index = chunk_overlap_count
+                    velocity_reference = prev_latent_pose
+                    keep_seam_window = min(chunk_overlap_count, chunk_length - chunk_overlap_count)
+                    if previous_chunk_latent_tail is not None and keep_seam_window > 1:
+                        velocity_reference = _build_chunk_velocity_reference(
+                            chunk_latent_init,
+                            previous_chunk_latent_tail,
+                            chunk_overlap_count,
+                            keep_seam_window=keep_seam_window,
+                        )
 
             transl_velocity_reference = None
             transl_velocity_reference_index = None
@@ -920,16 +956,23 @@ def mosh_stageii_torch(
                 and prev_transl is not None
                 and chunk_overlap_count < chunk_length
             ):
-                transl_velocity_reference_index = chunk_overlap_count
-                transl_velocity_reference = prev_transl
-                keep_seam_window = min(chunk_overlap_count, chunk_length - chunk_overlap_count)
-                if previous_chunk_transl_tail is not None and keep_seam_window > 1:
-                    transl_velocity_reference = _build_chunk_transl_velocity_reference(
+                if sequence_boundary_transl_velocity_reference_full_length and previous_chunk_transl_tail is not None:
+                    transl_velocity_reference = _build_chunk_full_transl_velocity_reference(
                         chunk_transl_init,
                         previous_chunk_transl_tail,
                         chunk_overlap_count,
-                        keep_seam_window=keep_seam_window,
                     )
+                else:
+                    transl_velocity_reference_index = chunk_overlap_count
+                    transl_velocity_reference = prev_transl
+                    keep_seam_window = min(chunk_overlap_count, chunk_length - chunk_overlap_count)
+                    if previous_chunk_transl_tail is not None and keep_seam_window > 1:
+                        transl_velocity_reference = _build_chunk_transl_velocity_reference(
+                            chunk_transl_init,
+                            previous_chunk_transl_tail,
+                            chunk_overlap_count,
+                            keep_seam_window=keep_seam_window,
+                        )
 
             chunk_latent_reference = chunk_latent_init
             chunk_transl_reference = chunk_transl_init
