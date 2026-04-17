@@ -39,8 +39,8 @@ def build_parser():
     parser.add_argument(
         "--fname-filter",
         nargs="*",
-        default=[],
-        help="Optional list of substrings used to filter discovered *_stageii.pkl paths.",
+        default=None,
+        help="Optional list of substrings used to filter discovered *_stageii.pkl paths in --input-dir batch mode.",
     )
     parser.add_argument(
         "--output-dir",
@@ -164,6 +164,15 @@ def _batch_only_args_error(args):
     return None
 
 
+def _single_input_only_args_error(args):
+    unsupported_args = []
+    if args.fname_filter is not None:
+        unsupported_args.append("--fname-filter")
+    if unsupported_args:
+        return "{} requires --input-dir.".format(", ".join(unsupported_args))
+    return None
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -171,15 +180,16 @@ def main(argv=None):
         input_dir_error = _batch_only_args_error(args)
         if input_dir_error is not None:
             parser.error(input_dir_error)
+        fname_filter = args.fname_filter or []
         input_pkls = discover_stageii_pickles_in_dir(
             args.input_dir,
-            fname_filter=args.fname_filter,
+            fname_filter=fname_filter,
         )
         if not input_pkls:
             parser.error(
                 format_stageii_match_error(
                     args.input_dir,
-                    fname_filter=args.fname_filter,
+                    fname_filter=fname_filter,
                 )
             )
         try:
@@ -192,6 +202,9 @@ def main(argv=None):
         except ValueError as exc:
             parser.error(str(exc))
         return
+    single_input_error = _single_input_only_args_error(args)
+    if single_input_error is not None:
+        parser.error(single_input_error)
     try:
         resolved_model_path = args.model_path or resolve_stageii_model_path(
             args.input_pkl,

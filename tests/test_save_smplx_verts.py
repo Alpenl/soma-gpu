@@ -388,6 +388,75 @@ def test_save_smplx_verts_main_uses_output_dir_for_single_input(monkeypatch, tmp
     assert captured["pc2_out"] == str(output_dir / Path(expected_pc2).name)
 
 
+def test_save_smplx_verts_main_rejects_fname_filter_without_input_dir(
+    capsys, monkeypatch, tmp_path
+):
+    input_path = tmp_path / "tiny_stageii.pkl"
+    _write_stageii_pickle(
+        input_path,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "resolve_stageii_model_path",
+        lambda input_pkl, support_base_dir=None: "resolved-model.npz",
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "export_stageii_meshes",
+        lambda **kwargs: ("out.obj", "out.pc2"),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        save_smplx_verts.main(
+            [
+                "--input-pkl",
+                str(input_path),
+                "--fname-filter",
+                "swing",
+            ]
+        )
+
+    assert excinfo.value.code == 2
+    assert "--fname-filter requires --input-dir" in capsys.readouterr().err
+
+
+def test_save_smplx_verts_main_rejects_empty_fname_filter_flag_without_input_dir(
+    capsys, monkeypatch, tmp_path
+):
+    input_path = tmp_path / "tiny_stageii.pkl"
+    _write_stageii_pickle(
+        input_path,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        gender="male",
+    )
+
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "resolve_stageii_model_path",
+        lambda input_pkl, support_base_dir=None: "resolved-model.npz",
+    )
+    monkeypatch.setattr(
+        save_smplx_verts,
+        "export_stageii_meshes",
+        lambda **kwargs: ("out.obj", "out.pc2"),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        save_smplx_verts.main(
+            [
+                "--input-pkl",
+                str(input_path),
+                "--fname-filter",
+            ]
+        )
+
+    assert excinfo.value.code == 2
+    assert "--fname-filter requires --input-dir" in capsys.readouterr().err
+
+
 def test_save_smplx_verts_main_dispatches_batch_export(monkeypatch, tmp_path):
     support_dir = tmp_path / "support"
     support_model = support_dir / "smplx" / "male" / "model.npz"
