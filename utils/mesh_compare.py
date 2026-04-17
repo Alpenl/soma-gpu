@@ -245,6 +245,12 @@ def _validate_cli_args(parser, args):
             parser.error("--chunk-overlap requires --chunk-size")
         if args.chunk_overlap < 0:
             parser.error("--chunk-overlap must be >= 0")
+    if args.output:
+        output_path = _normalized_path(args.output)
+        if output_path == _normalized_path(args.reference):
+            parser.error(f"--output resolves to reference path: {args.reference}")
+        if output_path == _normalized_path(args.candidate):
+            parser.error(f"--output resolves to candidate path: {args.candidate}")
 
 
 def main(argv=None):

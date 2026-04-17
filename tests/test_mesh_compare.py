@@ -417,3 +417,40 @@ def test_mesh_compare_main_rejects_same_reference_and_candidate_path(
         )
 
     assert "candidate_path resolves to reference_path" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("output_target", "expected_error"),
+    [
+        ("reference", "--output resolves to reference path"),
+        ("candidate", "--output resolves to candidate path"),
+    ],
+)
+def test_mesh_compare_main_rejects_output_path_colliding_with_inputs(
+    tmp_path, monkeypatch, capsys, output_target, expected_error
+):
+    mesh_compare = _load_mesh_compare_module()
+    reference_path = tmp_path / "reference.pc2"
+    candidate_path = tmp_path / "candidate.pc2"
+    writePC2(str(reference_path), np.zeros((2, 1, 3), dtype=np.float32))
+    writePC2(str(candidate_path), np.zeros((2, 1, 3), dtype=np.float32))
+    output_path = reference_path if output_target == "reference" else candidate_path
+    monkeypatch.setattr(
+        mesh_compare,
+        "compare_mesh_sequences",
+        lambda *args, **kwargs: pytest.fail("compare_mesh_sequences should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        mesh_compare.main(
+            [
+                "--reference",
+                str(reference_path),
+                "--candidate",
+                str(candidate_path),
+                "--output",
+                str(output_path),
+            ]
+        )
+
+    assert expected_error in capsys.readouterr().err
