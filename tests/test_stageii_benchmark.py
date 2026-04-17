@@ -73,6 +73,8 @@ def test_run_public_stageii_benchmark_reports_repeatable_summary(tmp_path, monke
     assert report["speed"]["mesh_export_ms"] is None
     assert report["speed"]["mp4_render_ms"] is None
     assert report["speed"]["artifact_bundle_export_ms"] is None
+    assert report["quality"]["chunk_seam_transl_jump_over_trans_frame_delta_ratio"] is None
+    assert report["quality"]["chunk_seam_pose_jump_over_pose_frame_delta_ratio"] is None
     assert report["workload"]["preview_render_workload"] == stageii_benchmark.PREVIEW_RENDER_BENCHMARK_WORKLOAD
     assert report["error"]["repeatability"]["max_abs_diff"] == 0.0
     assert report["error"]["all_finite"] is True
@@ -496,6 +498,71 @@ def _write_synthetic_stageii_sample(sample_path, *, residual_offset, stageii_ela
     )
 
 
+def test_run_public_stageii_benchmark_includes_chunk_seam_to_frame_delta_ratios(
+    tmp_path, monkeypatch
+):
+    sample_path = tmp_path / "chunked_stageii.pkl"
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.asarray([[0.0], [2.0], [4.0], [10.0], [12.0]], dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.asarray(
+                    [
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [2.0, 0.0, 0.0],
+                        [12.0, 0.0, 0.0],
+                        [13.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                        },
+                        "runtime": {
+                            "sequence_chunk_size": 3,
+                            "sequence_chunk_overlap": 1,
+                        },
+                    },
+                    "mocap_frame_rate": 120.0,
+                    "mocap_time_length": 5,
+                    "markers_obs": np.zeros((5, 1, 3), dtype=np.float32),
+                    "markers_sim": np.zeros((5, 1, 3), dtype=np.float32),
+                    "labels_obs": [["A"]] * 5,
+                },
+            }
+        )
+    )
+
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        sample_path,
+        warmup_runs=0,
+        measured_runs=1,
+    )
+
+    assert report["quality"]["chunk_seam_transl_jump_over_trans_frame_delta_ratio"] == {
+        "mean": pytest.approx(10.0 / 3.25),
+        "p90": pytest.approx(10.0 / 7.3),
+        "max": pytest.approx(1.0),
+    }
+    assert report["quality"]["chunk_seam_pose_jump_over_pose_frame_delta_ratio"] == {
+        "mean": pytest.approx(2.0),
+        "p90": pytest.approx(1.25),
+        "max": pytest.approx(1.0),
+    }
+
+
 def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_stageii_mesh_reference(
     tmp_path, monkeypatch
 ):
@@ -565,6 +632,8 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_sta
             "p90": pytest.approx(0.0),
             "max": pytest.approx(0.0),
         },
+        "chunk_seam_transl_jump_over_trans_frame_delta_ratio": None,
+        "chunk_seam_pose_jump_over_pose_frame_delta_ratio": None,
         "chunk_seam_transl_jump_l2": None,
         "chunk_seam_pose_jump_l2": None,
     }

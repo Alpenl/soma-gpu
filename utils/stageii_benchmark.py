@@ -253,6 +253,24 @@ def _summarize_latency_samples(latency_samples):
     return _summarize_numeric_samples(latency_samples, include_samples=True)
 
 
+def _summarize_metric_ratio(numerator_summary, denominator_summary):
+    if numerator_summary is None or denominator_summary is None:
+        return None
+
+    ratio = {}
+    for stat_name in ("mean", "p90", "max"):
+        numerator = numerator_summary.get(stat_name)
+        denominator = denominator_summary.get(stat_name)
+        if numerator is None or denominator is None:
+            continue
+        denominator = float(denominator)
+        if denominator <= 0.0:
+            continue
+        ratio[stat_name] = float(numerator) / denominator
+
+    return ratio or None
+
+
 def _numeric_arrays(sample):
     return {
         "poses": sample.poses,
@@ -428,30 +446,36 @@ def _chunk_seam_jump_l2_samples(array_like, *, chunk_size, overlap):
 
 
 def _summarize_stageii_quality(sample_path, baseline):
+    trans_frame_delta = _summarize_numeric_samples(
+        _frame_delta_l2_samples(baseline.trans),
+        include_samples=False,
+    )
+    pose_frame_delta = _summarize_numeric_samples(
+        _frame_delta_l2_samples(baseline.poses),
+        include_samples=False,
+    )
+    trans_jitter = _summarize_numeric_samples(
+        _temporal_accel_l2_samples(baseline.trans),
+        include_samples=False,
+    )
+    pose_jitter = _summarize_numeric_samples(
+        _temporal_accel_l2_samples(baseline.poses),
+        include_samples=False,
+    )
     stageii_data = _load_pickle_compat(sample_path)
     quality = {
         "marker_residual_l2": _summarize_numeric_samples(
             _marker_residual_l2_samples(stageii_data),
             include_samples=False,
         ),
-        "trans_frame_delta_l2": _summarize_numeric_samples(
-            _frame_delta_l2_samples(baseline.trans),
-            include_samples=False,
-        ),
-        "pose_frame_delta_l2": _summarize_numeric_samples(
-            _frame_delta_l2_samples(baseline.poses),
-            include_samples=False,
-        ),
-        "trans_jitter_l2": _summarize_numeric_samples(
-            _temporal_accel_l2_samples(baseline.trans),
-            include_samples=False,
-        ),
-        "pose_jitter_l2": _summarize_numeric_samples(
-            _temporal_accel_l2_samples(baseline.poses),
-            include_samples=False,
-        ),
+        "trans_frame_delta_l2": trans_frame_delta,
+        "pose_frame_delta_l2": pose_frame_delta,
+        "trans_jitter_l2": trans_jitter,
+        "pose_jitter_l2": pose_jitter,
         "chunk_seam_transl_jump_l2": None,
         "chunk_seam_pose_jump_l2": None,
+        "chunk_seam_transl_jump_over_trans_frame_delta_ratio": None,
+        "chunk_seam_pose_jump_over_pose_frame_delta_ratio": None,
     }
     chunk_config = _sequence_chunk_config(stageii_data)
     if chunk_config is None:
@@ -473,6 +497,14 @@ def _summarize_stageii_quality(sample_path, baseline):
             overlap=chunk_overlap,
         ),
         include_samples=False,
+    )
+    quality["chunk_seam_transl_jump_over_trans_frame_delta_ratio"] = _summarize_metric_ratio(
+        quality["chunk_seam_transl_jump_l2"],
+        trans_frame_delta,
+    )
+    quality["chunk_seam_pose_jump_over_pose_frame_delta_ratio"] = _summarize_metric_ratio(
+        quality["chunk_seam_pose_jump_l2"],
+        pose_frame_delta,
     )
     return quality
 
