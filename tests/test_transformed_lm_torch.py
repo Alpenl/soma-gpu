@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from moshpp.transformed_lm_torch import (
     _load_no_eyeball_vids,
+    MarkerAttachment,
     build_marker_attachment,
     decode_marker_attachment,
 )
@@ -71,3 +72,45 @@ def test_load_no_eyeball_vids_keeps_last_non_eyeball_vertex(tmp_path):
     no_eyeballs = _load_no_eyeball_vids(str(tmp_path))
 
     assert 10474 in no_eyeballs
+
+
+def test_decode_marker_attachment_supports_batched_vertices():
+    can_body = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    markers_latent = torch.tensor([[0.2, 0.3, 0.4]], dtype=torch.float32)
+    attachment = build_marker_attachment(can_body, markers_latent)
+
+    batch_body = torch.stack(
+        [
+            can_body,
+            can_body + torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32),
+        ]
+    )
+
+    decoded = decode_marker_attachment(attachment, batch_body)
+
+    assert decoded.shape == (2, 1, 3)
+    assert torch.allclose(decoded[0], markers_latent, atol=1e-5)
+    assert torch.allclose(decoded[1], markers_latent + torch.tensor([1.0, 2.0, 3.0]), atol=1e-5)
+
+
+def test_marker_attachment_to_and_index_select_keep_attachment_structure():
+    attachment = MarkerAttachment(
+        closest=torch.tensor([[0, 1, 2], [3, 4, 5]], dtype=torch.long),
+        coeffs=torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=torch.float32),
+    )
+
+    converted = attachment.to(dtype=torch.float64)
+    selected = converted.index_select([1])
+
+    assert converted.closest.dtype == torch.long
+    assert converted.coeffs.dtype == torch.float64
+    assert selected.closest.tolist() == [[3, 4, 5]]
+    assert torch.allclose(selected.coeffs, torch.tensor([[0.4, 0.5, 0.6]], dtype=torch.float64))

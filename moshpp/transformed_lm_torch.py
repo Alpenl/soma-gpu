@@ -10,6 +10,25 @@ class MarkerAttachment:
     closest: torch.Tensor
     coeffs: torch.Tensor
 
+    def to(self, *, device=None, dtype=None):
+        closest = self.closest
+        coeffs = self.coeffs
+        if device is not None and closest.device != torch.device(device):
+            closest = closest.to(device=device)
+        if device is not None or dtype is not None:
+            coeffs = coeffs.to(device=device, dtype=dtype or coeffs.dtype)
+        return MarkerAttachment(closest=closest, coeffs=coeffs)
+
+    def index_select(self, index):
+        if not torch.is_tensor(index):
+            index = torch.as_tensor(index, dtype=torch.long, device=self.closest.device)
+        else:
+            index = index.to(device=self.closest.device, dtype=torch.long)
+        return MarkerAttachment(
+            closest=self.closest.index_select(0, index),
+            coeffs=self.coeffs.index_select(0, index),
+        )
+
 
 def _normalize_np(vector):
     norm = np.linalg.norm(vector)
@@ -20,6 +39,11 @@ def _normalize_np(vector):
 
 def _normalize_torch(vectors):
     norms = torch.linalg.norm(vectors, dim=1, keepdim=True).clamp_min(1e-12)
+    return vectors / norms
+
+
+def _normalize_torch_lastdim(vectors):
+    norms = torch.linalg.norm(vectors, dim=-1, keepdim=True).clamp_min(1e-12)
     return vectors / norms
 
 
@@ -108,24 +132,43 @@ def build_marker_attachment(
     )
 
 
-def decode_marker_attachment(attachment, body_verts):
+def decode_marker_attachment_batched(attachment, body_verts):
     body_verts = torch.as_tensor(body_verts)
     if not torch.is_floating_point(body_verts):
         body_verts = body_verts.to(torch.float32)
-    closest = attachment.closest.to(dtype=torch.long, device=body_verts.device)
-    coeffs = attachment.coeffs.to(dtype=body_verts.dtype, device=body_verts.device)
 
-    base = body_verts[closest[:, 0]]
-    e1 = body_verts[closest[:, 1]] - base
-    e2 = body_verts[closest[:, 2]] - base
+    squeeze_batch = False
+    if body_verts.ndim == 2:
+        body_verts = body_verts.unsqueeze(0)
+        squeeze_batch = True
+    if body_verts.ndim != 3 or body_verts.shape[-1] != 3:
+        raise ValueError(f"body_verts must have shape (V, 3) or (B, V, 3), got {tuple(body_verts.shape)}")
 
-    f1 = _normalize_torch(e1)
-    f2 = _normalize_torch(torch.cross(e1, e2, dim=1))
-    f3 = torch.cross(f1, f2, dim=1)
+    closest = attachment.closest
+    coeffs = attachment.coeffs
+    if closest.device != body_verts.device:
+        closest = closest.to(device=body_verts.device)
+    if coeffs.device != body_verts.device or coeffs.dtype != body_verts.dtype:
+        coeffs = coeffs.to(device=body_verts.device, dtype=body_verts.dtype)
 
-    return (
+    base = body_verts[:, closest[:, 0], :]
+    e1 = body_verts[:, closest[:, 1], :] - base
+    e2 = body_verts[:, closest[:, 2], :] - base
+
+    f1 = _normalize_torch_lastdim(e1)
+    f2 = _normalize_torch_lastdim(torch.cross(e1, e2, dim=-1))
+    f3 = torch.cross(f1, f2, dim=-1)
+
+    markers = (
         base
-        + coeffs[:, 0:1] * f1
-        + coeffs[:, 1:2] * f2
-        + coeffs[:, 2:3] * f3
+        + coeffs[None, :, 0:1] * f1
+        + coeffs[None, :, 1:2] * f2
+        + coeffs[None, :, 2:3] * f3
     )
+    if squeeze_batch:
+        return markers[0]
+    return markers
+
+
+def decode_marker_attachment(attachment, body_verts):
+    return decode_marker_attachment_batched(attachment, body_verts)
