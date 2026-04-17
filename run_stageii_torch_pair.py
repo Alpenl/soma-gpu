@@ -108,7 +108,7 @@ def build_parser():
         "--mesh-chunk-overlap",
         type=int,
         default=None,
-        help="Optional mesh comparison chunk-overlap override.",
+        help="Optional mesh comparison chunk-overlap override paired with --mesh-chunk-size.",
     )
     return parser
 
@@ -202,6 +202,8 @@ def _build_candidate_runner_args(args, *, mesh_reference_path=None, expected_sta
 def _validate_mesh_cli_args(parser, args):
     if args.mesh_output_dir is not None and not args.export_mesh:
         parser.error("--mesh-output-dir requires --export-mesh")
+    if args.mesh_chunk_overlap is not None and args.mesh_chunk_size is None:
+        parser.error("--mesh-chunk-overlap requires --mesh-chunk-size")
 
 
 def _single_runner_cfg_namespace(args, *, preset, cfg_entries, output_suffix):

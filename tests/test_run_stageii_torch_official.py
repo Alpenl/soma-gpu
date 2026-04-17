@@ -1092,30 +1092,23 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_th
     assert "mesh reference resolves to the current stageii output" in capsys.readouterr().err
 
 
-def test_run_stageii_torch_official_main_errors_when_benchmark_validation_fails(
+def test_run_stageii_torch_official_main_rejects_mesh_chunk_overlap_without_mesh_chunk_size(
     tmp_path, monkeypatch, capsys
 ):
-    stageii_path = tmp_path / "work" / "candidate_stageii.pkl"
-
     monkeypatch.setattr(
         run_stageii_torch_official,
         "MoSh",
-        SimpleNamespace(
-            prepare_cfg=lambda **kwargs: SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
-        ),
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
         "run_moshpp_once",
-        lambda cfg: (
-            Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True),
-            Path(cfg.dirs.stageii_fname).write_bytes(b"stageii"),
-        ),
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
     )
     monkeypatch.setattr(
         run_stageii_torch_official,
         "run_public_stageii_benchmark",
-        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("chunk_overlap requires chunk_size")),
+        lambda *args, **kwargs: pytest.fail("benchmark helper should not run"),
     )
 
     with pytest.raises(SystemExit):
@@ -1138,7 +1131,7 @@ def test_run_stageii_torch_official_main_errors_when_benchmark_validation_fails(
             ]
         )
 
-    assert "chunk_overlap requires chunk_size" in capsys.readouterr().err
+    assert "--mesh-chunk-overlap requires --mesh-chunk-size" in capsys.readouterr().err
 
 
 def test_run_stageii_torch_official_main_rejects_mesh_output_dir_without_export_mesh(

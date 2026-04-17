@@ -737,11 +737,13 @@ def test_benchmark_stageii_public_main_rejects_mesh_support_base_dir_without_mes
     assert "--mesh-support-base-dir requires --mesh-reference" in capsys.readouterr().err
 
 
-def test_benchmark_stageii_public_main_errors_when_benchmark_validation_fails(monkeypatch, capsys):
+def test_benchmark_stageii_public_main_rejects_mesh_chunk_overlap_without_mesh_chunk_size(
+    monkeypatch, capsys
+):
     monkeypatch.setattr(
         benchmark_stageii_public,
         "run_public_stageii_benchmark",
-        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("chunk_overlap requires chunk_size")),
+        lambda *args, **kwargs: pytest.fail("benchmark helper should not run"),
     )
 
     with pytest.raises(SystemExit):
@@ -756,7 +758,7 @@ def test_benchmark_stageii_public_main_errors_when_benchmark_validation_fails(mo
             ]
         )
 
-    assert "chunk_overlap requires chunk_size" in capsys.readouterr().err
+    assert "--mesh-chunk-overlap requires --mesh-chunk-size" in capsys.readouterr().err
 
 
 def test_benchmark_stageii_public_main_errors_when_mesh_reference_matches_input(

@@ -136,9 +136,9 @@ python benchmark_stageii_public.py \
   --output ROOT/benchmarks/candidate_vs_baseline.json
 ````
 此时报告除了现有 `quality.marker_residual_l2` / `trans_jitter_l2` / `chunk_seam_*` 摘要外，还会在 `quality.mesh_compare` 下追加 baseline 与 candidate 的 `reference` / `candidate` / `frame_delta_l2` mesh-space 摘要；如果 `--mesh-reference` 本身也是 `stageii.pkl`，同一份 JSON 里还会额外写出 `quality.reference_stageii_quality` 与 `quality.reference_stageii_delta`，把 baseline 的 stageii 质量摘要和 candidate-reference 的关键统计量差值一起收进来。`reference_stageii_delta` 目前固定汇总 `mean/p90/max`，数值按 `candidate - reference` 计算，因此对现有 residual / jitter / seam 指标来说，负值表示 candidate 更低、更接近我们想要的方向。对于 `stageii.pkl` 输入通常不需要显式传 `--mesh-chunk-size/--mesh-chunk-overlap`；只有直接比较裸 `pc2/pc16` 缓存时才需要覆盖。
-direct benchmark CLI 现在也会把 mesh compare 相关参数收紧到真正需要它们的场景：`--mesh-chunk-size`、`--mesh-chunk-overlap`、`--mesh-support-base-dir` 都要求同时存在 `--mesh-reference`。未提供 reference 时，这些参数会直接报错，而不会再静默忽略。若提供了 `--mesh-reference` 但没显式传 `--mesh-support-base-dir`，CLI 才会默认回退到 `support_files`。
+direct benchmark CLI 现在也会把 mesh compare 相关参数收紧到真正需要它们的场景：`--mesh-chunk-size`、`--mesh-chunk-overlap`、`--mesh-support-base-dir` 都要求同时存在 `--mesh-reference`；其中 `--mesh-chunk-overlap` 还必须与 `--mesh-chunk-size` 成对出现。未提供 reference、或只单独传 overlap 时，这些参数都会直接报错，而不会再静默忽略。若提供了 `--mesh-reference` 但没显式传 `--mesh-support-base-dir`，CLI 才会默认回退到 `support_files`。
 若不显式传 `--output`，`benchmark_stageii_public.py` 现在也会默认把报告写到输入同目录下的 `*_benchmark.json`：例如 `candidate_stageii.pkl -> candidate_benchmark.json`。`--output` 仅用于覆盖这个默认落点。
-如果 benchmark/mesh compare 参数本身不合法，例如只传了 `--mesh-chunk-overlap` 却没配 `--mesh-chunk-size`，或者把 `--mesh-reference` 指回了当前 `--input` / 当前输出的同一个 `stageii.pkl`，`benchmark_stageii_public.py` 和 `run_stageii_torch_official.py` 现在都会直接以 CLI error 退出，而不是把内部 `ValueError` 栈追踪直接打到终端或生成伪零差值报告。
+如果 benchmark/mesh compare 参数本身不合法，例如只传了 `--mesh-chunk-overlap` 却没配 `--mesh-chunk-size`，或者把 `--mesh-reference` 指回了当前 `--input` / 当前输出的同一个 `stageii.pkl`，`benchmark_stageii_public.py`、`run_stageii_torch_official.py` 和 `run_stageii_torch_pair.py` 现在都会直接以 CLI error 退出，而不是把内部 `ValueError` 栈追踪直接打到终端或生成伪零差值报告。
 
 若想直接走官方 `run_moshpp_once(cfg)` 单序列入口，并在同一条命令里产出 `stageii.pkl`，再按需顺带导出 OBJ/PC2 与 benchmark JSON，可使用：
 ````
@@ -158,7 +158,7 @@ python run_stageii_torch_official.py \
 若 benchmark 这段本身因为 mesh compare 参数不合法、reference 路径/模型解析失败等原因出错，single runner 现在也会把异常收口成 CLI error，避免直接抛 Python 栈。
 若 official-run 段本身因为 `MoSh.prepare_cfg(...)` 配置错误、`run_moshpp_once(cfg)` 运行期文件错误，或最终没有真正产出预期的 `stageii.pkl` 而失败，single runner 现在也会直接以 CLI error 退出，而不是把原始 `ValueError` / `OSError` / `FileNotFoundError` 栈追踪打到终端。
 若显式传了 `--skip-benchmark`，single runner 现在也会同步拒绝所有 benchmark-only 参数：例如 `--benchmark-output`、`--warmup-runs`、`--measured-runs`、`--mesh-reference` / `--mesh-reference-output-suffix`、`--mesh-chunk-*`。这样不会再出现“命令看起来要求了 compare/report，但其实整段 benchmark 被跳过”的 silent no-op。
-若 benchmark 仍开启，但你没有提供 `--mesh-reference` / `--mesh-reference-output-suffix`，single runner 现在也会拒绝纯 mesh-compare 参数：`--mesh-chunk-size`、`--mesh-chunk-overlap`，以及在既不导 mesh、也不做 mesh compare 时单独传入的 `--mesh-support-base-dir`。这些参数只有在真正进入 mesh compare 或 mesh 导出时才允许出现。
+若 benchmark 仍开启，但你没有提供 `--mesh-reference` / `--mesh-reference-output-suffix`，single runner 现在也会拒绝纯 mesh-compare 参数：`--mesh-chunk-size`、`--mesh-chunk-overlap`，以及在既不导 mesh、也不做 mesh compare 时单独传入的 `--mesh-support-base-dir`。即使已经提供了 mesh reference，`--mesh-chunk-overlap` 现在也必须和 `--mesh-chunk-size` 成对出现。这样不会再把 overlap-only 配置拖到更深层 mesh helper 才报错。
 
 `--preset real-mcp-baseline` 会先注入当前已验证的 corrected real `.mcp` torch baseline 参数：
 `moshpp.optimize_fingers=true`、`runtime.sequence_chunk_size=32`、`runtime.sequence_chunk_overlap=4`、`runtime.sequence_seed_refine_iters=5`、`runtime.refine_lr=0.05`、`runtime.sequence_lr=0.05`、`runtime.sequence_max_iters=30`。如果要在此基础上做单变量 sweep，继续追加 `--cfg key=value` 即可；`--cfg` 会覆盖同名 preset 项，因此不需要每次重打一整串 baseline override。
@@ -195,6 +195,7 @@ python run_stageii_torch_pair.py \
 - baseline 侧默认使用 `--preset real-mcp-baseline --output-suffix _baseline`，并默认只产 `stageii.pkl`，不重复跑 standalone benchmark
 - candidate 侧默认使用 `--preset real-mcp-transvelo100-seedvelowindow --output-suffix _candidate`，并自动把 baseline 那次真实返回的 `stageii_path` 显式传给 `--mesh-reference`，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要；即使 baseline 侧额外用了 `--baseline-cfg mocap.basename=...` 这类只影响路径命名的覆盖，也不会再被 candidate 侧的配置重推导错
 - 若加了 `--export-mesh`，pair runner 会把同一套 mesh 导出参数同时透传给 baseline 和 candidate；由于两侧默认 `mocap.basename` suffix 不同，即使共用一个 `--mesh-output-dir`，OBJ/PC2 也会自动分名，不需要再手工分两个导出目录。若没开 `--export-mesh` 却传了 `--mesh-output-dir`，pair runner 现在会直接报错，而不是静默忽略。
+- pair runner 现在也会在自己的 CLI 边界收紧 mesh compare chunk 参数：`--mesh-chunk-overlap` 必须和 `--mesh-chunk-size` 成对出现；否则命令会在 baseline 启动前直接报错，而不是等 candidate benchmark 深层调用 `utils.mesh_compare` 时才失败。
 - pair runner 现在还会在真正调用 baseline / candidate 两次 single runner 之前，先按与 single runner 相同的 `preset < --cfg < dedicated args` 规则静态推导两侧默认 `stageii.pkl` 输出路径；如果 `--baseline-cfg` / `--candidate-cfg` 里的 `mocap.basename`、`dirs.stageii_fname` 或相关路径覆盖最终把两侧指到同一个 `stageii.pkl`，命令会直接报错，而不会先跑一轮再把 baseline 自己覆盖掉。
 - 若开启了 `--export-mesh --mesh-output-dir`，pair runner 现在还会继续检查 baseline/candidate 推导出的 OBJ/PC2 落点是否会同名；即使两侧 `stageii.pkl` 在不同目录，只要 basename 一样、最终会把导出写进同一个 OBJ/PC2 路径，也会直接报错，避免 mesh 主线复核时把 baseline 导出物悄悄被 candidate 覆盖。
 - 若 baseline 也开启了 standalone benchmark，pair runner 现在还会比较 baseline/candidate 最终的 benchmark JSON 落点；只要 `--baseline-benchmark-output` 与 candidate 的显式或默认 `*_benchmark.json` 路径相同，命令也会直接报错，避免 pair 复核报告互相覆盖。

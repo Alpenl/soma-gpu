@@ -125,7 +125,7 @@ def build_parser():
         "--mesh-chunk-overlap",
         type=int,
         default=None,
-        help="Optional mesh comparison chunk-overlap override.",
+        help="Optional mesh comparison chunk-overlap override paired with --mesh-chunk-size.",
     )
     parser.add_argument(
         "--expected-stageii-path",
@@ -198,6 +198,8 @@ def _validate_mesh_cli_args(parser, args):
             parser.error("--mesh-chunk-overlap requires benchmark to be enabled")
         if not has_mesh_reference:
             parser.error("--mesh-chunk-overlap requires --mesh-reference or --mesh-reference-output-suffix")
+        if args.mesh_chunk_size is None:
+            parser.error("--mesh-chunk-overlap requires --mesh-chunk-size")
     if args.mesh_support_base_dir is not None and not args.export_mesh and not has_mesh_reference:
         parser.error("--mesh-support-base-dir requires --export-mesh or --mesh-reference/--mesh-reference-output-suffix")
 

@@ -72,6 +72,8 @@ def _validate_mesh_cli_args(parser, args):
         parser.error("--mesh-chunk-size requires --mesh-reference")
     if args.mesh_chunk_overlap is not None and args.mesh_reference is None:
         parser.error("--mesh-chunk-overlap requires --mesh-reference")
+    if args.mesh_chunk_overlap is not None and args.mesh_chunk_size is None:
+        parser.error("--mesh-chunk-overlap requires --mesh-chunk-size")
     if args.mesh_support_base_dir is not None and args.mesh_reference is None:
         parser.error("--mesh-support-base-dir requires --mesh-reference")
 
