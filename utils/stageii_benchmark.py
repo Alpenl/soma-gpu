@@ -449,6 +449,15 @@ def _summarize_mesh_compare(
     return report
 
 
+def _summarize_reference_stageii_quality(reference_path):
+    reference_path = Path(reference_path)
+    if reference_path.suffix.lower() != ".pkl":
+        return None
+
+    reference_sample = normalize_stageii_sample(reference_path)
+    return _summarize_stageii_quality(reference_path, reference_sample)
+
+
 def _support_files_root(repo_root):
     return Path(repo_root) / "support_files"
 
@@ -818,8 +827,10 @@ def run_public_stageii_benchmark(
         measured_runs=measured_runs,
     )
     quality_summary = dict(_summarize_stageii_quality(sample_path, baseline))
+    quality_summary["reference_stageii_quality"] = None
     quality_summary["mesh_compare"] = None
     if mesh_reference_path is not None:
+        quality_summary["reference_stageii_quality"] = _summarize_reference_stageii_quality(mesh_reference_path)
         quality_summary["mesh_compare"] = _summarize_mesh_compare(
             sample_path,
             reference_path=mesh_reference_path,

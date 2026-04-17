@@ -273,7 +273,11 @@ def test_run_public_stageii_benchmark_includes_quality_summary_when_available(mo
         measured_runs=1,
     )
 
-    assert report["quality"] == {**quality_summary, "mesh_compare": None}
+    assert report["quality"] == {
+        **quality_summary,
+        "reference_stageii_quality": None,
+        "mesh_compare": None,
+    }
 
 
 def test_run_public_stageii_benchmark_includes_optional_mesh_compare_summary(monkeypatch):
@@ -314,6 +318,12 @@ def test_run_public_stageii_benchmark_includes_optional_mesh_compare_summary(mon
         ),
         raising=False,
     )
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_reference_stageii_quality",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
     monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
     monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
     monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
@@ -330,6 +340,7 @@ def test_run_public_stageii_benchmark_includes_optional_mesh_compare_summary(mon
     )
 
     assert report["quality"]["mesh_compare"] == mesh_compare_summary
+    assert report["quality"]["reference_stageii_quality"] is None
     assert captured == {
         "sample_path": ROOT / "support_data/tests/mosh_stageii.pkl",
         "reference_path": "/tmp/baseline_stageii.pkl",
@@ -337,6 +348,112 @@ def test_run_public_stageii_benchmark_includes_optional_mesh_compare_summary(mon
         "chunk_size": 32,
         "chunk_overlap": 4,
     }
+
+
+def _write_synthetic_stageii_sample(sample_path, *, residual_offset):
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.asarray([[0.0], [1.0], [2.0]], dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.asarray(
+                    [
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [3.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                        },
+                        "runtime": {
+                            "sequence_chunk_size": 3,
+                            "sequence_chunk_overlap": 1,
+                        },
+                    },
+                    "mocap_frame_rate": 120.0,
+                    "mocap_time_length": 3,
+                    "markers_obs": np.zeros((3, 1, 3), dtype=np.float32),
+                    "markers_sim": np.tile(
+                        np.asarray([[[residual_offset, 0.0, 0.0]]], dtype=np.float32),
+                        (3, 1, 1),
+                    ),
+                    "labels_obs": [["A"]] * 3,
+                },
+            }
+        )
+    )
+
+
+def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_stageii_mesh_reference(
+    tmp_path, monkeypatch
+):
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    reference_path = tmp_path / "baseline_stageii.pkl"
+    _write_synthetic_stageii_sample(candidate_path, residual_offset=1.0)
+    _write_synthetic_stageii_sample(reference_path, residual_offset=2.0)
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_mesh_compare",
+        lambda *args, **kwargs: {"frame_delta_l2": {"mean": 0.25}},
+        raising=False,
+    )
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        candidate_path,
+        warmup_runs=0,
+        measured_runs=1,
+        mesh_reference_path=reference_path,
+        mesh_support_base_dir="/tmp/support_files",
+    )
+
+    reference_quality = report["quality"]["reference_stageii_quality"]
+    assert reference_quality is not None
+    assert reference_quality["marker_residual_l2"]["mean"] == pytest.approx(2.0)
+    assert reference_quality["trans_jitter_l2"]["mean"] == pytest.approx(1.0)
+    assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.25}}
+
+
+def test_run_public_stageii_benchmark_leaves_reference_stageii_quality_empty_for_non_stageii_mesh_reference(
+    tmp_path, monkeypatch
+):
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    reference_path = tmp_path / "baseline.pc2"
+    _write_synthetic_stageii_sample(candidate_path, residual_offset=1.0)
+    reference_path.write_bytes(b"pc2")
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_mesh_compare",
+        lambda *args, **kwargs: {"frame_delta_l2": {"mean": 0.5}},
+        raising=False,
+    )
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        candidate_path,
+        warmup_runs=0,
+        measured_runs=1,
+        mesh_reference_path=reference_path,
+        mesh_support_base_dir="/tmp/support_files",
+    )
+
+    assert report["quality"]["reference_stageii_quality"] is None
+    assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.5}}
 
 
 def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monkeypatch, capsys):
