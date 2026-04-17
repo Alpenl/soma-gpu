@@ -238,6 +238,54 @@ def test_run_stageii_torch_pair_main_passes_expected_stageii_paths_to_underlying
     )
 
 
+def test_run_stageii_torch_pair_main_plans_expected_paths_from_flat_mocap_path_overrides(
+    tmp_path, monkeypatch
+):
+    captured = {"calls": []}
+    baseline_stageii = tmp_path / "actual_baseline_stageii.pkl"
+    candidate_stageii = tmp_path / "actual_candidate_stageii.pkl"
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        preset = argv[argv.index("--preset") + 1]
+        if preset == "real-mcp-baseline":
+            return {"benchmark": None, "stageii_path": str(baseline_stageii)}
+        return {
+            "benchmark": {"artifact": {"report_path": str(tmp_path / "candidate_benchmark.json")}},
+            "stageii_path": str(candidate_stageii),
+        }
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--cfg",
+            "mocap.ds_name=demo_ds",
+            "--cfg",
+            "mocap.session_name=demo_session",
+        ]
+    )
+
+    baseline_argv = captured["calls"][0][0]
+    candidate_argv = captured["calls"][1][0]
+    assert baseline_argv[baseline_argv.index("--expected-stageii-path") + 1] == str(
+        tmp_path / "work" / "demo_ds" / "demo_session" / "capture_baseline_stageii.pkl"
+    )
+    assert candidate_argv[candidate_argv.index("--expected-stageii-path") + 1] == str(
+        tmp_path / "work" / "demo_ds" / "demo_session" / "capture_candidate_stageii.pkl"
+    )
+    assert candidate_argv[candidate_argv.index("--expected-benchmark-output") + 1] == str(
+        tmp_path / "work" / "demo_ds" / "demo_session" / "capture_candidate_benchmark.json"
+    )
+    assert candidate_argv[candidate_argv.index("--mesh-reference") + 1] == str(baseline_stageii)
+
+
 def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_path, monkeypatch):
     captured = {"calls": []}
 

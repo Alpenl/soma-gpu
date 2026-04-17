@@ -312,6 +312,107 @@ def test_run_stageii_torch_official_main_plans_mesh_reference_from_output_suffix
     )
 
 
+def test_run_stageii_torch_official_main_plans_mesh_reference_from_output_suffix_with_flat_mocap_path_overrides(
+    tmp_path, monkeypatch
+):
+    captured = {"prepare_cfg_calls": []}
+
+    def fake_prepare_cfg(**kwargs):
+        captured["prepare_cfg_calls"].append(kwargs)
+        basename = kwargs.get("mocap.basename", Path(kwargs["mocap.fname"]).stem)
+        return SimpleNamespace(
+            dirs=SimpleNamespace(
+                stageii_fname=str(tmp_path / "work" / "demo_ds" / "demo_session" / f"{basename}_stageii.pkl")
+            )
+        )
+
+    def fake_run_moshpp_once(cfg):
+        stageii_path = Path(cfg.dirs.stageii_fname)
+        stageii_path.parent.mkdir(parents=True, exist_ok=True)
+        stageii_path.write_bytes(b"stageii")
+
+    def fake_run_public_stageii_benchmark(
+        sample_path,
+        *,
+        warmup_runs,
+        measured_runs,
+        mesh_reference_path,
+        mesh_support_base_dir,
+        mesh_chunk_size,
+        mesh_chunk_overlap,
+        lean_benchmark,
+    ):
+        captured["benchmark_call"] = {
+            "sample_path": sample_path,
+            "warmup_runs": warmup_runs,
+            "measured_runs": measured_runs,
+            "mesh_reference_path": mesh_reference_path,
+            "mesh_support_base_dir": mesh_support_base_dir,
+            "mesh_chunk_size": mesh_chunk_size,
+            "mesh_chunk_overlap": mesh_chunk_overlap,
+            "lean_benchmark": lean_benchmark,
+        }
+        return {"sample": {"path": str(sample_path)}, "quality": {"mesh_compare": None}}
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(run_stageii_torch_official, "run_moshpp_once", fake_run_moshpp_once)
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        fake_run_public_stageii_benchmark,
+    )
+
+    payload = run_stageii_torch_official.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--cfg",
+            "mocap.ds_name=demo_ds",
+            "--cfg",
+            "mocap.session_name=demo_session",
+            "--output-suffix",
+            "_candidate",
+            "--mesh-reference-output-suffix",
+            "_baseline",
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+        ]
+    )
+
+    assert captured["prepare_cfg_calls"] == [
+        {
+            "mocap.ds_name": "demo_ds",
+            "mocap.session_name": "demo_session",
+            "mocap.basename": "capture_candidate",
+            "mocap.fname": str(tmp_path / "capture.mcp"),
+            "dirs.support_base_dir": str(tmp_path / "support_files"),
+            "dirs.work_base_dir": str(tmp_path / "work"),
+            "runtime.backend": "torch",
+        }
+    ]
+    assert captured["benchmark_call"] == {
+        "sample_path": str(tmp_path / "work" / "demo_ds" / "demo_session" / "capture_candidate_stageii.pkl"),
+        "warmup_runs": 0,
+        "measured_runs": 1,
+        "mesh_reference_path": str(
+            tmp_path / "work" / "demo_ds" / "demo_session" / "capture_baseline_stageii.pkl"
+        ),
+        "mesh_support_base_dir": str(tmp_path / "support_files"),
+        "mesh_chunk_size": None,
+        "mesh_chunk_overlap": None,
+        "lean_benchmark": False,
+    }
+    assert payload["stageii_path"] == str(
+        tmp_path / "work" / "demo_ds" / "demo_session" / "capture_candidate_stageii.pkl"
+    )
+
+
 def test_run_stageii_torch_official_main_passes_lean_benchmark_flag(tmp_path, monkeypatch):
     stageii_path = tmp_path / "candidate_stageii.pkl"
     captured = {}

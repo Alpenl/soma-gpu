@@ -72,6 +72,44 @@ def test_planned_stageii_output_path_from_overrides_infers_dataset_and_session_f
     )
 
 
+def test_planned_stageii_output_path_from_overrides_uses_explicit_ds_and_session_for_flat_mocap_path(
+    tmp_path,
+):
+    overrides = {
+        "mocap.fname": str(tmp_path / "capture.mcp"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "mocap.ds_name": "explicit_ds",
+        "mocap.session_name": "explicit_session",
+        "mocap.basename": "manual_candidate",
+    }
+
+    assert planned_stageii_output_path_from_overrides(overrides) == (
+        tmp_path / "work" / "explicit_ds" / "explicit_session" / "manual_candidate_stageii.pkl"
+    )
+
+
+def test_planned_stageii_output_path_from_overrides_prefers_explicit_session_subject_subfolders(
+    tmp_path,
+):
+    overrides = {
+        "mocap.fname": str(tmp_path / "capture.mcp"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "mocap.ds_name": "explicit_ds",
+        "mocap.basename": "manual_candidate",
+        "mocap.multi_subject": "true",
+        "dirs.session_subject_subfolders": "explicit_session/subject02",
+    }
+
+    assert planned_stageii_output_path_from_overrides(overrides) == (
+        tmp_path
+        / "work"
+        / "explicit_ds"
+        / "explicit_session"
+        / "subject02"
+        / "manual_candidate_stageii.pkl"
+    )
+
+
 def test_planned_stageii_output_path_from_overrides_prefers_explicit_stageii_path(tmp_path):
     explicit_stageii_path = tmp_path / "explicit" / "candidate_stageii.pkl"
 
