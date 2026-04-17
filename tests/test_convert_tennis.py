@@ -46,7 +46,7 @@ def _install_fake_export_module(monkeypatch, calls):
     monkeypatch.setitem(sys.modules, "export_stageii_artifacts", export_module)
 
 
-def _write_stageii_pickle(path, *, model_path):
+def _write_stageii_pickle(path, *, model_path, surface_model_type="smplx", gender="male"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(
         pickle.dumps(
@@ -54,7 +54,9 @@ def _write_stageii_pickle(path, *, model_path):
                 "stageii_debug_details": {
                     "cfg": {
                         "surface_model": {
+                            "type": surface_model_type,
                             "fname": str(model_path),
+                            "gender": gender,
                         }
                     }
                 }
@@ -125,7 +127,7 @@ def test_convert_tennis_can_export_existing_stageii_when_mosh_is_skipped(monkeyp
     _install_fake_export_module(monkeypatch, export_calls)
 
     stageii_path = work_dir / dataset / "subject02" / "existing_stageii.pkl"
-    _write_stageii_pickle(stageii_path, model_path=model_path)
+    _write_stageii_pickle(stageii_path, model_path=model_path, gender="female")
 
     convert_tennis.main(
         [
@@ -146,6 +148,48 @@ def test_convert_tennis_can_export_existing_stageii_when_mosh_is_skipped(monkeyp
     assert len(export_calls) == 1
     assert export_calls[0]["input_pkl"] == str(stageii_path)
     assert export_calls[0]["model_path"] == str(model_path)
+
+
+def test_convert_tennis_export_relocates_model_path_under_support_base_dir(monkeypatch, tmp_path):
+    dataset = "demo_ds"
+    work_dir = tmp_path / "work"
+    mocap_base_dir = tmp_path / "mocap"
+    support_dir = tmp_path / "support"
+    relocated_model_path = support_dir / "smplx" / "male" / "model.npz"
+    relocated_model_path.parent.mkdir(parents=True, exist_ok=True)
+    relocated_model_path.write_bytes(b"npz")
+
+    export_calls = []
+    run_calls = []
+    _install_fake_run_soma_module(monkeypatch, run_calls)
+    _install_fake_export_module(monkeypatch, export_calls)
+
+    stageii_path = work_dir / dataset / "subject03" / "portable_stageii.pkl"
+    _write_stageii_pickle(
+        stageii_path,
+        model_path="/old-machine/support_files/smplx/male/model.pkl",
+        surface_model_type="smplx",
+        gender="male",
+    )
+
+    convert_tennis.main(
+        [
+            "--dataset",
+            dataset,
+            "--mocap-base-dir",
+            str(mocap_base_dir),
+            "--soma-work-base-dir",
+            str(work_dir),
+            "--support-base-dir",
+            str(support_dir),
+            "--skip-mosh",
+            "--export-artifacts",
+        ]
+    )
+
+    assert [call["run_tasks"] for call in run_calls] == [["soma"]]
+    assert len(export_calls) == 1
+    assert export_calls[0]["model_path"] == str(relocated_model_path)
 
 
 def test_convert_tennis_still_rejects_skipping_soma_and_mosh_together(tmp_path):
