@@ -458,3 +458,69 @@ def test_run_stageii_torch_pair_main_errors_when_underlying_runner_raises_runtim
         )
 
     assert "candidate stageii missing" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_pair_main_rejects_colliding_stageii_outputs_from_basename_overrides(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_pair.run_stageii_torch_official,
+        "run",
+        lambda *args, **kwargs: pytest.fail("underlying runner should not run when stageii outputs collide"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--baseline-cfg",
+                "mocap.basename=shared",
+                "--baseline-output-suffix",
+                "_stageii",
+                "--candidate-cfg",
+                "mocap.basename=shared_stageii",
+                "--candidate-output-suffix",
+                "",
+            ]
+        )
+
+    assert (
+        "baseline and candidate resolve to the same stageii output path" in capsys.readouterr().err
+    )
+
+
+def test_run_stageii_torch_pair_main_rejects_explicit_colliding_stageii_output_paths(
+    tmp_path, monkeypatch, capsys
+):
+    shared_stageii = tmp_path / "shared_stageii.pkl"
+
+    monkeypatch.setattr(
+        run_stageii_torch_pair.run_stageii_torch_official,
+        "run",
+        lambda *args, **kwargs: pytest.fail("underlying runner should not run when stageii outputs collide"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_pair.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--baseline-cfg",
+                f"dirs.stageii_fname={shared_stageii}",
+                "--candidate-cfg",
+                f"dirs.stageii_fname={shared_stageii}",
+            ]
+        )
+
+    assert (
+        "baseline and candidate resolve to the same stageii output path" in capsys.readouterr().err
+    )
