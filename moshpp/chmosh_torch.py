@@ -618,21 +618,18 @@ def _splice_chunk_overlap_reference(
 def _build_chunk_transl_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
     if previous_tail is None:
         return None
+    anchor = previous_tail[-1:].detach().clone()
     if base_reference is None or overlap_count <= 0:
-        return previous_tail[-1:].detach().clone()
+        return anchor
     keep_seam_window = max(int(keep_seam_window or 1), 1)
-    seam_reference = _splice_chunk_overlap_reference(
-        base_reference,
-        previous_tail,
-        overlap_count,
-        include_keep_seam=True,
-        keep_seam_window=keep_seam_window,
-    )
-    seam_window_end = min(overlap_count + keep_seam_window, seam_reference.shape[0])
-    keep_positions = seam_reference[overlap_count:seam_window_end].detach().clone()
-    if keep_positions.shape[0] == 0:
-        return previous_tail[-1:].detach().clone()
-    return torch.cat([previous_tail[-1:].detach().clone(), keep_positions], dim=0)
+    if overlap_count >= base_reference.shape[0]:
+        return anchor
+    seam_window_end = min(overlap_count + keep_seam_window, base_reference.shape[0])
+    seam_positions = base_reference[overlap_count - 1 : seam_window_end].detach().clone()
+    if seam_positions.shape[0] == 0:
+        return anchor
+    seam_positions = seam_positions - seam_positions[:1].clone()
+    return anchor + seam_positions
 
 
 def mosh_stageii_torch(

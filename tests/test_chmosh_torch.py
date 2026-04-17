@@ -1463,8 +1463,8 @@ def test_splice_chunk_overlap_reference_can_extend_local_window_past_keep_seam()
 
     base_reference = torch.tensor(
         [
-            [20.0, 20.0, 20.0],
-            [21.0, 21.0, 21.0],
+            [22.0, 22.0, 22.0],
+            [23.0, 23.0, 23.0],
             [24.0, 24.0, 24.0],
             [25.0, 25.0, 25.0],
         ],
@@ -1851,11 +1851,52 @@ def test_mosh_stageii_torch_sequence_solver_receives_local_transl_velocity_windo
         torch.tensor(
             [
                 [203.0, 203.0, 203.0],
-                [203.0, 203.0, 203.0],
                 [204.0, 204.0, 204.0],
+                [205.0, 205.0, 205.0],
             ],
             dtype=torch.float32,
         ),
         atol=0.0,
     )
     assert recorded["sequence_kwargs"][1]["transl_velocity_reference_index"] == 2
+
+
+def test_build_chunk_transl_velocity_reference_preserves_seed_boundary_velocity():
+    module = _load_chmosh_torch_module()
+
+    base_reference = torch.tensor(
+        [
+            [22.0, 22.0, 22.0],
+            [23.0, 23.0, 23.0],
+            [24.0, 24.0, 24.0],
+            [25.0, 25.0, 25.0],
+        ],
+        dtype=torch.float32,
+    )
+    previous_tail = torch.tensor(
+        [
+            [202.0, 202.0, 202.0],
+            [203.0, 203.0, 203.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    reference = module._build_chunk_transl_velocity_reference(
+        base_reference,
+        previous_tail,
+        2,
+        keep_seam_window=2,
+    )
+
+    assert torch.allclose(
+        reference,
+        torch.tensor(
+            [
+                [203.0, 203.0, 203.0],
+                [204.0, 204.0, 204.0],
+                [205.0, 205.0, 205.0],
+            ],
+            dtype=torch.float32,
+        ),
+        atol=0.0,
+    )
