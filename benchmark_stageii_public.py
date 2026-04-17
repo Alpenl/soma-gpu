@@ -49,8 +49,8 @@ def build_parser():
     )
     parser.add_argument(
         "--mesh-support-base-dir",
-        default="support_files",
-        help="support_files root used when --mesh-reference or --input stageii pickles need relocated model paths.",
+        default=None,
+        help="support_files root used when --mesh-reference stageii/pc2 inputs need relocated model paths.",
     )
     parser.add_argument(
         "--mesh-chunk-size",
@@ -67,16 +67,32 @@ def build_parser():
     return parser
 
 
+def _validate_mesh_cli_args(parser, args):
+    if args.mesh_chunk_size is not None and args.mesh_reference is None:
+        parser.error("--mesh-chunk-size requires --mesh-reference")
+    if args.mesh_chunk_overlap is not None and args.mesh_reference is None:
+        parser.error("--mesh-chunk-overlap requires --mesh-reference")
+    if args.mesh_support_base_dir is not None and args.mesh_reference is None:
+        parser.error("--mesh-support-base-dir requires --mesh-reference")
+
+
+def _mesh_support_base_dir(args):
+    if args.mesh_reference is None:
+        return None
+    return args.mesh_support_base_dir or "support_files"
+
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    _validate_mesh_cli_args(parser, args)
     try:
         report = run_public_stageii_benchmark(
             args.input,
             warmup_runs=args.warmup_runs,
             measured_runs=args.measured_runs,
             mesh_reference_path=args.mesh_reference,
-            mesh_support_base_dir=args.mesh_support_base_dir,
+            mesh_support_base_dir=_mesh_support_base_dir(args),
             mesh_chunk_size=args.mesh_chunk_size,
             mesh_chunk_overlap=args.mesh_chunk_overlap,
         )
