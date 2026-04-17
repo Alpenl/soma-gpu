@@ -169,7 +169,9 @@ single runner 现在还会继续校验 helper 返回 payload 本身：`export_st
 `--preset real-mcp-baseline` 会先注入当前已验证的 corrected real `.mcp` torch baseline 参数：
 `moshpp.optimize_fingers=true`、`runtime.sequence_chunk_size=32`、`runtime.sequence_chunk_overlap=4`、`runtime.sequence_seed_refine_iters=5`、`runtime.refine_lr=0.05`、`runtime.sequence_lr=0.05`、`runtime.sequence_max_iters=30`。如果要在此基础上做单变量 sweep，继续追加 `--cfg key=value` 即可；`--cfg` 会覆盖同名 preset 项，因此不需要每次重打一整串 baseline override。
 
-如果想直接复现当前保留的 translation-friendly 候选，可把 preset 换成 `real-mcp-transvelo100-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=100` 与 `runtime.sequence_boundary_transl_velocity_reference=true`。这样就能配合现有 `--mesh-reference` / `--benchmark-output` 直接做 baseline vs candidate 的 stageii / mesh 对照，而不需要再手工维护第二串高权重 velocity overrides。
+如果想直接复现一个更保守的 low-risk translation 候选，可把 preset 换成 `real-mcp-transvelo10-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=10` 与 `runtime.sequence_boundary_transl_velocity_reference=true`，对应当前已确认可稳定复现、且五个主质量指标都仍朝正确方向轻微改善的低权重 candidate。
+
+如果想直接复现当前保留的高权重 translation-friendly 候选，可把 preset 换成 `real-mcp-transvelo100-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=100` 与 `runtime.sequence_boundary_transl_velocity_reference=true`。这样就能配合现有 `--mesh-reference` / `--benchmark-output` 直接做 baseline vs candidate 的 stageii / mesh 对照，而不需要再手工维护第二串高权重 velocity overrides。
 
 当 baseline 和 candidate 共用同一个 `--work-base-dir` 时，建议同时给 `--output-suffix`，例如 `_baseline` / `_seedvelowindow`。这个后缀会在 preset/`--cfg` 解析完成后追加到 `mocap.basename`，从而让默认生成的 `stageii/log` 文件名分开；如果你已经显式用 `--cfg mocap.basename=...` 固定了名字，suffix 会继续在那个 basename 后面追加。
 
@@ -201,6 +203,7 @@ python run_stageii_torch_pair.py \
 这个脚本会顺序调用现有 `run_stageii_torch_official.py` 两次：
 - baseline 侧默认使用 `--preset real-mcp-baseline --output-suffix _baseline`，并默认只产 `stageii.pkl`，不重复跑 standalone benchmark
 - candidate 侧默认使用 `--preset real-mcp-transvelo100-seedvelowindow --output-suffix _candidate`，并自动把 baseline 那次真实返回的 `stageii_path` 显式传给 `--mesh-reference`，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要；即使 baseline 侧额外用了 `--baseline-cfg mocap.basename=...` 这类只影响路径命名的覆盖，也不会再被 candidate 侧的配置重推导错
+- 如果想在同一套 pair 入口下复核低权重版本，可显式加 `--candidate-preset real-mcp-transvelo10-seedvelowindow`；这样 baseline/candidate 的编排与 benchmark contract 不变，只把 candidate runtime 切到 low-risk candidate。
 - 若加了 `--export-mesh`，pair runner 会把同一套 mesh 导出参数同时透传给 baseline 和 candidate；由于两侧默认 `mocap.basename` suffix 不同，即使共用一个 `--mesh-output-dir`，OBJ/PC2 也会自动分名，不需要再手工分两个导出目录。若没开 `--export-mesh` 却传了 `--mesh-output-dir`，pair runner 现在会直接报错，而不是静默忽略。
 - 若加了 `--lean-benchmark`，pair runner 会把该标志透传给所有真正开启 benchmark 的 underlying single run：candidate 默认 benchmark 会启用，baseline 只有在显式给了 `--baseline-benchmark-output` 时才启用。这样 baseline/candidate 对照仍会保留核心 quality / mesh compare JSON，但不会再为非主线 preview/mp4/artifact speed 探针额外花时间。
 - pair runner 现在也会在自己的 CLI 边界收紧 mesh compare chunk 参数：`--mesh-chunk-overlap` 必须和 `--mesh-chunk-size` 成对出现；否则命令会在 baseline 启动前直接报错，而不是等 candidate benchmark 深层调用 `utils.mesh_compare` 时才失败。

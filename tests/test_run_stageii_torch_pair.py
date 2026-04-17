@@ -309,6 +309,59 @@ def test_run_stageii_torch_pair_main_can_request_baseline_benchmark_output(tmp_p
     assert payload["baseline"]["benchmark"]["artifact"]["report_path"] == "report.json"
 
 
+def test_run_stageii_torch_pair_main_accepts_low_risk_candidate_preset(tmp_path, monkeypatch):
+    captured = {"calls": []}
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        preset = argv[argv.index("--preset") + 1]
+        suffix = argv[argv.index("--output-suffix") + 1]
+        return {
+            "benchmark": None if "--skip-benchmark" in argv else {"artifact": {"report_path": str(tmp_path / f"{suffix}.json")}},
+            "stageii_path": str(tmp_path / f"{preset}{suffix}_stageii.pkl"),
+        }
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    payload = run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--candidate-preset",
+            "real-mcp-transvelo10-seedvelowindow",
+        ]
+    )
+
+    assert captured["calls"][1] == (
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-transvelo10-seedvelowindow",
+            "--output-suffix",
+            "_candidate",
+            "--expected-stageii-path",
+            str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_stageii.pkl"),
+            "--expected-benchmark-output",
+            str(tmp_path / "work" / "input" / "wolf001" / "capture_candidate_benchmark.json"),
+            "--mesh-reference",
+            str(tmp_path / "real-mcp-baseline_baseline_stageii.pkl"),
+        ],
+        False,
+    )
+    assert payload["candidate"]["stageii_path"] == str(
+        tmp_path / "real-mcp-transvelo10-seedvelowindow_candidate_stageii.pkl"
+    )
+
+
 def test_run_stageii_torch_pair_main_forwards_lean_benchmark_flag_to_benchmark_runs(
     tmp_path, monkeypatch
 ):

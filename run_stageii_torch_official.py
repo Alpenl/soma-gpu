@@ -25,13 +25,20 @@ REAL_MCP_BASELINE_PRESET = {
     "runtime.sequence_lr": "0.05",
     "runtime.sequence_max_iters": "30",
 }
+REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET = {
+    **REAL_MCP_BASELINE_PRESET,
+    "runtime.sequence_boundary_transl_velocity_reference": "true",
+}
 
 OFFICIAL_PRESETS = {
     "real-mcp-baseline": REAL_MCP_BASELINE_PRESET,
+    "real-mcp-transvelo10-seedvelowindow": {
+        **REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET,
+        "runtime.sequence_transl_velocity": "10",
+    },
     "real-mcp-transvelo100-seedvelowindow": {
-        **REAL_MCP_BASELINE_PRESET,
+        **REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET,
         "runtime.sequence_transl_velocity": "100",
-        "runtime.sequence_boundary_transl_velocity_reference": "true",
     },
 }
 
@@ -75,8 +82,9 @@ def build_parser():
         default=None,
         help=(
             "Optional named override pack applied before --cfg. "
-            "Use real-mcp-baseline for the corrected real .mcp torch baseline or "
-            "real-mcp-transvelo100-seedvelowindow for the translation-friendly candidate."
+            "Use real-mcp-baseline for the corrected real .mcp torch baseline, "
+            "real-mcp-transvelo10-seedvelowindow for the low-risk translation candidate, or "
+            "real-mcp-transvelo100-seedvelowindow for the higher-gain translation-friendly candidate."
         ),
     )
     parser.add_argument(
