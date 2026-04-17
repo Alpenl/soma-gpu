@@ -101,6 +101,34 @@ def test_run_public_stageii_benchmark_includes_preview_vertex_decode_metric_when
     assert report["speed"]["preview_vertex_decode_ms"] == preview_metric
 
 
+def test_benchmark_preview_vertex_decode_propagates_unexpected_render_failures(monkeypatch):
+    baseline = normalize_stageii_sample(ROOT / "support_data/tests/mosh_stageii.pkl")
+    fake_render_video = type(
+        "FakeRenderVideo",
+        (),
+        {
+            "load_render_model": staticmethod(lambda model_path: (_ for _ in ()).throw(RuntimeError("boom"))),
+            "load_vertices": staticmethod(lambda sample_path, model: None),
+        },
+    )
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_preview_render_model_path",
+        lambda repo_root, *, gender: ROOT / "support_files/smplx/male/model.npz",
+    )
+    monkeypatch.setitem(sys.modules, "render_video", fake_render_video)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        stageii_benchmark._benchmark_preview_vertex_decode(
+            ROOT / "support_data/tests/mosh_stageii.pkl",
+            baseline,
+            repo_root=ROOT,
+            warmup_runs=0,
+            measured_runs=1,
+        )
+
+
 def test_blocked_stages_use_preview_render_stack_and_support_files_assets(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     preview_model = repo_root / "support_files" / "smplx" / "male" / "model.npz"

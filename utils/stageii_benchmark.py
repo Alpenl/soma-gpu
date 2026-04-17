@@ -278,9 +278,12 @@ def _benchmark_preview_vertex_decode(sample_path, baseline, *, repo_root, warmup
 
     try:
         import render_video
+    except (ImportError, ModuleNotFoundError):
+        return None
 
+    try:
         model = render_video.load_render_model(model_path)
-    except Exception:
+    except (FileNotFoundError, ImportError, ModuleNotFoundError):
         return None
 
     for _ in range(warmup_runs):
