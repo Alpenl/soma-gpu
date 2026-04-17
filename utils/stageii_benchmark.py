@@ -166,6 +166,10 @@ def _max_abs_diff(lhs, rhs):
     return float(np.max(np.abs(lhs - rhs)))
 
 
+def _percentile(values, q):
+    return float(np.percentile(np.asarray(values, dtype=np.float64), q))
+
+
 def _numeric_arrays(sample):
     return {
         "poses": sample.poses,
@@ -252,6 +256,7 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
 
     latency_mean = statistics.mean(latencies_ms)
     latency_stdev = statistics.stdev(latencies_ms) if len(latencies_ms) > 1 else 0.0
+    latency_samples = [float(latency_ms) for latency_ms in latencies_ms]
     repo_root = Path(__file__).resolve().parents[1]
 
     return {
@@ -275,11 +280,15 @@ def run_public_stageii_benchmark(sample_path, *, warmup_runs=1, measured_runs=5)
         },
         "speed": {
             "latency_ms": {
-                "count": len(latencies_ms),
+                "count": len(latency_samples),
+                "samples": latency_samples,
                 "mean": latency_mean,
                 "stdev": latency_stdev,
-                "min": min(latencies_ms),
-                "max": max(latencies_ms),
+                "min": min(latency_samples),
+                "max": max(latency_samples),
+                "p50": _percentile(latency_samples, 50),
+                "p90": _percentile(latency_samples, 90),
+                "p99": _percentile(latency_samples, 99),
             },
             "throughput_ops_s": 1000.0 / latency_mean if latency_mean > 0 else 0.0,
         },
