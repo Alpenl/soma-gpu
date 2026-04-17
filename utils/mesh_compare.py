@@ -26,6 +26,10 @@ class LoadedMeshSequence:
     chunk_overlap: int | None = None
 
 
+def _normalized_path(path):
+    return Path(path).expanduser().resolve(strict=False)
+
+
 def _explicit_chunk_config(chunk_size=None, chunk_overlap=None):
     if chunk_size is None:
         if chunk_overlap is not None:
@@ -177,6 +181,9 @@ def compare_mesh_sequences(
     chunk_size=None,
     chunk_overlap=None,
 ):
+    if _normalized_path(reference_path) == _normalized_path(candidate_path):
+        raise ValueError(f"candidate_path resolves to reference_path: {reference_path}")
+
     reference = load_mesh_sequence(
         reference_path,
         support_base_dir=support_base_dir,

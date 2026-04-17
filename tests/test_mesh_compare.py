@@ -334,6 +334,15 @@ def test_compare_mesh_sequences_rejects_frame_shape_mismatch(tmp_path):
         mesh_compare.compare_mesh_sequences(reference_path, candidate_path)
 
 
+def test_compare_mesh_sequences_rejects_same_input_path(tmp_path):
+    mesh_compare = _load_mesh_compare_module()
+    sample_path = tmp_path / "same.pc2"
+    writePC2(str(sample_path), np.zeros((2, 1, 3), dtype=np.float32))
+
+    with pytest.raises(ValueError, match="candidate_path resolves to reference_path"):
+        mesh_compare.compare_mesh_sequences(sample_path, sample_path)
+
+
 def test_mesh_compare_main_writes_json_report(tmp_path, monkeypatch):
     mesh_compare = _load_mesh_compare_module()
     output_path = tmp_path / "report.json"
@@ -383,3 +392,28 @@ def test_mesh_compare_main_rejects_chunk_overlap_without_chunk_size_even_when_ze
         )
 
     assert "--chunk-overlap requires --chunk-size" in capsys.readouterr().err
+
+
+def test_mesh_compare_main_rejects_same_reference_and_candidate_path(
+    tmp_path, monkeypatch, capsys
+):
+    mesh_compare = _load_mesh_compare_module()
+    sample_path = tmp_path / "same.pc2"
+    writePC2(str(sample_path), np.zeros((2, 1, 3), dtype=np.float32))
+    monkeypatch.setattr(
+        mesh_compare,
+        "load_mesh_sequence",
+        lambda *args, **kwargs: pytest.fail("load_mesh_sequence should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        mesh_compare.main(
+            [
+                "--reference",
+                str(sample_path),
+                "--candidate",
+                str(sample_path),
+            ]
+        )
+
+    assert "candidate_path resolves to reference_path" in capsys.readouterr().err
