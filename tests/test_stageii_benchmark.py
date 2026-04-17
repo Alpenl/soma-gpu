@@ -478,6 +478,32 @@ def test_run_public_stageii_benchmark_leaves_reference_stageii_quality_empty_for
     assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.5}}
 
 
+def test_run_public_stageii_benchmark_rejects_mesh_reference_that_matches_input_path(
+    tmp_path, monkeypatch
+):
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    _write_synthetic_stageii_sample(candidate_path, residual_offset=1.0)
+
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_mesh_compare",
+        lambda *args, **kwargs: pytest.fail("mesh compare should not run for self reference"),
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="mesh_reference_path resolves to sample_path"):
+        run_public_stageii_benchmark(
+            candidate_path,
+            warmup_runs=0,
+            measured_runs=1,
+            mesh_reference_path=candidate_path,
+        )
+
+
 def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monkeypatch, capsys):
     captured = {}
 
@@ -626,6 +652,30 @@ def test_benchmark_stageii_public_main_errors_when_benchmark_validation_fails(mo
         )
 
     assert "chunk_overlap requires chunk_size" in capsys.readouterr().err
+
+
+def test_benchmark_stageii_public_main_errors_when_mesh_reference_matches_input(
+    tmp_path, monkeypatch, capsys
+):
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    _write_synthetic_stageii_sample(candidate_path, residual_offset=1.0)
+
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    with pytest.raises(SystemExit):
+        benchmark_stageii_public.main(
+            [
+                "--input",
+                str(candidate_path),
+                "--mesh-reference",
+                str(candidate_path),
+            ]
+        )
+
+    assert "mesh_reference_path resolves to sample_path" in capsys.readouterr().err
 
 
 def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_new_format(

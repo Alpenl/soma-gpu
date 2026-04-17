@@ -190,6 +190,17 @@ def _sha256_file(sample_path):
     return digest.hexdigest()
 
 
+def _normalized_path(path):
+    return Path(path).expanduser().resolve(strict=False)
+
+
+def _validate_mesh_reference_path(*, sample_path, mesh_reference_path):
+    if mesh_reference_path is None:
+        return
+    if _normalized_path(sample_path) == _normalized_path(mesh_reference_path):
+        raise ValueError(f"mesh_reference_path resolves to sample_path: {sample_path}")
+
+
 def _max_abs_diff(lhs, rhs):
     lhs = np.nan_to_num(np.asarray(lhs, dtype=np.float64), copy=False)
     rhs = np.nan_to_num(np.asarray(rhs, dtype=np.float64), copy=False)
@@ -797,6 +808,7 @@ def run_public_stageii_benchmark(
     mesh_chunk_overlap=None,
 ):
     sample_path = Path(sample_path)
+    _validate_mesh_reference_path(sample_path=sample_path, mesh_reference_path=mesh_reference_path)
     if warmup_runs < 0:
         raise ValueError("warmup_runs must be >= 0")
     if measured_runs <= 0:
