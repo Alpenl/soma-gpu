@@ -30,6 +30,11 @@ REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET = {
     **REAL_MCP_BASELINE_PRESET,
     "runtime.sequence_boundary_transl_velocity_reference": "true",
 }
+REAL_MCP_CORRECTED_BASELINE_REQUIRED_CFG = {
+    "moshpp.optimize_fingers": "true",
+    "runtime.refine_lr": "0.05",
+    "runtime.sequence_lr": "0.05",
+}
 
 OFFICIAL_PRESETS = {
     "real-mcp-baseline": REAL_MCP_BASELINE_PRESET,
@@ -90,7 +95,10 @@ def build_parser():
             "Use real-mcp-baseline for the corrected real .mcp torch baseline, "
             "real-mcp-transvelo10-seedvelowindow for the low-risk translation candidate, or "
             "real-mcp-transvelo32-seedvelowindow for the mid-risk translation candidate, or "
-            "real-mcp-transvelo100-seedvelowindow for the higher-gain translation-friendly candidate."
+            "real-mcp-transvelo100-seedvelowindow for the higher-gain translation-friendly candidate. "
+            "When running a direct .mcp single-sequence command without --preset, you must explicitly "
+            "add --cfg moshpp.optimize_fingers=true --cfg runtime.refine_lr=0.05 "
+            "--cfg runtime.sequence_lr=0.05."
         ),
     )
     parser.add_argument(
@@ -207,6 +215,40 @@ def _validate_mesh_reference_output_suffix(parser, args):
         parser.error(
             "--mesh-reference-output-suffix cannot be used when --cfg/preset overrides dirs.stageii_fname; "
             "pass --mesh-reference explicitly instead"
+        )
+
+
+def _normalized_cfg_guard_value(key, value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if key == "moshpp.optimize_fingers":
+        return text.lower()
+    if key in {"runtime.refine_lr", "runtime.sequence_lr"}:
+        try:
+            return float(text)
+        except ValueError:
+            return text
+    return text
+
+
+def _validate_real_mcp_corrected_baseline_anchor(parser, args):
+    if Path(args.mocap_fname).suffix.lower() != ".mcp":
+        return
+    if args.preset is not None:
+        return
+
+    overrides = _collect_cfg_overrides(parser, args)
+    missing_cfg = []
+    for key, expected in REAL_MCP_CORRECTED_BASELINE_REQUIRED_CFG.items():
+        if _normalized_cfg_guard_value(key, overrides.get(key)) != _normalized_cfg_guard_value(key, expected):
+            missing_cfg.append(f"--cfg {key}={expected}")
+
+    if missing_cfg:
+        parser.error(
+            "real .mcp single-run entry requires a corrected baseline anchor when --preset is omitted; "
+            "pass --preset real-mcp-baseline (or another real-mcp preset), "
+            f"or explicitly add {' '.join(missing_cfg)}"
         )
 
 
@@ -477,6 +519,7 @@ def run(argv=None, *, emit_json=True):
     args = parser.parse_args(argv)
     _validate_mesh_cli_args(parser, args)
     _validate_internal_contract_args(parser, args)
+    _validate_real_mcp_corrected_baseline_anchor(parser, args)
     _validate_mesh_reference_output_suffix(parser, args)
     try:
         mesh_reference_path = _preflight_planned_output_contracts(parser, args)

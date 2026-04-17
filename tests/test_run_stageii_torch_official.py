@@ -12,15 +12,29 @@ if str(ROOT) not in sys.path:
 import run_stageii_torch_official
 
 
-def _required_official_runner_args(tmp_path):
-    return [
+def _required_official_runner_args(tmp_path, *, mocap_ext=".mcp", preset="real-mcp-baseline"):
+    args = [
         "--mocap-fname",
-        str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+        str(tmp_path / "input" / "wolf001" / f"capture{mocap_ext}"),
         "--support-base-dir",
         str(tmp_path / "support_files"),
         "--work-base-dir",
         str(tmp_path / "work"),
     ]
+    if preset is not None:
+        args.extend(["--preset", preset])
+    return args
+
+
+def _expected_real_mcp_prepare_cfg(tmp_path, *, mocap_fname=None, **overrides):
+    return {
+        **run_stageii_torch_official.REAL_MCP_BASELINE_PRESET,
+        **overrides,
+        "mocap.fname": str(mocap_fname or (tmp_path / "input" / "wolf001" / "capture.mcp")),
+        "dirs.support_base_dir": str(tmp_path / "support_files"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "runtime.backend": "torch",
+    }
 
 
 def test_run_stageii_torch_official_main_builds_cfg_and_wires_benchmark(tmp_path, monkeypatch):
@@ -76,13 +90,8 @@ def test_run_stageii_torch_official_main_builds_cfg_and_wires_benchmark(tmp_path
     monkeypatch.setattr(run_stageii_torch_official, "write_benchmark_report", fake_write_benchmark_report)
 
     payload = run_stageii_torch_official.main(
-        [
-            "--mocap-fname",
-            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "--support-base-dir",
-            str(tmp_path / "support_files"),
-            "--work-base-dir",
-            str(tmp_path / "work"),
+        _required_official_runner_args(tmp_path)
+        + [
             "--cfg",
             "surface_model.gender=male",
             "--cfg",
@@ -104,14 +113,13 @@ def test_run_stageii_torch_official_main_builds_cfg_and_wires_benchmark(tmp_path
         ]
     )
 
-    assert captured["prepare_cfg"] == {
-        "surface_model.gender": "male",
-        "runtime.sequence_lr": "0.05",
-        "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-        "dirs.support_base_dir": str(tmp_path / "support_files"),
-        "dirs.work_base_dir": str(tmp_path / "work"),
-        "runtime.backend": "torch",
-    }
+    assert captured["prepare_cfg"] == _expected_real_mcp_prepare_cfg(
+        tmp_path,
+        **{
+            "surface_model.gender": "male",
+            "runtime.sequence_lr": "0.05",
+        },
+    )
     assert captured["run_cfg"].dirs.stageii_fname == str(stageii_path)
     assert captured["benchmark_call"] == {
         "sample_path": str(stageii_path),
@@ -182,13 +190,8 @@ def test_run_stageii_torch_official_main_writes_default_benchmark_report_next_to
     monkeypatch.setattr(run_stageii_torch_official, "write_benchmark_report", fake_write_benchmark_report)
 
     payload = run_stageii_torch_official.main(
-        [
-            "--mocap-fname",
-            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "--support-base-dir",
-            str(tmp_path / "support_files"),
-            "--work-base-dir",
-            str(tmp_path / "work"),
+        _required_official_runner_args(tmp_path)
+        + [
             "--cfg",
             "mocap.basename=manual_name",
             "--output-suffix",
@@ -266,13 +269,8 @@ def test_run_stageii_torch_official_main_plans_mesh_reference_from_output_suffix
     )
 
     payload = run_stageii_torch_official.main(
-        [
-            "--mocap-fname",
-            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "--support-base-dir",
-            str(tmp_path / "support_files"),
-            "--work-base-dir",
-            str(tmp_path / "work"),
+        _required_official_runner_args(tmp_path)
+        + [
             "--cfg",
             "mocap.basename=manual_name",
             "--output-suffix",
@@ -287,13 +285,12 @@ def test_run_stageii_torch_official_main_plans_mesh_reference_from_output_suffix
     )
 
     assert captured["prepare_cfg_calls"] == [
-        {
-            "mocap.basename": "manual_name_candidate",
-            "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "dirs.support_base_dir": str(tmp_path / "support_files"),
-            "dirs.work_base_dir": str(tmp_path / "work"),
-            "runtime.backend": "torch",
-        }
+        _expected_real_mcp_prepare_cfg(
+            tmp_path,
+            **{
+                "mocap.basename": "manual_name_candidate",
+            },
+        )
     ]
     assert captured["benchmark_call"] == {
         "sample_path": str(tmp_path / "work" / "input" / "wolf001" / "manual_name_candidate_stageii.pkl"),
@@ -370,6 +367,8 @@ def test_run_stageii_torch_official_main_plans_mesh_reference_from_output_suffix
             str(tmp_path / "support_files"),
             "--work-base-dir",
             str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-baseline",
             "--cfg",
             "mocap.ds_name=demo_ds",
             "--cfg",
@@ -386,15 +385,15 @@ def test_run_stageii_torch_official_main_plans_mesh_reference_from_output_suffix
     )
 
     assert captured["prepare_cfg_calls"] == [
-        {
-            "mocap.ds_name": "demo_ds",
-            "mocap.session_name": "demo_session",
-            "mocap.basename": "capture_candidate",
-            "mocap.fname": str(tmp_path / "capture.mcp"),
-            "dirs.support_base_dir": str(tmp_path / "support_files"),
-            "dirs.work_base_dir": str(tmp_path / "work"),
-            "runtime.backend": "torch",
-        }
+        _expected_real_mcp_prepare_cfg(
+            tmp_path,
+            mocap_fname=tmp_path / "capture.mcp",
+            **{
+                "mocap.ds_name": "demo_ds",
+                "mocap.session_name": "demo_session",
+                "mocap.basename": "capture_candidate",
+            },
+        )
     ]
     assert captured["benchmark_call"] == {
         "sample_path": str(tmp_path / "work" / "demo_ds" / "demo_session" / "capture_candidate_stageii.pkl"),
@@ -449,13 +448,8 @@ def test_run_stageii_torch_official_main_passes_lean_benchmark_flag(tmp_path, mo
     )
 
     run_stageii_torch_official.main(
-        [
-            "--mocap-fname",
-            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "--support-base-dir",
-            str(tmp_path / "support_files"),
-            "--work-base-dir",
-            str(tmp_path / "work"),
+        _required_official_runner_args(tmp_path)
+        + [
             "--warmup-runs",
             "0",
             "--measured-runs",
@@ -700,6 +694,78 @@ def test_run_stageii_torch_official_main_applies_mid_risk_translation_candidate_
     }
 
 
+def test_run_stageii_torch_official_main_rejects_real_mcp_without_preset_or_corrected_baseline_cfgs(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path, preset=None) + ["--skip-benchmark"]
+        )
+
+    assert "real .mcp single-run entry requires a corrected baseline anchor" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_allows_real_mcp_without_preset_when_corrected_baseline_cfgs_are_explicit(
+    tmp_path, monkeypatch
+):
+    stageii_path = tmp_path / "candidate_stageii.pkl"
+    captured = {}
+
+    def fake_prepare_cfg(**kwargs):
+        captured["prepare_cfg"] = kwargs
+        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: stageii_path.write_bytes(b"stageii"),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        lambda *args, **kwargs: pytest.fail("benchmark should be skipped"),
+    )
+
+    payload = run_stageii_torch_official.main(
+        _required_official_runner_args(tmp_path, preset=None)
+        + [
+            "--cfg",
+            "moshpp.optimize_fingers=true",
+            "--cfg",
+            "runtime.refine_lr=0.05",
+            "--cfg",
+            "runtime.sequence_lr=0.05",
+            "--skip-benchmark",
+        ]
+    )
+
+    assert captured["prepare_cfg"] == {
+        "moshpp.optimize_fingers": "true",
+        "runtime.refine_lr": "0.05",
+        "runtime.sequence_lr": "0.05",
+        "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
+        "dirs.support_base_dir": str(tmp_path / "support_files"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "runtime.backend": "torch",
+    }
+    assert payload == {
+        "benchmark": None,
+        "stageii_path": str(stageii_path),
+    }
+
+
 def test_run_stageii_torch_official_main_appends_output_suffix_to_cfg_basename(tmp_path, monkeypatch):
     stageii_path = tmp_path / "candidate_stageii.pkl"
     captured = {}
@@ -721,13 +787,8 @@ def test_run_stageii_torch_official_main_appends_output_suffix_to_cfg_basename(t
     )
 
     payload = run_stageii_torch_official.main(
-        [
-            "--mocap-fname",
-            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "--support-base-dir",
-            str(tmp_path / "support_files"),
-            "--work-base-dir",
-            str(tmp_path / "work"),
+        _required_official_runner_args(tmp_path)
+        + [
             "--cfg",
             "mocap.basename=manual_name",
             "--output-suffix",
@@ -736,13 +797,12 @@ def test_run_stageii_torch_official_main_appends_output_suffix_to_cfg_basename(t
         ]
     )
 
-    assert captured["prepare_cfg"] == {
-        "mocap.basename": "manual_name_candidate",
-        "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-        "dirs.support_base_dir": str(tmp_path / "support_files"),
-        "dirs.work_base_dir": str(tmp_path / "work"),
-        "runtime.backend": "torch",
-    }
+    assert captured["prepare_cfg"] == _expected_real_mcp_prepare_cfg(
+        tmp_path,
+        **{
+            "mocap.basename": "manual_name_candidate",
+        },
+    )
     assert payload == {
         "benchmark": None,
         "stageii_path": str(stageii_path),
@@ -808,13 +868,8 @@ def test_run_stageii_torch_official_main_can_export_mesh_outputs(tmp_path, monke
     )
 
     payload = run_stageii_torch_official.main(
-        [
-            "--mocap-fname",
-            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "--support-base-dir",
-            str(tmp_path / "support_files"),
-            "--work-base-dir",
-            str(tmp_path / "work"),
+        _required_official_runner_args(tmp_path)
+        + [
             "--skip-benchmark",
             "--export-mesh",
             "--mesh-output-dir",
@@ -879,13 +934,8 @@ def test_run_stageii_torch_official_main_errors_when_mesh_export_model_path_cann
 
     with pytest.raises(SystemExit):
         run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
+            _required_official_runner_args(tmp_path)
+            + [
                 "--skip-benchmark",
                 "--export-mesh",
             ]
@@ -927,13 +977,8 @@ def test_run_stageii_torch_official_main_errors_when_mesh_export_model_path_file
 
     with pytest.raises(SystemExit):
         run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
+            _required_official_runner_args(tmp_path)
+            + [
                 "--skip-benchmark",
                 "--export-mesh",
             ]
@@ -980,13 +1025,8 @@ def test_run_stageii_torch_official_main_errors_when_mesh_export_write_fails(
 
     with pytest.raises(SystemExit):
         run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
+            _required_official_runner_args(tmp_path)
+            + [
                 "--skip-benchmark",
                 "--export-mesh",
             ]
@@ -1015,13 +1055,8 @@ def test_run_stageii_torch_official_main_can_skip_benchmark(tmp_path, monkeypatc
     )
 
     payload = run_stageii_torch_official.main(
-        [
-            "--mocap-fname",
-            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "--support-base-dir",
-            str(tmp_path / "support_files"),
-            "--work-base-dir",
-            str(tmp_path / "work"),
+        _required_official_runner_args(tmp_path)
+        + [
             "--skip-benchmark",
             "--cfg",
             "surface_model.gender=male",
@@ -1056,15 +1091,7 @@ def test_run_stageii_torch_official_run_can_suppress_json_output(tmp_path, monke
     )
 
     payload = run_stageii_torch_official.run(
-        [
-            "--mocap-fname",
-            str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-            "--support-base-dir",
-            str(tmp_path / "support_files"),
-            "--work-base-dir",
-            str(tmp_path / "work"),
-            "--skip-benchmark",
-        ],
+        _required_official_runner_args(tmp_path) + ["--skip-benchmark"],
         emit_json=False,
     )
 
@@ -1099,16 +1126,7 @@ def test_run_stageii_torch_official_main_errors_when_official_run_does_not_produ
     )
 
     with pytest.raises(SystemExit):
-        run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
-            ]
-        )
+        run_stageii_torch_official.main(_required_official_runner_args(tmp_path))
 
     assert "run_moshpp_once did not produce the expected stageii file" in capsys.readouterr().err
 
@@ -1126,16 +1144,7 @@ def test_run_stageii_torch_official_main_errors_when_prepare_cfg_fails(tmp_path,
     )
 
     with pytest.raises(SystemExit):
-        run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
-            ]
-        )
+        run_stageii_torch_official.main(_required_official_runner_args(tmp_path))
 
     assert "invalid official cfg" in capsys.readouterr().err
 
@@ -1161,13 +1170,8 @@ def test_run_stageii_torch_official_main_errors_when_prepared_stageii_path_drift
 
     with pytest.raises(SystemExit):
         run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
+            _required_official_runner_args(tmp_path)
+            + [
                 "--output-suffix",
                 "_candidate",
                 "--skip-benchmark",
@@ -1441,16 +1445,7 @@ def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_runt
     )
 
     with pytest.raises(SystemExit):
-        run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
-            ]
-        )
+        run_stageii_torch_official.main(_required_official_runner_args(tmp_path))
 
     assert "mocap load failed" in capsys.readouterr().err
 
@@ -1491,16 +1486,7 @@ def test_run_stageii_torch_official_main_errors_when_run_moshpp_once_raises_impo
     )
 
     with pytest.raises(SystemExit):
-        run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
-            ]
-        )
+        run_stageii_torch_official.main(_required_official_runner_args(tmp_path))
 
     assert "missing torch runtime" in capsys.readouterr().err
 
@@ -1541,13 +1527,8 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_wi
 
     with pytest.raises(SystemExit):
         run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
+            _required_official_runner_args(tmp_path)
+            + [
                 "--cfg",
                 f"dirs.stageii_fname={tmp_path / 'manual_candidate_stageii.pkl'}",
                 "--mesh-reference-output-suffix",
@@ -1579,13 +1560,8 @@ def test_run_stageii_torch_official_main_preflights_explicit_mesh_reference_that
 
     with pytest.raises(SystemExit):
         run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
+            _required_official_runner_args(tmp_path)
+            + [
                 "--mesh-reference",
                 str(planned_stageii_path),
                 "--warmup-runs",
@@ -1626,13 +1602,8 @@ def test_run_stageii_torch_official_main_rejects_explicit_mesh_reference_that_ma
 
     with pytest.raises(SystemExit):
         run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
+            _required_official_runner_args(tmp_path)
+            + [
                 "--mesh-reference",
                 str(stageii_path),
                 "--warmup-runs",
@@ -1676,13 +1647,8 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_output_suffix_th
 
     with pytest.raises(SystemExit):
         run_stageii_torch_official.main(
-            [
-                "--mocap-fname",
-                str(tmp_path / "input" / "wolf001" / "capture.mcp"),
-                "--support-base-dir",
-                str(tmp_path / "support_files"),
-                "--work-base-dir",
-                str(tmp_path / "work"),
+            _required_official_runner_args(tmp_path)
+            + [
                 "--cfg",
                 "mocap.basename=manual_name",
                 "--output-suffix",

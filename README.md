@@ -171,6 +171,7 @@ single runner 现在还会继续校验 helper 返回 payload 本身：`export_st
 
 `--preset real-mcp-baseline` 会先注入当前已验证的 corrected real `.mcp` torch baseline 参数：
 `moshpp.optimize_fingers=true`、`runtime.sequence_chunk_size=32`、`runtime.sequence_chunk_overlap=4`、`runtime.sequence_seed_refine_iters=5`、`runtime.refine_lr=0.05`、`runtime.sequence_lr=0.05`、`runtime.sequence_max_iters=30`。如果要在此基础上做单变量 sweep，继续追加 `--cfg key=value` 即可；`--cfg` 会覆盖同名 preset 项，因此不需要每次重打一整串 baseline override。
+对于 direct single-run 的 `.mcp` 命令，如果你故意不传 `--preset`，现在也必须显式补齐这三条 corrected-baseline anchor：`--cfg moshpp.optimize_fingers=true --cfg runtime.refine_lr=0.05 --cfg runtime.sequence_lr=0.05`。否则 CLI 会直接拒绝运行，避免继续把已确认会掉进 bad replay cfg 的裸跑路径误当成官方 code-first 主线入口。
 
 如果想直接复现一个更保守的 low-risk translation 候选，可把 preset 换成 `real-mcp-transvelo10-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=10` 与 `runtime.sequence_boundary_transl_velocity_reference=true`，对应当前已确认可稳定复现、且五个主质量指标都仍朝正确方向轻微改善的低权重 candidate。
 
