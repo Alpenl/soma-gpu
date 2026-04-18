@@ -529,6 +529,16 @@ def _accel_l2_at(array, start_idx):
     return float(np.linalg.norm(accel.reshape(-1)))
 
 
+def _local_transition_diagnostics_at(array, seam_index):
+    return {
+        "prev_frame_delta_l2": _frame_delta_l2_at(array, seam_index - 2, seam_index - 1),
+        "seam_jump_l2": _frame_delta_l2_at(array, seam_index - 1, seam_index),
+        "next_frame_delta_l2": _frame_delta_l2_at(array, seam_index, seam_index + 1),
+        "pre_accel_l2": _accel_l2_at(array, seam_index - 2),
+        "post_accel_l2": _accel_l2_at(array, seam_index - 1),
+    }
+
+
 def _chunk_seam_jump_l2_samples(array_like, *, chunk_size, overlap, keep_starts=None):
     array = np.asarray(array_like, dtype=np.float64)
     if array.shape[0] < 2:
@@ -563,11 +573,7 @@ def _chunk_seam_local_diagnostics(array_like, *, chunk_size, overlap, keep_start
         diagnostics.append(
             {
                 **seam_plan,
-                "prev_frame_delta_l2": _frame_delta_l2_at(array, seam_index - 2, seam_index - 1),
-                "seam_jump_l2": _frame_delta_l2_at(array, seam_index - 1, seam_index),
-                "next_frame_delta_l2": _frame_delta_l2_at(array, seam_index, seam_index + 1),
-                "pre_accel_l2": _accel_l2_at(array, seam_index - 2),
-                "post_accel_l2": _accel_l2_at(array, seam_index - 1),
+                **_local_transition_diagnostics_at(array, seam_index),
             }
         )
     return diagnostics
@@ -603,6 +609,64 @@ def summarize_stageii_chunk_seam_diagnostics(sample_path):
             overlap=chunk_overlap,
             keep_starts=chunk_keep_starts,
         ),
+    }
+
+
+def compare_stageii_chunk_seam_diagnostics(reference_path, candidate_path):
+    reference = normalize_stageii_sample(reference_path)
+    candidate = normalize_stageii_sample(candidate_path)
+    if reference.trans.shape[0] != candidate.trans.shape[0]:
+        raise ValueError("reference and candidate stageii samples must have matching frame counts")
+
+    candidate_diagnostics = summarize_stageii_chunk_seam_diagnostics(candidate_path)
+    if candidate_diagnostics is None:
+        return None
+
+    def _compare_axis(rows, reference_array):
+        reference_array = np.asarray(reference_array, dtype=np.float64)
+        compared_rows = []
+        for row in rows:
+            seam_index = int(row["seam_index"])
+            reference_metrics = _local_transition_diagnostics_at(reference_array, seam_index)
+            delta_metrics = {}
+            for key, candidate_value in row.items():
+                if key in {"chunk_index", "row_start", "row_end", "keep_start", "trim_count", "seam_index"}:
+                    continue
+                reference_value = reference_metrics.get(key)
+                if candidate_value is None or reference_value is None:
+                    delta_metrics[key] = None
+                else:
+                    delta_metrics[key] = float(candidate_value) - float(reference_value)
+            compared_rows.append(
+                {
+                    "chunk_index": row["chunk_index"],
+                    "row_start": row["row_start"],
+                    "row_end": row["row_end"],
+                    "keep_start": row["keep_start"],
+                    "trim_count": row["trim_count"],
+                    "seam_index": seam_index,
+                    "candidate": {
+                        key: row[key]
+                        for key in (
+                            "prev_frame_delta_l2",
+                            "seam_jump_l2",
+                            "next_frame_delta_l2",
+                            "pre_accel_l2",
+                            "post_accel_l2",
+                        )
+                    },
+                    "reference": reference_metrics,
+                    "delta": delta_metrics,
+                }
+            )
+        return compared_rows
+
+    return {
+        "chunk_size": candidate_diagnostics["chunk_size"],
+        "chunk_overlap": candidate_diagnostics["chunk_overlap"],
+        "chunk_keep_starts": candidate_diagnostics["chunk_keep_starts"],
+        "transl": _compare_axis(candidate_diagnostics["transl"], reference.trans),
+        "pose": _compare_axis(candidate_diagnostics["pose"], reference.poses),
     }
 
 

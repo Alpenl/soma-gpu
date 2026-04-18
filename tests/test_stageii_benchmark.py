@@ -1411,6 +1411,55 @@ def test_summarize_stageii_chunk_seam_diagnostics_uses_runtime_chunk_config_and_
     assert diagnostics["pose"][0]["post_accel_l2"] == pytest.approx(39.0)
 
 
+def test_compare_stageii_chunk_seam_diagnostics_reports_same_frame_reference_deltas(tmp_path):
+    def _write_stageii(sample_path, values):
+        sample_path.write_bytes(
+            pickle.dumps(
+                {
+                    "fullpose": np.asarray([[value] for value in values], dtype=np.float32),
+                    "betas": np.zeros(10, dtype=np.float32),
+                    "trans": np.asarray([[value, 0.0, 0.0] for value in values], dtype=np.float32),
+                    "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                    "latent_labels": ["A"],
+                    "stageii_debug_details": {
+                        "cfg": {
+                            "surface_model": {
+                                "type": "smplx",
+                                "gender": "male",
+                            },
+                            "runtime": {
+                                "sequence_chunk_size": 4,
+                                "sequence_chunk_overlap": 2,
+                            },
+                        },
+                        "sequence_chunk_keep_starts": [0, 1],
+                        "mocap_frame_rate": 120.0,
+                        "mocap_time_length": len(values),
+                        "markers_obs": np.zeros((len(values), 1, 3), dtype=np.float32),
+                        "markers_sim": np.zeros((len(values), 1, 3), dtype=np.float32),
+                        "labels_obs": [["A"]] * len(values),
+                    },
+                }
+            )
+        )
+
+    reference_path = tmp_path / "reference_stageii.pkl"
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    _write_stageii(reference_path, [0.0, 1.0, 50.0, 70.0, 71.0, 72.0])
+    _write_stageii(candidate_path, [0.0, 1.0, 50.0, 90.0, 91.0, 92.0])
+
+    comparison = stageii_benchmark.compare_stageii_chunk_seam_diagnostics(reference_path, candidate_path)
+
+    assert comparison["chunk_keep_starts"] == [0, 1]
+    assert comparison["pose"][0]["seam_index"] == 3
+    assert comparison["pose"][0]["candidate"]["seam_jump_l2"] == pytest.approx(40.0)
+    assert comparison["pose"][0]["reference"]["seam_jump_l2"] == pytest.approx(20.0)
+    assert comparison["pose"][0]["delta"]["seam_jump_l2"] == pytest.approx(20.0)
+    assert comparison["pose"][0]["candidate"]["post_accel_l2"] == pytest.approx(39.0)
+    assert comparison["pose"][0]["reference"]["post_accel_l2"] == pytest.approx(19.0)
+    assert comparison["pose"][0]["delta"]["post_accel_l2"] == pytest.approx(20.0)
+
+
 def test_summarize_stageii_quality_reads_legacy_marker_residual_from_public_sample():
     sample_path = ROOT / "support_data/tests/mosh_stageii.pkl"
     quality = stageii_benchmark._summarize_stageii_quality(
