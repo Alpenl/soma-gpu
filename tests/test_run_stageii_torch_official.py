@@ -716,6 +716,7 @@ def test_run_stageii_torch_official_main_applies_structure_only_chunk48_deltapos
         "runtime.sequence_lr": "0.05",
         "runtime.sequence_max_iters": "30",
         "runtime.sequence_delta_pose": "4",
+        "runtime.sequence_chunk_stitch_mode": "adaptive_transl_jump_pose_guard",
         "mocap.fname": str(tmp_path / "input" / "wolf001" / "capture.mcp"),
         "dirs.support_base_dir": str(tmp_path / "support_files"),
         "dirs.work_base_dir": str(tmp_path / "work"),

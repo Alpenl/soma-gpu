@@ -11,6 +11,7 @@ from utils.script_utils import load_pickle_compat, resolve_stageii_model_path
 from utils.stageii_benchmark import (
     _chunk_seam_jump_l2_samples,
     _sequence_chunk_config,
+    _sequence_chunk_keep_starts,
     _summarize_numeric_samples,
     _temporal_accel_l2_samples,
     normalize_stageii_sample,
@@ -24,6 +25,7 @@ class LoadedMeshSequence:
     vertices: np.ndarray
     chunk_size: int | None = None
     chunk_overlap: int | None = None
+    chunk_keep_starts: list[int] | None = None
 
 
 def _normalized_path(path):
@@ -98,16 +100,38 @@ def _loaded_chunk_config(input_path, *, explicit_chunk_config=None):
     return _sequence_chunk_config(load_pickle_compat(input_path))
 
 
+def _loaded_chunk_keep_starts(stageii_data, *, chunk_config, explicit_chunk_config=None):
+    if explicit_chunk_config is not None or chunk_config is None:
+        return None
+    total_frames = None
+    for key in ("trans", "fullpose"):
+        values = stageii_data.get(key)
+        if values is not None:
+            total_frames = int(np.asarray(values).shape[0])
+            break
+    if total_frames is None:
+        raise ValueError("stageii sample must contain trans or fullpose to resolve chunk keep_starts")
+    chunk_size, chunk_overlap = chunk_config
+    return _sequence_chunk_keep_starts(
+        stageii_data,
+        total_frames=total_frames,
+        chunk_size=chunk_size,
+        overlap=chunk_overlap,
+    )
+
+
 def load_mesh_sequence(input_path, *, support_base_dir=None, chunk_size=None, chunk_overlap=None):
     input_path = Path(input_path)
     explicit_chunk_config = _explicit_chunk_config(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     suffix = input_path.suffix.lower()
+    stageii_data = None
 
     if suffix in {".pc2", ".pc16"}:
         mesh_cache = readPC2(str(input_path), float16=suffix == ".pc16")
         vertices = np.asarray(mesh_cache["V"], dtype=np.float32)
         source_format = suffix[1:]
     elif suffix == ".pkl":
+        stageii_data = load_pickle_compat(input_path)
         model_path = _stageii_model_path(input_path, support_base_dir=support_base_dir)
         model = render_video.load_render_model(model_path)
         vertices = np.asarray(render_video.load_vertices(str(input_path), model), dtype=np.float32)
@@ -115,12 +139,30 @@ def load_mesh_sequence(input_path, *, support_base_dir=None, chunk_size=None, ch
     else:
         raise ValueError(f"Unsupported mesh input format: {input_path}")
 
-    chunk_config = _loaded_chunk_config(input_path, explicit_chunk_config=explicit_chunk_config)
+    chunk_config = (
+        _loaded_chunk_config(input_path, explicit_chunk_config=explicit_chunk_config)
+        if stageii_data is None
+        else (
+            explicit_chunk_config
+            if explicit_chunk_config is not None
+            else _sequence_chunk_config(stageii_data)
+        )
+    )
     if chunk_config is None:
         resolved_chunk_size = None
         resolved_chunk_overlap = None
+        resolved_chunk_keep_starts = None
     else:
         resolved_chunk_size, resolved_chunk_overlap = chunk_config
+        resolved_chunk_keep_starts = (
+            None
+            if stageii_data is None
+            else _loaded_chunk_keep_starts(
+                stageii_data,
+                chunk_config=chunk_config,
+                explicit_chunk_config=explicit_chunk_config,
+            )
+        )
 
     return LoadedMeshSequence(
         input_path=input_path,
@@ -128,6 +170,7 @@ def load_mesh_sequence(input_path, *, support_base_dir=None, chunk_size=None, ch
         vertices=vertices,
         chunk_size=resolved_chunk_size,
         chunk_overlap=resolved_chunk_overlap,
+        chunk_keep_starts=resolved_chunk_keep_starts,
     )
 
 
@@ -167,6 +210,7 @@ def summarize_mesh_sequence(sequence):
                 sequence.vertices,
                 chunk_size=sequence.chunk_size,
                 overlap=sequence.chunk_overlap or 0,
+                keep_starts=sequence.chunk_keep_starts,
             ),
             include_samples=False,
         )

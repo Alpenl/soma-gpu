@@ -36,6 +36,7 @@ REAL_MCP_STRUCTURE_CHUNK48_DELTAPOSE_PRESET = {
     "runtime.sequence_chunk_size": "48",
     "runtime.sequence_chunk_overlap": "8",
     "runtime.sequence_delta_pose": "4",
+    "runtime.sequence_chunk_stitch_mode": "adaptive_transl_jump_pose_guard",
 }
 REAL_MCP_CORRECTED_BASELINE_REQUIRED_CFG = {
     "moshpp.optimize_fingers": "true",
@@ -102,7 +103,7 @@ def build_parser():
         help=(
             "Optional named override pack applied before --cfg. "
             "Use real-mcp-baseline for the corrected real .mcp torch baseline, "
-            "real-mcp-chunk48ov8-deltapose4 for the current structure-only slice candidate, "
+            "real-mcp-chunk48ov8-deltapose4 for the retained structure-only slice candidate, "
             "real-mcp-transvelo10-seedvelowindow for the low-risk translation candidate, or "
             "real-mcp-transvelo32-seedvelowindow for the mid-risk translation candidate, or "
             "real-mcp-transvelo100-seedvelowindow for the higher-gain translation-friendly candidate. "
