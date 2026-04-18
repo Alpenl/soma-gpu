@@ -1567,6 +1567,80 @@ def test_select_chunk_keep_start_can_preserve_legacy_pose_jump_when_guarded():
     assert keep_start == 2
 
 
+def test_select_chunk_keep_start_can_use_pose_second_key_for_translation_near_tie():
+    module = _load_chmosh_torch_module()
+
+    keep_start = module._select_chunk_keep_start(
+        stitch_mode="adaptive_transl_jump_pose_guard",
+        overlap_count=2,
+        previous_fullpose_tail=torch.tensor([[0.0], [10.0]], dtype=torch.float32),
+        previous_transl_tail=torch.tensor(
+            [
+                [90.0, 0.0, 0.0],
+                [100.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_fullpose=torch.tensor(
+            [
+                [0.0],
+                [1.0],
+                [50.0],
+                [51.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_transl=torch.tensor(
+            [
+                [89.0, 0.0, 0.0],
+                [91.00044, 0.0, 0.0],
+                [101.0, 0.0, 0.0],
+                [102.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+    )
+
+    assert keep_start == 1
+
+
+def test_select_chunk_keep_start_keeps_translation_first_when_gap_is_not_near_tie():
+    module = _load_chmosh_torch_module()
+
+    keep_start = module._select_chunk_keep_start(
+        stitch_mode="adaptive_transl_jump_pose_guard",
+        overlap_count=2,
+        previous_fullpose_tail=torch.tensor([[0.0], [10.0]], dtype=torch.float32),
+        previous_transl_tail=torch.tensor(
+            [
+                [90.0, 0.0, 0.0],
+                [100.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_fullpose=torch.tensor(
+            [
+                [0.0],
+                [1.0],
+                [50.0],
+                [51.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_transl=torch.tensor(
+            [
+                [89.0, 0.0, 0.0],
+                [91.0006, 0.0, 0.0],
+                [101.0, 0.0, 0.0],
+                [102.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+    )
+
+    assert keep_start == 2
+
+
 def test_select_chunk_keep_start_can_choose_earlier_boundary_when_mesh_guard_holds():
     module = _load_chmosh_torch_module()
 

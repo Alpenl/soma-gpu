@@ -410,6 +410,9 @@ def _runtime_sequence_chunk_stitch_mode(runtime):
     return stitch_mode
 
 
+_TRANSL_JUMP_POSE_TIE_EPSILON = 4.5e-4
+
+
 def _select_chunk_keep_start(
     *,
     stitch_mode,
@@ -516,7 +519,7 @@ def _select_chunk_keep_start(
         )
 
     best_keep_start = default_keep_start
-    best_score = None
+    eligible_candidates = []
     for keep_start in range(1, max_keep_start + 1):
         transl_jump = float(
             torch.linalg.vector_norm(current_transl[keep_start] - previous_transl_tail[keep_start - 1]).item()
@@ -561,10 +564,23 @@ def _select_chunk_keep_start(
         )
         if not passed_pose_guard or not passed_mesh_guard:
             continue
-        score = (transl_jump, pose_jump, mesh_jump, -keep_start)
-        if best_score is None or score < best_score:
-            best_score = score
-            best_keep_start = keep_start
+        eligible_candidates.append(candidate_metrics[-1])
+    if eligible_candidates:
+        if requires_pose_guard:
+            min_transl_jump = min(row["transl_jump"] for row in eligible_candidates)
+            transl_near_tie_candidates = [
+                row for row in eligible_candidates if row["transl_jump"] <= min_transl_jump + _TRANSL_JUMP_POSE_TIE_EPSILON
+            ]
+            selected_candidate = min(
+                transl_near_tie_candidates,
+                key=lambda row: (row["pose_jump"], row["transl_jump"], row["mesh_jump"], -row["keep_start"]),
+            )
+        else:
+            selected_candidate = min(
+                eligible_candidates,
+                key=lambda row: (row["transl_jump"], row["pose_jump"], row["mesh_jump"], -row["keep_start"]),
+            )
+        best_keep_start = int(selected_candidate["keep_start"])
     return _finalize(best_keep_start)
 
 
