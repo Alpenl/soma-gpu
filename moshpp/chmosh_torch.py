@@ -928,6 +928,48 @@ def _apply_chunk_marker_data_scale(
     return weights, True
 
 
+def _summarize_sequence_probe(
+    *,
+    chunk_idx,
+    row_start,
+    row_end,
+    overlap_count,
+    latent_pose_init,
+    solved_latent_pose,
+    transl_init,
+    solved_transl,
+    visible_mask,
+):
+    def _per_frame_l2(reference, solved):
+        reference = torch.as_tensor(reference, dtype=torch.float32)
+        solved = torch.as_tensor(solved, dtype=torch.float32)
+        delta = solved - reference
+        return torch.sqrt((delta.reshape(delta.shape[0], -1) ** 2).sum(dim=1))
+
+    latent_delta_l2 = _per_frame_l2(latent_pose_init, solved_latent_pose)
+    transl_delta_l2 = _per_frame_l2(transl_init, solved_transl)
+    visible_counts = torch.as_tensor(visible_mask, dtype=torch.float32).sum(dim=1)
+    overlap_count = min(int(overlap_count), int(latent_delta_l2.shape[0]))
+    overlap_slice = slice(0, overlap_count)
+    nonoverlap_slice = slice(overlap_count, latent_delta_l2.shape[0])
+
+    summary = {
+        "chunk_index": int(chunk_idx),
+        "row_start": int(row_start),
+        "row_end": int(row_end),
+        "overlap_count": int(overlap_count),
+        "latent_delta_overlap_l2": latent_delta_l2[overlap_slice].detach().cpu().tolist(),
+        "latent_delta_nonoverlap_mean_l2": None,
+        "transl_delta_overlap_l2": transl_delta_l2[overlap_slice].detach().cpu().tolist(),
+        "transl_delta_nonoverlap_mean_l2": None,
+        "visible_counts_overlap": visible_counts[overlap_slice].to(dtype=torch.int64).detach().cpu().tolist(),
+    }
+    if overlap_count < latent_delta_l2.shape[0]:
+        summary["latent_delta_nonoverlap_mean_l2"] = float(latent_delta_l2[nonoverlap_slice].mean().item())
+        summary["transl_delta_nonoverlap_mean_l2"] = float(transl_delta_l2[nonoverlap_slice].mean().item())
+    return summary
+
+
 def _build_chunk_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
     if previous_tail is None:
         return None
@@ -1143,6 +1185,7 @@ def mosh_stageii_torch(
         runtime,
         "sequence_overlap_transl_seed_from_previous_chunk_indices",
     )
+    sequence_probe_chunk_indices = _runtime_optional_nonnegative_int_set(runtime, "sequence_probe_chunk_indices")
     sequence_local_window_start = _runtime_optional_nonnegative_int(runtime, "sequence_local_window_start")
     sequence_local_window = _runtime_optional_positive_int(runtime, "sequence_local_window")
     sequence_local_pose_reference_from_previous_chunk_indices = _runtime_optional_nonnegative_int_set(
@@ -1263,6 +1306,7 @@ def mosh_stageii_torch(
         previous_chunk_expression_tail = None
         sequence_chunk_keep_starts = []
         sequence_chunk_stitch_diagnostics = []
+        sequence_chunk_solver_probes = []
         if sequence_seed_options is not None:
             try:
                 sequence_markers_obs, sequence_visible = _build_chunk_observations(
@@ -1601,6 +1645,19 @@ def mosh_stageii_torch(
                 options=sequence_options,
                 evaluator=sequence_evaluator,
             )
+            solver_probe = None
+            if sequence_probe_chunk_indices is not None and chunk_idx in sequence_probe_chunk_indices:
+                solver_probe = _summarize_sequence_probe(
+                    chunk_idx=chunk_idx,
+                    row_start=row_start,
+                    row_end=row_end,
+                    overlap_count=chunk_overlap_count,
+                    latent_pose_init=chunk_latent_init,
+                    solved_latent_pose=result.latent_pose,
+                    transl_init=chunk_transl_init,
+                    solved_transl=result.transl,
+                    visible_mask=chunk_visible,
+                )
 
             current_latent_pose = torch.as_tensor(result.latent_pose[-1:]).detach()
             current_transl = torch.as_tensor(result.transl[-1:]).detach()
@@ -1651,9 +1708,17 @@ def mosh_stageii_torch(
                         "local_data_scale_applied": local_data_scale_applied,
                     }
                 )
+                if solver_probe is not None:
+                    solver_probe["selected_keep_start"] = int(keep_start)
+                    solver_probe["trim_count"] = int(overlap_count - keep_start)
                 _trim_perframe_tail(perframe_data, overlap_count - keep_start)
+            elif solver_probe is not None:
+                solver_probe["selected_keep_start"] = int(keep_start)
+                solver_probe["trim_count"] = 0
             sequence_chunk_keep_starts.append(int(keep_start))
             sequence_chunk_stitch_diagnostics.append(stitch_diagnostics)
+            if solver_probe is not None:
+                sequence_chunk_solver_probes.append(solver_probe)
             for local_idx in range(keep_start, row_end - row_start):
                 visible_labels = [latent_labels[idx] for idx in torch.nonzero(chunk_visible[local_idx], as_tuple=False).flatten().tolist()]
                 for key, value in result.loss_terms.items():
@@ -1765,6 +1830,8 @@ def mosh_stageii_torch(
         stageii_debug_details["sequence_chunk_stitch_mode"] = sequence_chunk_stitch_mode
         stageii_debug_details["sequence_chunk_keep_starts"] = sequence_chunk_keep_starts
         stageii_debug_details["sequence_chunk_stitch_diagnostics"] = sequence_chunk_stitch_diagnostics
+        if sequence_chunk_solver_probes:
+            stageii_debug_details["sequence_chunk_solver_probes"] = sequence_chunk_solver_probes
     stageii_data = {key: np.array(values) for key, values in perframe_data.items()}
     stageii_data["stageii_debug_details"] = stageii_debug_details
     return stageii_data
