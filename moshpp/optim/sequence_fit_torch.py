@@ -20,6 +20,7 @@ class TorchSequenceFitWeights:
     expr: float
     velocity: float
     transl_velocity: float = 0.0
+    boundary_transl_seam: float = 0.0
     temporal_accel: float = 0.0
     delta_pose: float = 0.0
     delta_trans: float = 0.0
@@ -80,6 +81,7 @@ def _coerce_sequence_weights(weights):
         expr=float(weights.expr),
         velocity=float(weights.velocity),
         transl_velocity=float(getattr(weights, "transl_velocity", 0.0)),
+        boundary_transl_seam=float(getattr(weights, "boundary_transl_seam", 0.0)),
         temporal_accel=float(getattr(weights, "temporal_accel", 0.0)),
         delta_pose=float(getattr(weights, "delta_pose", 0.0)),
         delta_trans=float(getattr(weights, "delta_trans", 0.0)),
@@ -226,6 +228,8 @@ def fit_stageii_sequence_torch(
     velocity_reference_index=None,
     transl_velocity_reference=None,
     transl_velocity_reference_index=None,
+    transl_boundary_reference=None,
+    transl_boundary_reference_index=None,
     visible_mask=None,
     marker_data_weights=None,
     evaluator=None,
@@ -314,6 +318,25 @@ def fit_stageii_sequence_torch(
         num_frames=num_frames,
         name="transl_velocity_reference_index",
     )
+    transl_boundary_reference = _coerce_optional_velocity_reference(
+        transl_boundary_reference,
+        device=device,
+        dtype=torch.float32,
+        feature_shape=(3,),
+        num_frames=num_frames,
+        name="transl_boundary_reference",
+    )
+    if transl_boundary_reference is not None:
+        if transl_boundary_reference.shape[0] != 1:
+            raise ValueError(
+                f"transl_boundary_reference must provide a single boundary frame, got leading dim {transl_boundary_reference.shape[0]}"
+            )
+        transl_boundary_reference = transl_boundary_reference.detach().clone()
+    transl_boundary_reference_index = _coerce_optional_index(
+        transl_boundary_reference_index,
+        num_frames=num_frames,
+        name="transl_boundary_reference_index",
+    )
 
     latent_pose_reference = _coerce_optional_reference(
         latent_pose_reference,
@@ -392,6 +415,8 @@ def fit_stageii_sequence_torch(
             velocity_reference_index=velocity_reference_index,
             transl_velocity_reference=transl_velocity_reference,
             transl_velocity_reference_index=transl_velocity_reference_index,
+            transl_boundary_reference=transl_boundary_reference,
+            transl_boundary_reference_index=transl_boundary_reference_index,
             latent_pose_reference=latent_pose_reference,
             transl_reference=transl_reference,
             expression_reference=expression_reference,
@@ -415,6 +440,8 @@ def fit_stageii_sequence_torch(
         velocity_reference_index=velocity_reference_index,
         transl_velocity_reference=transl_velocity_reference,
         transl_velocity_reference_index=transl_velocity_reference_index,
+        transl_boundary_reference=transl_boundary_reference,
+        transl_boundary_reference_index=transl_boundary_reference_index,
         latent_pose_reference=latent_pose_reference,
         transl_reference=transl_reference,
         expression_reference=expression_reference,

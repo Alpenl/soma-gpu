@@ -141,6 +141,26 @@ def _velocity_term(sequence, *, weight, reference=None, reference_index=None, in
     return term
 
 
+def _boundary_term(sequence, *, weight, reference=None, reference_index=None, index_name):
+    term = sequence.new_zeros((sequence.shape[0],))
+    if weight == 0.0 or reference is None:
+        return term
+
+    reference = _coerce_velocity_reference(reference, sequence)
+    if reference.shape[0] != 1:
+        raise ValueError(f"{index_name.rsplit('_', 1)[0]} must provide a single boundary reference frame")
+
+    seam_idx = _coerce_reference_index(
+        reference_index,
+        num_frames=sequence.shape[0],
+        name=index_name,
+    )
+    if seam_idx is None:
+        seam_idx = 0
+    term[seam_idx] = torch.sum(((sequence[seam_idx] - reference[0]) * weight) ** 2)
+    return term
+
+
 class StageIISequenceEvaluator(torch.nn.Module):
     def __init__(
         self,
@@ -176,6 +196,8 @@ class StageIISequenceEvaluator(torch.nn.Module):
         velocity_reference_index=None,
         transl_velocity_reference=None,
         transl_velocity_reference_index=None,
+        transl_boundary_reference=None,
+        transl_boundary_reference_index=None,
         latent_pose_reference=None,
         transl_reference=None,
         expression_reference=None,
@@ -229,6 +251,17 @@ class StageIISequenceEvaluator(torch.nn.Module):
                 index_name="transl_velocity_reference_index",
             )
 
+        boundary_transl_seam_term = latent_pose.new_zeros((latent_pose.shape[0],))
+        boundary_transl_seam_weight = float(getattr(weights, "boundary_transl_seam", 0.0))
+        if boundary_transl_seam_weight != 0.0:
+            boundary_transl_seam_term = _boundary_term(
+                transl,
+                weight=boundary_transl_seam_weight,
+                reference=transl_boundary_reference,
+                reference_index=transl_boundary_reference_index,
+                index_name="transl_boundary_reference_index",
+            )
+
         accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
         temporal_accel = float(getattr(weights, "temporal_accel", 0.0))
         if temporal_accel != 0.0 and transl.shape[0] >= 3:
@@ -243,6 +276,7 @@ class StageIISequenceEvaluator(torch.nn.Module):
             "expr": expr_term,
             "velo": velocity_term,
             "veloT": transl_velocity_term,
+            "seamT": boundary_transl_seam_term,
             "accel": accel_term,
         }
 
@@ -306,6 +340,8 @@ def evaluate_stageii_sequence(
     velocity_reference_index=None,
     transl_velocity_reference=None,
     transl_velocity_reference_index=None,
+    transl_boundary_reference=None,
+    transl_boundary_reference_index=None,
     latent_pose_reference=None,
     transl_reference=None,
     expression_reference=None,
@@ -324,6 +360,8 @@ def evaluate_stageii_sequence(
         velocity_reference_index=velocity_reference_index,
         transl_velocity_reference=transl_velocity_reference,
         transl_velocity_reference_index=transl_velocity_reference_index,
+        transl_boundary_reference=transl_boundary_reference,
+        transl_boundary_reference_index=transl_boundary_reference_index,
         latent_pose_reference=latent_pose_reference,
         transl_reference=transl_reference,
         expression_reference=expression_reference,

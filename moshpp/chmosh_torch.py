@@ -486,6 +486,7 @@ def _runtime_sequence_fit_weights(cfg, runtime, *, avg_visible_count, marker_cou
         expr=float(weight_cfg.stageii_wt_expr),
         velocity=float(weight_cfg.stageii_wt_velo),
         transl_velocity=float(_runtime_get(runtime, "sequence_transl_velocity", 0.0)),
+        boundary_transl_seam=float(_runtime_get(runtime, "sequence_boundary_transl_seam", 0.0)),
         temporal_accel=float(_runtime_get(runtime, "sequence_temporal_accel", 0.0)),
         delta_pose=float(_runtime_get(runtime, "sequence_delta_pose", 0.0)),
         delta_trans=float(_runtime_get(runtime, "sequence_delta_trans", 0.0)),
@@ -992,6 +993,8 @@ def mosh_stageii_torch(
 
             transl_velocity_reference = None
             transl_velocity_reference_index = None
+            transl_boundary_reference = None
+            transl_boundary_reference_index = None
             if (
                 sequence_boundary_transl_velocity_reference
                 and prev_transl is not None
@@ -1026,6 +1029,17 @@ def mosh_stageii_torch(
                                 chunk_overlap_count,
                                 keep_seam_window=keep_seam_window,
                             )
+            if (
+                float(getattr(sequence_weights, "boundary_transl_seam", 0.0)) != 0.0
+                and prev_transl is not None
+                and chunk_overlap_count < chunk_length
+            ):
+                transl_boundary_reference_index = chunk_overlap_count
+                transl_boundary_reference = (
+                    previous_chunk_transl_tail[-1:].detach().clone()
+                    if previous_chunk_transl_tail is not None
+                    else prev_transl
+                )
 
             chunk_latent_reference = chunk_latent_init
             chunk_transl_reference = chunk_transl_init
@@ -1082,6 +1096,8 @@ def mosh_stageii_torch(
                 velocity_reference_index=velocity_reference_index,
                 transl_velocity_reference=transl_velocity_reference,
                 transl_velocity_reference_index=transl_velocity_reference_index,
+                transl_boundary_reference=transl_boundary_reference,
+                transl_boundary_reference_index=transl_boundary_reference_index,
                 visible_mask=chunk_visible,
                 weights=sequence_weights,
                 options=sequence_options,
