@@ -147,9 +147,6 @@ def _boundary_term(sequence, *, weight, reference=None, reference_index=None, in
         return term
 
     reference = _coerce_velocity_reference(reference, sequence)
-    if reference.shape[0] != 1:
-        raise ValueError(f"{index_name.rsplit('_', 1)[0]} must provide a single boundary reference frame")
-
     seam_idx = _coerce_reference_index(
         reference_index,
         num_frames=sequence.shape[0],
@@ -157,7 +154,21 @@ def _boundary_term(sequence, *, weight, reference=None, reference_index=None, in
     )
     if seam_idx is None:
         seam_idx = 0
-    term[seam_idx] = torch.sum(((sequence[seam_idx] - reference[0]) * weight) ** 2)
+    reduce_dims = tuple(range(1, sequence.ndim))
+    if reference.shape[0] == 1:
+        term[seam_idx] = torch.sum(((sequence[seam_idx] - reference[0]) * weight) ** 2)
+        return term
+
+    window_end = seam_idx + reference.shape[0]
+    if window_end > sequence.shape[0]:
+        raise ValueError(
+            f"{index_name.rsplit('_', 1)[0]} local window exceeds sequence length: "
+            f"start={seam_idx}, window={reference.shape[0]}, num_frames={sequence.shape[0]}"
+        )
+    term[seam_idx:window_end] = torch.sum(
+        ((sequence[seam_idx:window_end] - reference) * weight) ** 2,
+        dim=reduce_dims,
+    )
     return term
 
 

@@ -327,10 +327,6 @@ def fit_stageii_sequence_torch(
         name="transl_boundary_reference",
     )
     if transl_boundary_reference is not None:
-        if transl_boundary_reference.shape[0] != 1:
-            raise ValueError(
-                f"transl_boundary_reference must provide a single boundary frame, got leading dim {transl_boundary_reference.shape[0]}"
-            )
         transl_boundary_reference = transl_boundary_reference.detach().clone()
     transl_boundary_reference_index = _coerce_optional_index(
         transl_boundary_reference_index,

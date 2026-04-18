@@ -687,6 +687,15 @@ def _build_chunk_zero_seam_transl_velocity_reference(base_reference, previous_ta
     return torch.cat((anchor, anchor + seam_positions), dim=0)
 
 
+def _build_chunk_transl_boundary_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
+    return _build_chunk_zero_seam_transl_velocity_reference(
+        base_reference,
+        previous_tail,
+        overlap_count,
+        keep_seam_window=keep_seam_window,
+    )
+
+
 def _build_chunk_full_transl_velocity_reference(base_reference, previous_tail, overlap_count):
     return _build_chunk_full_velocity_reference(
         base_reference,
@@ -826,6 +835,26 @@ def mosh_stageii_torch(
         runtime,
         "sequence_boundary_transl_delta_reference_window",
     )
+    sequence_boundary_transl_seam_window = _runtime_optional_positive_int(
+        runtime,
+        "sequence_boundary_transl_seam_window",
+    )
+    sequence_boundary_data_window = _runtime_optional_positive_int(
+        runtime,
+        "sequence_boundary_data_window",
+    )
+    sequence_boundary_data_scale = _runtime_get(runtime, "sequence_boundary_data_scale", None)
+    if sequence_boundary_data_scale is not None:
+        try:
+            sequence_boundary_data_scale = float(sequence_boundary_data_scale)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Runtime sequence_boundary_data_scale must be a non-negative float when provided. Got {sequence_boundary_data_scale!r}."
+            ) from exc
+        if sequence_boundary_data_scale < 0.0:
+            raise ValueError(
+                f"Runtime sequence_boundary_data_scale must be a non-negative float when provided. Got {sequence_boundary_data_scale}."
+            )
     compile_evaluator = bool(_runtime_get(runtime, "compile_evaluator", False))
     compile_mode = str(_runtime_get(runtime, "compile_mode", "default"))
     compile_fullgraph = bool(_runtime_get(runtime, "compile_fullgraph", False))
@@ -1035,15 +1064,39 @@ def mosh_stageii_torch(
                 and chunk_overlap_count < chunk_length
             ):
                 transl_boundary_reference_index = chunk_overlap_count
-                transl_boundary_reference = (
-                    previous_chunk_transl_tail[-1:].detach().clone()
-                    if previous_chunk_transl_tail is not None
-                    else prev_transl
-                )
+                if previous_chunk_transl_tail is not None and sequence_boundary_transl_seam_window is not None:
+                    transl_boundary_reference = _build_chunk_transl_boundary_reference(
+                        chunk_transl_init,
+                        previous_chunk_transl_tail,
+                        chunk_overlap_count,
+                        keep_seam_window=sequence_boundary_transl_seam_window,
+                    )
+                else:
+                    transl_boundary_reference = (
+                        previous_chunk_transl_tail[-1:].detach().clone()
+                        if previous_chunk_transl_tail is not None
+                        else prev_transl
+                    )
 
             chunk_latent_reference = chunk_latent_init
             chunk_transl_reference = chunk_transl_init
             chunk_expression_reference = chunk_expression_init
+            chunk_marker_data_weights = None
+            if (
+                sequence_boundary_data_scale is not None
+                and sequence_boundary_data_scale != 1.0
+                and chunk_overlap_count > 0
+                and chunk_overlap_count < chunk_length
+            ):
+                keep_seam_window = sequence_boundary_data_window or 1
+                window_end = min(chunk_overlap_count + keep_seam_window, chunk_length)
+                if window_end > chunk_overlap_count:
+                    chunk_marker_data_weights = torch.ones(
+                        (chunk_length, chunk_markers_obs.shape[1]),
+                        dtype=torch.float32,
+                        device=device,
+                    )
+                    chunk_marker_data_weights[chunk_overlap_count:window_end] = sequence_boundary_data_scale
             if chunk_overlap_count > 0:
                 if float(getattr(sequence_weights, "delta_pose", 0.0)) != 0.0 and previous_chunk_latent_tail is not None:
                     chunk_latent_reference = _splice_chunk_overlap_reference(
@@ -1099,6 +1152,7 @@ def mosh_stageii_torch(
                 transl_boundary_reference=transl_boundary_reference,
                 transl_boundary_reference_index=transl_boundary_reference_index,
                 visible_mask=chunk_visible,
+                marker_data_weights=chunk_marker_data_weights,
                 weights=sequence_weights,
                 options=sequence_options,
                 evaluator=sequence_evaluator,
