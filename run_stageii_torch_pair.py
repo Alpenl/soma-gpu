@@ -61,6 +61,15 @@ def build_parser():
         ),
     )
     parser.add_argument(
+        "--segment-id",
+        choices=sorted(run_stageii_torch_official.OFFICIAL_SEGMENTS),
+        default=None,
+        help=(
+            "Optional registered 300-frame slice for the fixed 10.5-minute wolf001 real .mcp sample. "
+            "Forwarded to both baseline and candidate runs."
+        ),
+    )
+    parser.add_argument(
         "--baseline-output-suffix",
         default="_baseline",
         help="Suffix appended to the baseline mocap.basename so its outputs do not collide with the candidate.",
@@ -144,6 +153,11 @@ def _append_cfg_args(runner_args, cfg_entries):
         runner_args.extend(["--cfg", entry])
 
 
+def _append_segment_args(runner_args, args):
+    if args.segment_id is not None:
+        runner_args.extend(["--segment-id", args.segment_id])
+
+
 def _append_benchmark_args(runner_args, args, *, benchmark_output=None, expected_benchmark_output=None):
     if benchmark_output is not None:
         runner_args.extend(["--benchmark-output", benchmark_output])
@@ -194,6 +208,7 @@ def _build_baseline_runner_args(
     runner_args = _base_runner_args(args)
     runner_args.extend(["--preset", args.baseline_preset])
     runner_args.extend(["--output-suffix", args.baseline_output_suffix])
+    _append_segment_args(runner_args, args)
     if expected_stageii_path is not None:
         runner_args.extend(["--expected-stageii-path", str(expected_stageii_path)])
     _append_cfg_args(runner_args, args.cfg)
@@ -229,6 +244,7 @@ def _build_candidate_runner_args(
     runner_args = _base_runner_args(args)
     runner_args.extend(["--preset", args.candidate_preset])
     runner_args.extend(["--output-suffix", args.candidate_output_suffix])
+    _append_segment_args(runner_args, args)
     if expected_stageii_path is not None:
         runner_args.extend(["--expected-stageii-path", str(expected_stageii_path)])
     _append_cfg_args(runner_args, args.cfg)
@@ -271,6 +287,7 @@ def _validate_mesh_cli_args(parser, args):
 def _single_runner_cfg_namespace(args, *, preset, cfg_entries, output_suffix):
     return argparse.Namespace(
         preset=preset,
+        segment_id=args.segment_id,
         cfg=list(cfg_entries),
         output_suffix=output_suffix,
         mocap_fname=args.mocap_fname,

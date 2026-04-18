@@ -10,6 +10,7 @@ from utils.stageii_benchmark import (
     validate_benchmark_output_path,
     write_benchmark_report,
 )
+from utils.real_mcp_segments import REAL_MCP_SEGMENTS, apply_segment_overrides
 from utils.script_utils import (
     default_stageii_output_paths,
     planned_stageii_output_path_from_overrides,
@@ -51,6 +52,7 @@ OFFICIAL_PRESETS = {
         "runtime.sequence_transl_velocity": "100",
     },
 }
+OFFICIAL_SEGMENTS = REAL_MCP_SEGMENTS
 
 BENCHMARK_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
 OFFICIAL_RUN_CLI_ERROR_TYPES = (KeyError, ValueError, OSError, ImportError, ModuleNotFoundError)
@@ -99,6 +101,15 @@ def build_parser():
             "When running a direct .mcp single-sequence command without --preset, you must explicitly "
             "add --cfg moshpp.optimize_fingers=true --cfg runtime.refine_lr=0.05 "
             "--cfg runtime.sequence_lr=0.05."
+        ),
+    )
+    parser.add_argument(
+        "--segment-id",
+        choices=sorted(OFFICIAL_SEGMENTS),
+        default=None,
+        help=(
+            "Optional registered 300-frame slice for the fixed 10.5-minute wolf001 real .mcp sample. "
+            "Applies mocap.start_fidx/end_fidx and appends a segment suffix to mocap.basename."
         ),
     )
     parser.add_argument(
@@ -182,6 +193,14 @@ def build_parser():
 
 def _cfg_overrides(parser, args, *, output_suffix=None):
     overrides = _collect_cfg_overrides(parser, args)
+    try:
+        overrides = apply_segment_overrides(
+            overrides,
+            segment_id=getattr(args, "segment_id", None),
+            mocap_fname=args.mocap_fname,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     suffix = args.output_suffix if output_suffix is None else output_suffix
     if suffix:
         basename = overrides.get("mocap.basename")

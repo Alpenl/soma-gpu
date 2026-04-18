@@ -180,6 +180,9 @@ single runner 现在还会继续校验 helper 返回 payload 本身：`export_st
 
 如果想直接复现当前保留的高权重 translation-friendly 候选，可把 preset 换成 `real-mcp-transvelo100-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=100` 与 `runtime.sequence_boundary_transl_velocity_reference=true`。这样就能配合现有 `--mesh-reference` / `--benchmark-output` 直接做 baseline vs candidate 的 stageii / mesh 对照，而不需要再手工维护第二串高权重 velocity overrides。
 
+对于固定的 10.5 分钟主样本 `.../input/wolf001/4090-haonan-73.mcp`，single runner 现在还内置了三段可复用的 300 帧切片：
+`wolf001-stable-hold-300f`、`wolf001-fast-turn-300f`、`wolf001-dirty-recovery-300f`。直接追加 `--segment-id <id>` 即可把对应的 `mocap.start_fidx/end_fidx` 注入到 official entry，同时自动把 segment slug 追加到 `mocap.basename`，让不同切片在同一个 `--work-base-dir` 下也不会互相覆盖。`--segment-id` 目前只注册给这条固定样本使用；如果同一条命令又手工传了 `--cfg mocap.start_fidx=...` 或 `--cfg mocap.end_fidx=...`，runner 会直接报错，避免把“固定质量基线切片”重新改回任意 frame range。
+
 如果想在同一条 translation-friendly 候选结构上继续精调 seam 后局部窗口长度，现在也可以直接追加 `--cfg runtime.sequence_boundary_transl_velocity_reference_window=<正整数>`。未显式传时，runtime 会保留当前默认语义：`overlap > 1` 时继续沿用现有的 seed-velocity local-window，`overlap = 1` 时仍保留单点 keep-seam hook；只有显式给出这个正整数覆盖时，才会按指定窗口宽度去构造 seam 后的 prefix-aware translation velocity reference。例如 `--cfg runtime.sequence_boundary_transl_velocity_reference_window=1` 会把 local window 收窄成“上一 chunk 尾帧 + seam 后一帧”，适合在不改代码的前提下继续复核 real `.mcp` 主线的 translation seam 语义。
 
 当 baseline 和 candidate 共用同一个 `--work-base-dir` 时，建议同时给 `--output-suffix`，例如 `_baseline` / `_seedvelowindow`。这个后缀会在 preset/`--cfg` 解析完成后追加到 `mocap.basename`，从而让默认生成的 `stageii/log` 文件名分开；如果你已经显式用 `--cfg mocap.basename=...` 固定了名字，suffix 会继续在那个 basename 后面追加。
@@ -215,6 +218,7 @@ python run_stageii_torch_pair.py \
 - candidate 侧默认使用 `--preset real-mcp-transvelo32-seedvelowindow --output-suffix _candidate`，并自动把 baseline 那次真实返回的 `stageii_path` 显式传给 `--mesh-reference`，因此输出的 candidate benchmark JSON 会直接带上 baseline 的 stageii / mesh 对照摘要；即使 baseline 侧额外用了 `--baseline-cfg mocap.basename=...` 这类只影响路径命名的覆盖，也不会再被 candidate 侧的配置重推导错。这样默认主线会直接落在当前 real 300f 复核里更平衡的中档 Pareto 点，而不是默认走高权重 tradeoff。
 - 如果想在同一套 pair 入口下复核更激进的高权重版本，可显式加 `--candidate-preset real-mcp-transvelo100-seedvelowindow`；这样 baseline/candidate 的编排与 benchmark contract 不变，只把 candidate runtime 切到高权重 translation-friendly candidate。
 - 如果想在同一套 pair 入口下复核低权重版本，可显式加 `--candidate-preset real-mcp-transvelo10-seedvelowindow`；这样 baseline/candidate 的编排与 benchmark contract 不变，只把 candidate runtime 切到 low-risk candidate。
+- pair runner 现在也会把 `--segment-id` 原样透传给 baseline/candidate 两次 underlying single run，因此同一条 pair 命令可以直接绑定到 `wolf001-stable-hold-300f`、`wolf001-fast-turn-300f` 或 `wolf001-dirty-recovery-300f` 这种固定切片，而不用再手工给 shared `--cfg mocap.start_fidx=... --cfg mocap.end_fidx=...`。对应的 planned `stageii.pkl` / `*_benchmark.json` 路径也会自动带上 segment slug，再继续叠 baseline/candidate suffix。
 - 若加了 `--export-mesh`，pair runner 会把同一套 mesh 导出参数同时透传给 baseline 和 candidate；由于两侧默认 `mocap.basename` suffix 不同，即使共用一个 `--mesh-output-dir`，OBJ/PC2 也会自动分名，不需要再手工分两个导出目录。若没开 `--export-mesh` 却传了 `--mesh-output-dir`，pair runner 现在会直接报错，而不是静默忽略。
 - 若加了 `--lean-benchmark`，pair runner 会把该标志透传给所有真正开启 benchmark 的 underlying single run：candidate 默认 benchmark 会启用，baseline 只有在显式给了 `--baseline-benchmark-output` 时才启用。这样 baseline/candidate 对照仍会保留核心 quality / mesh compare JSON，但不会再为非主线 preview/mp4/artifact speed 探针额外花时间。
 - pair runner 对 benchmark run-count 现在也会先做自己的 CLI 校验：`--warmup-runs >= 0`、`--measured-runs > 0`；非法值会在 baseline 启动前直接报错，而不是等 underlying runner 或 benchmark helper 更晚失败。

@@ -412,6 +412,97 @@ def test_run_stageii_torch_official_main_plans_mesh_reference_from_output_suffix
     )
 
 
+def test_run_stageii_torch_official_main_applies_segment_registry_overrides(tmp_path, monkeypatch):
+    stageii_path = (
+        tmp_path
+        / "work"
+        / "input"
+        / "wolf001"
+        / "4090-haonan-73_wolf001_stable_hold_300f_stageii.pkl"
+    )
+    captured = {}
+
+    def fake_prepare_cfg(**kwargs):
+        captured["prepare_cfg"] = kwargs
+        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+
+    def fake_run_moshpp_once(cfg):
+        Path(cfg.dirs.stageii_fname).parent.mkdir(parents=True, exist_ok=True)
+        Path(cfg.dirs.stageii_fname).write_bytes(b"stageii")
+
+    def fake_run_public_stageii_benchmark(
+        sample_path,
+        *,
+        warmup_runs,
+        measured_runs,
+        mesh_reference_path,
+        mesh_support_base_dir,
+        mesh_chunk_size,
+        mesh_chunk_overlap,
+        lean_benchmark,
+    ):
+        captured["benchmark_call"] = {
+            "sample_path": sample_path,
+            "warmup_runs": warmup_runs,
+            "measured_runs": measured_runs,
+            "mesh_reference_path": mesh_reference_path,
+            "mesh_support_base_dir": mesh_support_base_dir,
+            "mesh_chunk_size": mesh_chunk_size,
+            "mesh_chunk_overlap": mesh_chunk_overlap,
+            "lean_benchmark": lean_benchmark,
+        }
+        return {"sample": {"path": str(sample_path)}, "quality": {"mesh_compare": None}}
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(run_stageii_torch_official, "run_moshpp_once", fake_run_moshpp_once)
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        fake_run_public_stageii_benchmark,
+    )
+
+    payload = run_stageii_torch_official.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "4090-haonan-73.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--preset",
+            "real-mcp-baseline",
+            "--segment-id",
+            "wolf001-stable-hold-300f",
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+        ]
+    )
+
+    assert captured["prepare_cfg"] == {
+        **run_stageii_torch_official.REAL_MCP_BASELINE_PRESET,
+        "mocap.fname": str(tmp_path / "input" / "wolf001" / "4090-haonan-73.mcp"),
+        "mocap.start_fidx": "12720",
+        "mocap.end_fidx": "13020",
+        "mocap.basename": "4090-haonan-73_wolf001_stable_hold_300f",
+        "dirs.support_base_dir": str(tmp_path / "support_files"),
+        "dirs.work_base_dir": str(tmp_path / "work"),
+        "runtime.backend": "torch",
+    }
+    assert captured["benchmark_call"] == {
+        "sample_path": str(stageii_path),
+        "warmup_runs": 0,
+        "measured_runs": 1,
+        "mesh_reference_path": None,
+        "mesh_support_base_dir": str(tmp_path / "support_files"),
+        "mesh_chunk_size": None,
+        "mesh_chunk_overlap": None,
+        "lean_benchmark": False,
+    }
+    assert payload["stageii_path"] == str(stageii_path)
+
+
 def test_run_stageii_torch_official_main_passes_lean_benchmark_flag(tmp_path, monkeypatch):
     stageii_path = tmp_path / "candidate_stageii.pkl"
     captured = {}
@@ -714,6 +805,28 @@ def test_run_stageii_torch_official_main_rejects_real_mcp_without_preset_or_corr
         )
 
     assert "real .mcp single-run entry requires a corrected baseline anchor" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_rejects_manual_frame_bounds_with_segment_id(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            [
+                "--mocap-fname",
+                str(tmp_path / "input" / "wolf001" / "4090-haonan-73.mcp"),
+                "--support-base-dir",
+                str(tmp_path / "support_files"),
+                "--work-base-dir",
+                str(tmp_path / "work"),
+                "--preset",
+                "real-mcp-baseline",
+                "--segment-id",
+                "wolf001-stable-hold-300f",
+                "--cfg",
+                "mocap.start_fidx=0",
+            ]
+        )
+
+    assert "--segment-id cannot be combined with --cfg mocap.start_fidx/mocap.end_fidx" in capsys.readouterr().err
 
 
 def test_run_stageii_torch_official_main_allows_real_mcp_without_preset_when_corrected_baseline_cfgs_are_explicit(

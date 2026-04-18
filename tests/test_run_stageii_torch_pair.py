@@ -263,6 +263,82 @@ def test_run_stageii_torch_pair_main_passes_expected_stageii_paths_to_underlying
     )
 
 
+def test_run_stageii_torch_pair_main_forwards_segment_id_and_plans_segment_specific_paths(
+    tmp_path, monkeypatch
+):
+    captured = {"calls": []}
+
+    def fake_run(argv, *, emit_json):
+        captured["calls"].append((list(argv), emit_json))
+        payload = {"stageii_path": _expected_stageii_path(argv)}
+        if "--skip-benchmark" in argv:
+            payload["benchmark"] = None
+        else:
+            payload["benchmark"] = {"artifact": {"report_path": _expected_benchmark_output(argv)}}
+        return payload
+
+    monkeypatch.setattr(run_stageii_torch_pair.run_stageii_torch_official, "run", fake_run)
+
+    run_stageii_torch_pair.main(
+        [
+            "--mocap-fname",
+            str(tmp_path / "input" / "wolf001" / "4090-haonan-73.mcp"),
+            "--support-base-dir",
+            str(tmp_path / "support_files"),
+            "--work-base-dir",
+            str(tmp_path / "work"),
+            "--segment-id",
+            "wolf001-fast-turn-300f",
+        ]
+    )
+
+    baseline_argv = captured["calls"][0][0]
+    candidate_argv = captured["calls"][1][0]
+    assert baseline_argv == [
+        "--mocap-fname",
+        str(tmp_path / "input" / "wolf001" / "4090-haonan-73.mcp"),
+        "--support-base-dir",
+        str(tmp_path / "support_files"),
+        "--work-base-dir",
+        str(tmp_path / "work"),
+        "--preset",
+        "real-mcp-baseline",
+        "--output-suffix",
+        "_baseline",
+        "--segment-id",
+        "wolf001-fast-turn-300f",
+        "--expected-stageii-path",
+        str(tmp_path / "work" / "input" / "wolf001" / "4090-haonan-73_wolf001_fast_turn_300f_baseline_stageii.pkl"),
+        "--skip-benchmark",
+    ]
+    assert candidate_argv == [
+        "--mocap-fname",
+        str(tmp_path / "input" / "wolf001" / "4090-haonan-73.mcp"),
+        "--support-base-dir",
+        str(tmp_path / "support_files"),
+        "--work-base-dir",
+        str(tmp_path / "work"),
+        "--preset",
+        "real-mcp-transvelo32-seedvelowindow",
+        "--output-suffix",
+        "_candidate",
+        "--segment-id",
+        "wolf001-fast-turn-300f",
+        "--expected-stageii-path",
+        str(tmp_path / "work" / "input" / "wolf001" / "4090-haonan-73_wolf001_fast_turn_300f_candidate_stageii.pkl"),
+        "--expected-benchmark-output",
+        str(
+            tmp_path
+            / "work"
+            / "input"
+            / "wolf001"
+            / "4090-haonan-73_wolf001_fast_turn_300f_candidate_benchmark.json"
+        ),
+        "--mesh-reference",
+        str(tmp_path / "work" / "input" / "wolf001" / "4090-haonan-73_wolf001_fast_turn_300f_baseline_stageii.pkl"),
+    ]
+
+
 def test_run_stageii_torch_pair_main_plans_expected_paths_from_flat_mocap_path_overrides(
     tmp_path, monkeypatch
 ):
