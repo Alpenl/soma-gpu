@@ -670,6 +670,94 @@ def compare_stageii_chunk_seam_diagnostics(reference_path, candidate_path):
     }
 
 
+_COMPARED_STAGEII_CHUNK_SEAM_FOCUS_KEYS = ("seam_jump_l2", "pre_accel_l2", "post_accel_l2")
+
+
+def _summarize_compared_stageii_chunk_seam_rows(rows, *, top_k, positive_threshold, negative_threshold):
+    summarized_rows = []
+    for row in rows:
+        delta = row["delta"]
+        focus_values = {
+            key: 0.0 if delta.get(key) is None else float(delta[key])
+            for key in _COMPARED_STAGEII_CHUNK_SEAM_FOCUS_KEYS
+        }
+        peak_metric, peak_value = max(focus_values.items(), key=lambda item: item[1])
+        trough_metric, trough_value = min(focus_values.items(), key=lambda item: item[1])
+        summarized_rows.append(
+            {
+                **row,
+                "delta_peak_metric": peak_metric,
+                "delta_peak_value": peak_value,
+                "delta_trough_metric": trough_metric,
+                "delta_trough_value": trough_value,
+            }
+        )
+
+    positive_peaks = sorted(
+        [row for row in summarized_rows if row["delta_peak_value"] >= positive_threshold],
+        key=lambda row: row["delta_peak_value"],
+        reverse=True,
+    )
+    negative_peaks = sorted(
+        [row for row in summarized_rows if row["delta_trough_value"] <= -negative_threshold],
+        key=lambda row: row["delta_trough_value"],
+    )
+    return {
+        "seam_count": len(rows),
+        "positive_peak_count": len(positive_peaks),
+        "negative_peak_count": len(negative_peaks),
+        "positive_peaks": positive_peaks[:top_k],
+        "negative_peaks": negative_peaks[:top_k],
+    }
+
+
+def summarize_compared_stageii_chunk_seam_diagnostics(
+    comparison,
+    *,
+    top_k=5,
+    positive_threshold=0.0,
+    negative_threshold=0.0,
+):
+    if comparison is None:
+        return None
+    if top_k < 0:
+        raise ValueError("top_k must be non-negative")
+    if positive_threshold < 0:
+        raise ValueError("positive_threshold must be non-negative")
+    if negative_threshold < 0:
+        raise ValueError("negative_threshold must be non-negative")
+
+    chunk_overlap = int(comparison["chunk_overlap"])
+    seam_rows = comparison.get("pose") or comparison.get("transl") or []
+    nondefault_keep_starts = [
+        {
+            "chunk_index": row["chunk_index"],
+            "keep_start": row["keep_start"],
+            "seam_index": row["seam_index"],
+        }
+        for row in seam_rows
+        if int(row["keep_start"]) != chunk_overlap
+    ]
+    return {
+        "chunk_size": comparison["chunk_size"],
+        "chunk_overlap": chunk_overlap,
+        "chunk_keep_starts": comparison["chunk_keep_starts"],
+        "nondefault_keep_starts": nondefault_keep_starts,
+        "transl": _summarize_compared_stageii_chunk_seam_rows(
+            comparison["transl"],
+            top_k=top_k,
+            positive_threshold=positive_threshold,
+            negative_threshold=negative_threshold,
+        ),
+        "pose": _summarize_compared_stageii_chunk_seam_rows(
+            comparison["pose"],
+            top_k=top_k,
+            positive_threshold=positive_threshold,
+            negative_threshold=negative_threshold,
+        ),
+    }
+
+
 def _summarize_stageii_quality(sample_path, baseline):
     trans_frame_delta = _summarize_numeric_samples(
         _frame_delta_l2_samples(baseline.trans),
@@ -794,6 +882,18 @@ def _summarize_reference_stageii_delta(candidate_quality, reference_quality):
         delta[metric_name] = metric_delta or None
 
     return delta
+
+
+def _summarize_reference_stageii_chunk_seam_hotspots(reference_path, candidate_path):
+    reference_sample = _normalize_reference_stageii_sample(reference_path)
+    if reference_sample is None:
+        return None
+    comparison = compare_stageii_chunk_seam_diagnostics(reference_path, candidate_path)
+    return summarize_compared_stageii_chunk_seam_diagnostics(
+        comparison,
+        positive_threshold=0.05,
+        negative_threshold=0.05,
+    )
 
 
 def _support_files_root(repo_root):
@@ -1175,6 +1275,7 @@ def run_public_stageii_benchmark(
     quality_summary = dict(candidate_quality)
     quality_summary["reference_stageii_quality"] = None
     quality_summary["reference_stageii_delta"] = None
+    quality_summary["reference_stageii_chunk_seam_hotspots"] = None
     quality_summary["mesh_compare"] = None
     reference_stageii_elapsed_s = None
     reference_stageii_elapsed_delta_s = None
@@ -1185,6 +1286,10 @@ def run_public_stageii_benchmark(
         quality_summary["reference_stageii_delta"] = _summarize_reference_stageii_delta(
             candidate_quality,
             reference_quality,
+        )
+        quality_summary["reference_stageii_chunk_seam_hotspots"] = _summarize_reference_stageii_chunk_seam_hotspots(
+            mesh_reference_path,
+            sample_path,
         )
         if reference_sample is not None:
             reference_stageii_elapsed_s = reference_sample.stageii_elapsed_s

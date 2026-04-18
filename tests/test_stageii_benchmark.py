@@ -375,6 +375,7 @@ def test_run_public_stageii_benchmark_includes_quality_summary_when_available(mo
         **quality_summary,
         "reference_stageii_quality": None,
         "reference_stageii_delta": None,
+        "reference_stageii_chunk_seam_hotspots": None,
         "mesh_compare": None,
     }
 
@@ -638,6 +639,88 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_sta
         "chunk_seam_pose_jump_l2": None,
     }
     assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.25}}
+
+
+def test_run_public_stageii_benchmark_includes_reference_stageii_chunk_seam_hotspots(
+    tmp_path, monkeypatch
+):
+    def _write_stageii(sample_path, values):
+        sample_path.write_bytes(
+            pickle.dumps(
+                {
+                    "fullpose": np.asarray([[value] for value in values], dtype=np.float32),
+                    "betas": np.zeros(10, dtype=np.float32),
+                    "trans": np.asarray([[value, 0.0, 0.0] for value in values], dtype=np.float32),
+                    "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                    "latent_labels": ["A"],
+                    "stageii_debug_details": {
+                        "cfg": {
+                            "surface_model": {
+                                "type": "smplx",
+                                "gender": "male",
+                            },
+                            "runtime": {
+                                "sequence_chunk_size": 4,
+                                "sequence_chunk_overlap": 2,
+                            },
+                        },
+                        "sequence_chunk_keep_starts": [0, 1],
+                        "mocap_frame_rate": 120.0,
+                        "mocap_time_length": len(values),
+                        "markers_obs": np.zeros((len(values), 1, 3), dtype=np.float32),
+                        "markers_sim": np.zeros((len(values), 1, 3), dtype=np.float32),
+                        "labels_obs": [["A"]] * len(values),
+                    },
+                }
+            )
+        )
+
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    reference_path = tmp_path / "baseline_stageii.pkl"
+    _write_stageii(candidate_path, [0.0, 1.0, 50.0, 90.0, 91.0, 92.0])
+    _write_stageii(reference_path, [0.0, 1.0, 50.0, 70.0, 71.0, 72.0])
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_mesh_compare",
+        lambda *args, **kwargs: {"frame_delta_l2": {"mean": 0.25}},
+        raising=False,
+    )
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        candidate_path,
+        warmup_runs=0,
+        measured_runs=1,
+        mesh_reference_path=reference_path,
+        mesh_support_base_dir="/tmp/support_files",
+    )
+
+    hotspots = report["quality"]["reference_stageii_chunk_seam_hotspots"]
+    assert hotspots is not None
+    assert hotspots["chunk_size"] == 4
+    assert hotspots["chunk_overlap"] == 2
+    assert hotspots["chunk_keep_starts"] == [0, 1]
+    assert hotspots["nondefault_keep_starts"] == [{"chunk_index": 1, "keep_start": 1, "seam_index": 3}]
+    assert hotspots["pose"]["positive_peak_count"] == 1
+    assert hotspots["pose"]["negative_peak_count"] == 1
+    assert hotspots["pose"]["positive_peaks"][0]["seam_index"] == 3
+    assert hotspots["pose"]["positive_peaks"][0]["delta_peak_metric"] == "seam_jump_l2"
+    assert hotspots["pose"]["positive_peaks"][0]["delta_peak_value"] == pytest.approx(20.0)
+    assert hotspots["pose"]["negative_peaks"][0]["seam_index"] == 3
+    assert hotspots["pose"]["negative_peaks"][0]["delta_trough_metric"] == "pre_accel_l2"
+    assert hotspots["pose"]["negative_peaks"][0]["delta_trough_value"] == pytest.approx(-20.0)
+    assert hotspots["transl"]["positive_peak_count"] == 1
+    assert hotspots["transl"]["negative_peak_count"] == 1
+    assert hotspots["transl"]["positive_peaks"][0]["seam_index"] == 3
+    assert hotspots["transl"]["positive_peaks"][0]["delta_peak_metric"] == "seam_jump_l2"
+    assert hotspots["transl"]["positive_peaks"][0]["delta_peak_value"] == pytest.approx(20.0)
+    assert hotspots["transl"]["negative_peaks"][0]["seam_index"] == 3
+    assert hotspots["transl"]["negative_peaks"][0]["delta_trough_metric"] == "pre_accel_l2"
+    assert hotspots["transl"]["negative_peaks"][0]["delta_trough_value"] == pytest.approx(-20.0)
 
 
 def test_run_public_stageii_benchmark_leaves_reference_stageii_quality_empty_for_non_stageii_mesh_reference(
@@ -1458,6 +1541,162 @@ def test_compare_stageii_chunk_seam_diagnostics_reports_same_frame_reference_del
     assert comparison["pose"][0]["candidate"]["post_accel_l2"] == pytest.approx(39.0)
     assert comparison["pose"][0]["reference"]["post_accel_l2"] == pytest.approx(19.0)
     assert comparison["pose"][0]["delta"]["post_accel_l2"] == pytest.approx(20.0)
+
+
+def test_summarize_compared_stageii_chunk_seam_diagnostics_reports_hotspots_and_nondefault_keeps():
+    comparison = {
+        "chunk_size": 48,
+        "chunk_overlap": 8,
+        "chunk_keep_starts": [0, 8, 6, 8, 5],
+        "pose": [
+            {
+                "chunk_index": 1,
+                "row_start": 40,
+                "row_end": 88,
+                "keep_start": 8,
+                "trim_count": 0,
+                "seam_index": 88,
+                "candidate": {
+                    "prev_frame_delta_l2": 0.3,
+                    "seam_jump_l2": 0.2,
+                    "next_frame_delta_l2": 0.4,
+                    "pre_accel_l2": 0.5,
+                    "post_accel_l2": 0.9,
+                },
+                "reference": {
+                    "prev_frame_delta_l2": 0.25,
+                    "seam_jump_l2": 0.15,
+                    "next_frame_delta_l2": 0.35,
+                    "pre_accel_l2": 0.45,
+                    "post_accel_l2": 0.4,
+                },
+                "delta": {
+                    "prev_frame_delta_l2": 0.05,
+                    "seam_jump_l2": 0.05,
+                    "next_frame_delta_l2": 0.05,
+                    "pre_accel_l2": 0.05,
+                    "post_accel_l2": 0.5,
+                },
+            },
+            {
+                "chunk_index": 2,
+                "row_start": 80,
+                "row_end": 128,
+                "keep_start": 6,
+                "trim_count": 2,
+                "seam_index": 126,
+                "candidate": {
+                    "prev_frame_delta_l2": 0.35,
+                    "seam_jump_l2": 0.7,
+                    "next_frame_delta_l2": 0.3,
+                    "pre_accel_l2": 0.6,
+                    "post_accel_l2": 0.8,
+                },
+                "reference": {
+                    "prev_frame_delta_l2": 0.3,
+                    "seam_jump_l2": 0.3,
+                    "next_frame_delta_l2": 0.2,
+                    "pre_accel_l2": 0.55,
+                    "post_accel_l2": 0.45,
+                },
+                "delta": {
+                    "prev_frame_delta_l2": 0.05,
+                    "seam_jump_l2": 0.4,
+                    "next_frame_delta_l2": 0.1,
+                    "pre_accel_l2": 0.05,
+                    "post_accel_l2": 0.35,
+                },
+            },
+            {
+                "chunk_index": 3,
+                "row_start": 120,
+                "row_end": 168,
+                "keep_start": 5,
+                "trim_count": 3,
+                "seam_index": 165,
+                "candidate": {
+                    "prev_frame_delta_l2": 0.25,
+                    "seam_jump_l2": 0.15,
+                    "next_frame_delta_l2": 0.2,
+                    "pre_accel_l2": 0.45,
+                    "post_accel_l2": 0.3,
+                },
+                "reference": {
+                    "prev_frame_delta_l2": 0.2,
+                    "seam_jump_l2": 0.45,
+                    "next_frame_delta_l2": 0.15,
+                    "pre_accel_l2": 0.4,
+                    "post_accel_l2": 0.35,
+                },
+                "delta": {
+                    "prev_frame_delta_l2": 0.05,
+                    "seam_jump_l2": -0.3,
+                    "next_frame_delta_l2": 0.05,
+                    "pre_accel_l2": 0.05,
+                    "post_accel_l2": -0.05,
+                },
+            },
+            {
+                "chunk_index": 4,
+                "row_start": 160,
+                "row_end": 208,
+                "keep_start": 8,
+                "trim_count": 0,
+                "seam_index": 208,
+                "candidate": {
+                    "prev_frame_delta_l2": 0.2,
+                    "seam_jump_l2": 0.3,
+                    "next_frame_delta_l2": 0.25,
+                    "pre_accel_l2": 0.55,
+                    "post_accel_l2": 0.4,
+                },
+                "reference": {
+                    "prev_frame_delta_l2": 0.15,
+                    "seam_jump_l2": 0.2,
+                    "next_frame_delta_l2": 0.2,
+                    "pre_accel_l2": 0.85,
+                    "post_accel_l2": 0.5,
+                },
+                "delta": {
+                    "prev_frame_delta_l2": 0.05,
+                    "seam_jump_l2": 0.1,
+                    "next_frame_delta_l2": 0.05,
+                    "pre_accel_l2": -0.3,
+                    "post_accel_l2": -0.1,
+                },
+            },
+        ],
+        "transl": [],
+    }
+
+    summary = stageii_benchmark.summarize_compared_stageii_chunk_seam_diagnostics(
+        comparison,
+        top_k=2,
+        positive_threshold=0.3,
+        negative_threshold=0.2,
+    )
+
+    assert summary["chunk_size"] == 48
+    assert summary["chunk_overlap"] == 8
+    assert summary["chunk_keep_starts"] == [0, 8, 6, 8, 5]
+    assert summary["nondefault_keep_starts"] == [
+        {"chunk_index": 2, "keep_start": 6, "seam_index": 126},
+        {"chunk_index": 3, "keep_start": 5, "seam_index": 165},
+    ]
+    assert summary["pose"]["seam_count"] == 4
+    assert summary["pose"]["positive_peak_count"] == 2
+    assert summary["pose"]["negative_peak_count"] == 2
+    assert [row["seam_index"] for row in summary["pose"]["positive_peaks"]] == [88, 126]
+    assert summary["pose"]["positive_peaks"][0]["delta_peak_metric"] == "post_accel_l2"
+    assert summary["pose"]["positive_peaks"][0]["delta_peak_value"] == pytest.approx(0.5)
+    assert [row["seam_index"] for row in summary["pose"]["negative_peaks"]] == [165, 208]
+    assert summary["pose"]["negative_peaks"][0]["delta_trough_metric"] == "seam_jump_l2"
+    assert summary["pose"]["negative_peaks"][0]["delta_trough_value"] == pytest.approx(-0.3)
+    assert summary["transl"]["seam_count"] == 0
+    assert summary["transl"]["positive_peak_count"] == 0
+    assert summary["transl"]["negative_peak_count"] == 0
+    assert summary["transl"]["positive_peaks"] == []
+    assert summary["transl"]["negative_peaks"] == []
 
 
 def test_summarize_stageii_quality_reads_legacy_marker_residual_from_public_sample():
