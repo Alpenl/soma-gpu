@@ -316,6 +316,34 @@ def _runtime_optional_positive_int(runtime, key):
     return parsed
 
 
+def _runtime_optional_nonnegative_int_set(runtime, key):
+    value = _runtime_get(runtime, key, None)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        tokens = [token for token in value.replace(",", " ").split() if token]
+    elif isinstance(value, (list, tuple, set)):
+        tokens = list(value)
+    else:
+        tokens = [value]
+    if not tokens:
+        return None
+    parsed = set()
+    for token in tokens:
+        try:
+            index = int(token)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Runtime {key} must be a comma/space separated list of non-negative integers when provided. Got {value!r}."
+            ) from exc
+        if index < 0:
+            raise ValueError(
+                f"Runtime {key} must be a comma/space separated list of non-negative integers when provided. Got {index}."
+            )
+        parsed.add(index)
+    return parsed
+
+
 def _runtime_stage_fit_options(cfg, runtime):
     valid_optimizers = {"lbfgs", "adam"}
 
@@ -1040,6 +1068,14 @@ def mosh_stageii_torch(
         runtime,
         "sequence_boundary_transl_delta_reference_window",
     )
+    sequence_overlap_pose_seed_from_previous_chunk_indices = _runtime_optional_nonnegative_int_set(
+        runtime,
+        "sequence_overlap_pose_seed_from_previous_chunk_indices",
+    )
+    sequence_overlap_transl_seed_from_previous_chunk_indices = _runtime_optional_nonnegative_int_set(
+        runtime,
+        "sequence_overlap_transl_seed_from_previous_chunk_indices",
+    )
     sequence_boundary_transl_seam_window = _runtime_optional_positive_int(
         runtime,
         "sequence_boundary_transl_seam_window",
@@ -1203,6 +1239,32 @@ def mosh_stageii_torch(
                     if optimize_face and cached_expression_init is not None
                     else None
                 )
+
+            overlap_pose_seeded_from_previous = False
+            overlap_transl_seeded_from_previous = False
+            if chunk_overlap_count > 0:
+                if (
+                    sequence_overlap_pose_seed_from_previous_chunk_indices is not None
+                    and chunk_idx in sequence_overlap_pose_seed_from_previous_chunk_indices
+                    and previous_chunk_latent_tail is not None
+                ):
+                    chunk_latent_init = _splice_chunk_overlap_reference(
+                        chunk_latent_init,
+                        previous_chunk_latent_tail,
+                        chunk_overlap_count,
+                    )
+                    overlap_pose_seeded_from_previous = True
+                if (
+                    sequence_overlap_transl_seed_from_previous_chunk_indices is not None
+                    and chunk_idx in sequence_overlap_transl_seed_from_previous_chunk_indices
+                    and previous_chunk_transl_tail is not None
+                ):
+                    chunk_transl_init = _splice_chunk_overlap_reference(
+                        chunk_transl_init,
+                        previous_chunk_transl_tail,
+                        chunk_overlap_count,
+                    )
+                    overlap_transl_seeded_from_previous = True
 
             velocity_reference = None
             velocity_reference_index = None
@@ -1383,6 +1445,8 @@ def mosh_stageii_torch(
                 "default_keep_start": 0,
                 "selected_keep_start": 0,
                 "trim_count": 0,
+                "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
+                "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
                 "candidate_metrics": [],
             }
             if chunk_idx > 0:
@@ -1404,6 +1468,8 @@ def mosh_stageii_torch(
                         "row_end": int(row_end),
                         "overlap_count": int(overlap_count),
                         "trim_count": int(overlap_count - keep_start),
+                        "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
+                        "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
                     }
                 )
                 _trim_perframe_tail(perframe_data, overlap_count - keep_start)
