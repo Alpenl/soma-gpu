@@ -669,6 +669,23 @@ def _build_chunk_transl_velocity_reference(base_reference, previous_tail, overla
     )
 
 
+def _build_chunk_zero_seam_transl_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
+    if previous_tail is None:
+        return None
+    anchor = previous_tail[-1:].detach().clone()
+    if base_reference is None or overlap_count <= 0:
+        return anchor
+    keep_seam_window = max(int(keep_seam_window or 1), 1)
+    if overlap_count >= base_reference.shape[0]:
+        return anchor
+    seam_window_end = min(overlap_count + keep_seam_window, base_reference.shape[0])
+    seam_positions = base_reference[overlap_count:seam_window_end].detach().clone()
+    if seam_positions.shape[0] == 0:
+        return anchor
+    seam_positions = seam_positions - seam_positions[:1].clone()
+    return torch.cat((anchor, anchor + seam_positions), dim=0)
+
+
 def _build_chunk_full_transl_velocity_reference(base_reference, previous_tail, overlap_count):
     return _build_chunk_full_velocity_reference(
         base_reference,
@@ -797,9 +814,16 @@ def mosh_stageii_torch(
     sequence_boundary_transl_velocity_reference_full_length = bool(
         _runtime_get(runtime, "sequence_boundary_transl_velocity_reference_full_length", False)
     )
+    sequence_boundary_transl_velocity_reference_zero_seam = bool(
+        _runtime_get(runtime, "sequence_boundary_transl_velocity_reference_zero_seam", False)
+    )
     sequence_boundary_transl_velocity_reference_window = _runtime_optional_positive_int(
         runtime,
         "sequence_boundary_transl_velocity_reference_window",
+    )
+    sequence_boundary_transl_delta_reference_window = _runtime_optional_positive_int(
+        runtime,
+        "sequence_boundary_transl_delta_reference_window",
     )
     compile_evaluator = bool(_runtime_get(runtime, "compile_evaluator", False))
     compile_mode = str(_runtime_get(runtime, "compile_mode", "default"))
@@ -988,12 +1012,20 @@ def mosh_stageii_torch(
                     if previous_chunk_transl_tail is not None and (
                         sequence_boundary_transl_velocity_reference_window is not None or keep_seam_window > 1
                     ):
-                        transl_velocity_reference = _build_chunk_transl_velocity_reference(
-                            chunk_transl_init,
-                            previous_chunk_transl_tail,
-                            chunk_overlap_count,
-                            keep_seam_window=keep_seam_window,
-                        )
+                        if sequence_boundary_transl_velocity_reference_zero_seam:
+                            transl_velocity_reference = _build_chunk_zero_seam_transl_velocity_reference(
+                                chunk_transl_init,
+                                previous_chunk_transl_tail,
+                                chunk_overlap_count,
+                                keep_seam_window=keep_seam_window,
+                            )
+                        else:
+                            transl_velocity_reference = _build_chunk_transl_velocity_reference(
+                                chunk_transl_init,
+                                previous_chunk_transl_tail,
+                                chunk_overlap_count,
+                                keep_seam_window=keep_seam_window,
+                            )
 
             chunk_latent_reference = chunk_latent_init
             chunk_transl_reference = chunk_transl_init
@@ -1006,12 +1038,15 @@ def mosh_stageii_torch(
                         chunk_overlap_count,
                     )
                 if float(getattr(sequence_weights, "delta_trans", 0.0)) != 0.0 and previous_chunk_transl_tail is not None:
+                    keep_seam_window = sequence_boundary_transl_delta_reference_window
+                    if keep_seam_window is None:
+                        keep_seam_window = chunk_overlap_count
                     chunk_transl_reference = _splice_chunk_overlap_reference(
                         chunk_transl_init,
                         previous_chunk_transl_tail,
                         chunk_overlap_count,
                         include_keep_seam=True,
-                        keep_seam_window=chunk_overlap_count,
+                        keep_seam_window=keep_seam_window,
                     )
                 if (
                     optimize_face
