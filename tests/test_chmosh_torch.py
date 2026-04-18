@@ -1673,6 +1673,58 @@ def test_select_chunk_keep_start_can_preserve_legacy_mesh_jump_when_guarded():
     assert keep_start == 2
 
 
+def test_select_chunk_keep_start_can_return_candidate_diagnostics():
+    module = _load_chmosh_torch_module()
+
+    keep_start, diagnostics = module._select_chunk_keep_start(
+        stitch_mode="adaptive_transl_jump_pose_guard",
+        overlap_count=2,
+        previous_fullpose_tail=torch.tensor([[0.0], [10.0]], dtype=torch.float32),
+        previous_transl_tail=torch.tensor(
+            [
+                [90.0, 0.0, 0.0],
+                [100.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_fullpose=torch.tensor(
+            [
+                [0.0],
+                [1.0],
+                [11.0],
+                [12.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_transl=torch.tensor(
+            [
+                [89.0, 0.0, 0.0],
+                [91.0, 0.0, 0.0],
+                [109.0, 0.0, 0.0],
+                [110.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        return_diagnostics=True,
+    )
+
+    assert keep_start == 1
+    assert diagnostics["default_keep_start"] == 2
+    assert diagnostics["selected_keep_start"] == 1
+    assert diagnostics["selected_transl_jump"] == pytest.approx(1.0)
+    assert diagnostics["selected_pose_jump"] == pytest.approx(1.0)
+    assert diagnostics["selected_mesh_jump"] == pytest.approx(0.0)
+    assert diagnostics["default_pose_jump"] == pytest.approx(1.0)
+    assert diagnostics["default_mesh_jump"] is None
+    assert [row["keep_start"] for row in diagnostics["candidate_metrics"]] == [1, 2]
+    assert diagnostics["candidate_metrics"][0]["selected"] is True
+    assert diagnostics["candidate_metrics"][0]["transl_jump"] == pytest.approx(1.0)
+    assert diagnostics["candidate_metrics"][0]["pose_jump"] == pytest.approx(1.0)
+    assert diagnostics["candidate_metrics"][0]["passed_pose_guard"] is True
+    assert diagnostics["candidate_metrics"][1]["selected"] is False
+    assert diagnostics["candidate_metrics"][1]["transl_jump"] == pytest.approx(9.0)
+
+
 def test_mosh_stageii_torch_can_stitch_chunk_outputs_at_adaptive_translation_boundary(
     tmp_path,
     monkeypatch,
@@ -1808,6 +1860,15 @@ def test_mosh_stageii_torch_can_stitch_chunk_outputs_at_adaptive_translation_bou
     assert stageii_data["trans"][:, 0].tolist() == pytest.approx([0.0, 1.0, 90.0, 91.0, 92.0, 93.0])
     assert stageii_data["fullpose"][:, 0].tolist() == pytest.approx([0.0, 1.0, 90.0, 91.0, 92.0, 93.0])
     assert stageii_data["stageii_debug_details"]["sequence_chunk_keep_starts"] == [0, 1]
+    stitch_diagnostics = stageii_data["stageii_debug_details"]["sequence_chunk_stitch_diagnostics"]
+    assert len(stitch_diagnostics) == 2
+    assert stitch_diagnostics[0]["selected_keep_start"] == 0
+    assert stitch_diagnostics[0]["candidate_metrics"] == []
+    assert stitch_diagnostics[1]["chunk_index"] == 1
+    assert stitch_diagnostics[1]["selected_keep_start"] == 1
+    assert stitch_diagnostics[1]["default_keep_start"] == 2
+    assert [row["keep_start"] for row in stitch_diagnostics[1]["candidate_metrics"]] == [1, 2]
+    assert stitch_diagnostics[1]["candidate_metrics"][0]["selected"] is True
 
 
 def test_mosh_stageii_torch_pose_guarded_stitching_can_keep_legacy_boundary_when_pose_would_regress(

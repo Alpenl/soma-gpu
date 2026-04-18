@@ -420,24 +420,53 @@ def _select_chunk_keep_start(
     current_fullpose,
     current_transl,
     current_vertices=None,
+    return_diagnostics=False,
 ):
     overlap_count = max(int(overlap_count), 0)
-    if overlap_count <= 0:
-        return 0
     default_keep_start = overlap_count
+    max_keep_start = 0
+    default_pose_jump = None
+    default_mesh_jump = None
+    candidate_metrics = []
+
+    def _finalize(selected_keep_start):
+        selected_keep_start = int(selected_keep_start)
+        if not return_diagnostics:
+            return selected_keep_start
+        selected_metric = None
+        for row in candidate_metrics:
+            row["selected"] = int(row["keep_start"]) == selected_keep_start
+            if row["selected"]:
+                selected_metric = row
+        return selected_keep_start, {
+            "stitch_mode": stitch_mode,
+            "overlap_count": overlap_count,
+            "max_keep_start": max_keep_start,
+            "default_keep_start": default_keep_start,
+            "selected_keep_start": selected_keep_start,
+            "default_pose_jump": default_pose_jump,
+            "default_mesh_jump": default_mesh_jump,
+            "selected_transl_jump": None if selected_metric is None else selected_metric["transl_jump"],
+            "selected_pose_jump": None if selected_metric is None else selected_metric["pose_jump"],
+            "selected_mesh_jump": None if selected_metric is None else selected_metric["mesh_jump"],
+            "candidate_metrics": candidate_metrics,
+        }
+
+    if overlap_count <= 0:
+        return _finalize(0)
     if stitch_mode == "keep_overlap_tail":
-        return default_keep_start
+        return _finalize(default_keep_start)
     if previous_transl_tail is None or current_transl is None:
-        return default_keep_start
+        return _finalize(default_keep_start)
 
     previous_transl_tail = torch.as_tensor(previous_transl_tail, dtype=torch.float32)
     current_transl = torch.as_tensor(current_transl, dtype=torch.float32)
     if previous_transl_tail.ndim < 2 or current_transl.ndim < 2:
-        return default_keep_start
+        return _finalize(default_keep_start)
 
     max_keep_start = min(overlap_count, previous_transl_tail.shape[0], current_transl.shape[0] - 1)
     if max_keep_start < 1:
-        return default_keep_start
+        return _finalize(default_keep_start)
 
     previous_fullpose_tail = (
         None
@@ -462,7 +491,7 @@ def _select_chunk_keep_start(
             or previous_fullpose_tail.shape[0] < default_keep_start
             or current_fullpose.shape[0] <= default_keep_start
         ):
-            return default_keep_start
+            return _finalize(default_keep_start)
         default_pose_jump = float(
             torch.linalg.vector_norm(
                 current_fullpose[default_keep_start] - previous_fullpose_tail[default_keep_start - 1]
@@ -479,7 +508,7 @@ def _select_chunk_keep_start(
             or previous_vertices_tail.shape[0] < default_keep_start
             or current_vertices.shape[0] <= default_keep_start
         ):
-            return default_keep_start
+            return _finalize(default_keep_start)
         default_mesh_jump = float(
             torch.linalg.vector_norm(
                 current_vertices[default_keep_start] - previous_vertices_tail[default_keep_start - 1]
@@ -504,8 +533,6 @@ def _select_chunk_keep_start(
             pose_jump = float(
                 torch.linalg.vector_norm(current_fullpose[keep_start] - previous_fullpose_tail[keep_start - 1]).item()
             )
-        if default_pose_jump is not None and pose_jump > default_pose_jump:
-            continue
         mesh_jump = 0.0
         if (
             previous_vertices_tail is not None
@@ -518,13 +545,27 @@ def _select_chunk_keep_start(
             mesh_jump = float(
                 torch.linalg.vector_norm(current_vertices[keep_start] - previous_vertices_tail[keep_start - 1]).item()
             )
-        if default_mesh_jump is not None and mesh_jump > default_mesh_jump:
+        passed_pose_guard = default_pose_jump is None or pose_jump <= default_pose_jump
+        passed_mesh_guard = default_mesh_jump is None or mesh_jump <= default_mesh_jump
+        candidate_metrics.append(
+            {
+                "keep_start": int(keep_start),
+                "transl_jump": transl_jump,
+                "pose_jump": pose_jump,
+                "mesh_jump": mesh_jump,
+                "passed_pose_guard": passed_pose_guard,
+                "passed_mesh_guard": passed_mesh_guard,
+                "eligible": passed_pose_guard and passed_mesh_guard,
+                "selected": False,
+            }
+        )
+        if not passed_pose_guard or not passed_mesh_guard:
             continue
         score = (transl_jump, pose_jump, mesh_jump, -keep_start)
         if best_score is None or score < best_score:
             best_score = score
             best_keep_start = keep_start
-    return best_keep_start
+    return _finalize(best_keep_start)
 
 
 def _trim_perframe_tail(perframe_data, trim_count):
@@ -1047,6 +1088,7 @@ def mosh_stageii_torch(
         previous_chunk_vertices_tail = None
         previous_chunk_expression_tail = None
         sequence_chunk_keep_starts = []
+        sequence_chunk_stitch_diagnostics = []
         if sequence_seed_options is not None:
             try:
                 sequence_markers_obs, sequence_visible = _build_chunk_observations(
@@ -1316,19 +1358,41 @@ def mosh_stageii_torch(
             prev_transl = torch.as_tensor(result.transl[-1:]).detach()
 
             keep_start = 0
+            overlap_count = min(sequence_chunk_overlap, row_end - row_start)
+            stitch_diagnostics = {
+                "chunk_index": int(chunk_idx),
+                "row_start": int(row_start),
+                "row_end": int(row_end),
+                "overlap_count": int(overlap_count),
+                "default_keep_start": 0,
+                "selected_keep_start": 0,
+                "trim_count": 0,
+                "candidate_metrics": [],
+            }
             if chunk_idx > 0:
-                keep_start = _select_chunk_keep_start(
+                keep_start, stitch_diagnostics = _select_chunk_keep_start(
                     stitch_mode=sequence_chunk_stitch_mode,
-                    overlap_count=min(sequence_chunk_overlap, row_end - row_start),
+                    overlap_count=overlap_count,
                     previous_fullpose_tail=previous_chunk_fullpose_tail,
                     previous_transl_tail=previous_chunk_transl_tail,
                     previous_vertices_tail=previous_chunk_vertices_tail,
                     current_fullpose=result.fullpose,
                     current_transl=result.transl,
                     current_vertices=result.vertices,
+                    return_diagnostics=True,
                 )
-                _trim_perframe_tail(perframe_data, min(sequence_chunk_overlap, row_end - row_start) - keep_start)
+                stitch_diagnostics.update(
+                    {
+                        "chunk_index": int(chunk_idx),
+                        "row_start": int(row_start),
+                        "row_end": int(row_end),
+                        "overlap_count": int(overlap_count),
+                        "trim_count": int(overlap_count - keep_start),
+                    }
+                )
+                _trim_perframe_tail(perframe_data, overlap_count - keep_start)
             sequence_chunk_keep_starts.append(int(keep_start))
+            sequence_chunk_stitch_diagnostics.append(stitch_diagnostics)
             for local_idx in range(keep_start, row_end - row_start):
                 visible_labels = [latent_labels[idx] for idx in torch.nonzero(chunk_visible[local_idx], as_tuple=False).flatten().tolist()]
                 for key, value in result.loss_terms.items():
@@ -1439,6 +1503,7 @@ def mosh_stageii_torch(
     if sequence_chunk_size > 1:
         stageii_debug_details["sequence_chunk_stitch_mode"] = sequence_chunk_stitch_mode
         stageii_debug_details["sequence_chunk_keep_starts"] = sequence_chunk_keep_starts
+        stageii_debug_details["sequence_chunk_stitch_diagnostics"] = sequence_chunk_stitch_diagnostics
     stageii_data = {key: np.array(values) for key, values in perframe_data.items()}
     stageii_data["stageii_debug_details"] = stageii_debug_details
     return stageii_data
