@@ -376,6 +376,7 @@ def test_run_public_stageii_benchmark_includes_quality_summary_when_available(mo
         "reference_stageii_quality": None,
         "reference_stageii_delta": None,
         "reference_stageii_chunk_seam_hotspots": None,
+        "reference_stageii_pose_window_hotspots": None,
         "mesh_compare": None,
     }
 
@@ -637,6 +638,14 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_sta
         "chunk_seam_pose_jump_over_pose_frame_delta_ratio": None,
         "chunk_seam_transl_jump_l2": None,
         "chunk_seam_pose_jump_l2": None,
+        "body_pose_frame_delta_l2": None,
+        "body_pose_jitter_l2": None,
+        "left_hand_pose_frame_delta_l2": None,
+        "left_hand_pose_jitter_l2": None,
+        "right_hand_pose_frame_delta_l2": None,
+        "right_hand_pose_jitter_l2": None,
+        "all_hands_pose_frame_delta_l2": None,
+        "all_hands_pose_jitter_l2": None,
     }
     assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.25}}
 
@@ -721,6 +730,82 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_chunk_seam_hots
     assert hotspots["transl"]["negative_peaks"][0]["seam_index"] == 3
     assert hotspots["transl"]["negative_peaks"][0]["delta_trough_metric"] == "pre_accel_l2"
     assert hotspots["transl"]["negative_peaks"][0]["delta_trough_value"] == pytest.approx(-20.0)
+
+
+def test_run_public_stageii_benchmark_includes_reference_stageii_pose_window_hotspots(
+    tmp_path, monkeypatch
+):
+    def _write_stageii(sample_path, *, body_values, left_hand_values, right_hand_values):
+        fullpose = np.zeros((len(body_values), 165), dtype=np.float32)
+        fullpose[:, 3] = np.asarray(body_values, dtype=np.float32)
+        fullpose[:, 75] = np.asarray(left_hand_values, dtype=np.float32)
+        fullpose[:, 120] = np.asarray(right_hand_values, dtype=np.float32)
+        sample_path.write_bytes(
+            pickle.dumps(
+                {
+                    "fullpose": fullpose,
+                    "betas": np.zeros(10, dtype=np.float32),
+                    "trans": np.zeros((len(body_values), 3), dtype=np.float32),
+                    "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                    "latent_labels": ["A"],
+                    "stageii_debug_details": {
+                        "cfg": {
+                            "surface_model": {
+                                "type": "smplx",
+                                "gender": "male",
+                            }
+                        },
+                        "mocap_frame_rate": 120.0,
+                        "mocap_time_length": len(body_values),
+                        "markers_obs": np.zeros((len(body_values), 1, 3), dtype=np.float32),
+                        "markers_sim": np.zeros((len(body_values), 1, 3), dtype=np.float32),
+                        "labels_obs": [["A"]] * len(body_values),
+                    },
+                }
+            )
+        )
+
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    reference_path = tmp_path / "baseline_stageii.pkl"
+    _write_stageii(
+        candidate_path,
+        body_values=[0.0, 2.0, 4.0, 4.0, 4.0],
+        left_hand_values=[0.0, 0.0, 4.0, 4.0, 4.0],
+        right_hand_values=[0.0, 1.0, 1.0, 4.0, 4.0],
+    )
+    _write_stageii(
+        reference_path,
+        body_values=[0.0, 0.0, 0.0, 0.0, 0.0],
+        left_hand_values=[0.0, 1.0, 2.0, 3.0, 4.0],
+        right_hand_values=[0.0, 1.0, 2.0, 3.0, 4.0],
+    )
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_mesh_compare",
+        lambda *args, **kwargs: {"frame_delta_l2": {"mean": 0.25}},
+        raising=False,
+    )
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        candidate_path,
+        warmup_runs=0,
+        measured_runs=1,
+        mesh_reference_path=reference_path,
+        mesh_support_base_dir="/tmp/support_files",
+    )
+
+    hotspots = report["quality"]["reference_stageii_pose_window_hotspots"]
+    assert hotspots is not None
+    assert hotspots["window_size"] == stageii_benchmark.REFERENCE_STAGEII_POSE_WINDOW_SIZE
+    assert hotspots["left_hand_pose_frame_delta_l2"]["window_count"] == 1
+    assert hotspots["left_hand_pose_frame_delta_l2"]["positive_peak_count"] >= 1
+    assert hotspots["body_pose_jitter_l2"]["positive_peak_count"] >= 1
+    assert hotspots["body_pose_jitter_l2"]["positive_peaks"][0]["delta_mean"] > 0.0
 
 
 def test_run_public_stageii_benchmark_leaves_reference_stageii_quality_empty_for_non_stageii_mesh_reference(
@@ -1324,6 +1409,69 @@ def test_summarize_stageii_quality_reports_marker_jitter_and_seam_metrics_for_ne
     assert quality["chunk_seam_pose_jump_l2"]["mean"] == pytest.approx(8.0)
 
 
+def test_summarize_stageii_quality_reports_hand_and_body_pose_metrics_for_smplx_fullpose(tmp_path):
+    sample_path = tmp_path / "synthetic_stageii.pkl"
+    fullpose = np.zeros((5, 165), dtype=np.float32)
+    fullpose[:, 3] = np.asarray([0.0, 1.0, 2.0, 4.0, 7.0], dtype=np.float32)
+    fullpose[:, 75] = np.asarray([0.0, 2.0, 2.0, 2.0, 3.0], dtype=np.float32)
+    fullpose[:, 120] = np.asarray([0.0, 0.0, 1.0, 1.0, 4.0], dtype=np.float32)
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": fullpose,
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.asarray(
+                    [
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [2.0, 0.0, 0.0],
+                        [10.0, 0.0, 0.0],
+                        [11.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                        },
+                        "runtime": {
+                            "sequence_chunk_size": 3,
+                            "sequence_chunk_overlap": 1,
+                        },
+                    },
+                    "mocap_frame_rate": 120.0,
+                    "mocap_time_length": 5,
+                    "markers_obs": np.zeros((5, 1, 3), dtype=np.float32),
+                    "markers_sim": np.zeros((5, 1, 3), dtype=np.float32),
+                    "labels_obs": [["A"]] * 5,
+                },
+            }
+        )
+    )
+
+    quality = stageii_benchmark._summarize_stageii_quality(
+        sample_path,
+        stageii_benchmark.normalize_stageii_sample(sample_path),
+    )
+
+    assert quality["body_pose_frame_delta_l2"]["count"] == 4
+    assert quality["body_pose_frame_delta_l2"]["mean"] == pytest.approx(1.75)
+    assert quality["body_pose_frame_delta_l2"]["max"] == pytest.approx(3.0)
+    assert quality["body_pose_jitter_l2"]["count"] == 3
+    assert quality["body_pose_jitter_l2"]["mean"] == pytest.approx(2.0 / 3.0)
+    assert quality["left_hand_pose_frame_delta_l2"]["count"] == 4
+    assert quality["left_hand_pose_frame_delta_l2"]["mean"] == pytest.approx(0.75)
+    assert quality["left_hand_pose_jitter_l2"]["max"] == pytest.approx(2.0)
+    assert quality["right_hand_pose_frame_delta_l2"]["mean"] == pytest.approx(1.0)
+    assert quality["right_hand_pose_jitter_l2"]["mean"] == pytest.approx(5.0 / 3.0)
+    assert quality["all_hands_pose_frame_delta_l2"]["mean"] == pytest.approx((3.0 + np.sqrt(10.0)) / 4.0)
+    assert quality["all_hands_pose_jitter_l2"]["max"] == pytest.approx(np.sqrt(10.0))
+
+
 def test_summarize_stageii_quality_rejects_non_positive_runtime_chunk_size(tmp_path):
     sample_path = tmp_path / "synthetic_stageii.pkl"
     sample_path.write_bytes(
@@ -1697,6 +1845,72 @@ def test_summarize_compared_stageii_chunk_seam_diagnostics_reports_hotspots_and_
     assert summary["transl"]["negative_peak_count"] == 0
     assert summary["transl"]["positive_peaks"] == []
     assert summary["transl"]["negative_peaks"] == []
+
+
+def test_summarize_compared_stageii_pose_window_hotspots_reports_hand_and_body_windows(tmp_path):
+    def _write_stageii(sample_path, *, body_values, left_hand_values, right_hand_values):
+        fullpose = np.zeros((len(body_values), 165), dtype=np.float32)
+        fullpose[:, 3] = np.asarray(body_values, dtype=np.float32)
+        fullpose[:, 75] = np.asarray(left_hand_values, dtype=np.float32)
+        fullpose[:, 120] = np.asarray(right_hand_values, dtype=np.float32)
+        sample_path.write_bytes(
+            pickle.dumps(
+                {
+                    "fullpose": fullpose,
+                    "betas": np.zeros(10, dtype=np.float32),
+                    "trans": np.zeros((len(body_values), 3), dtype=np.float32),
+                    "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                    "latent_labels": ["A"],
+                    "stageii_debug_details": {
+                        "cfg": {
+                            "surface_model": {
+                                "type": "smplx",
+                                "gender": "male",
+                            }
+                        },
+                        "mocap_frame_rate": 120.0,
+                        "mocap_time_length": len(body_values),
+                        "markers_obs": np.zeros((len(body_values), 1, 3), dtype=np.float32),
+                        "markers_sim": np.zeros((len(body_values), 1, 3), dtype=np.float32),
+                        "labels_obs": [["A"]] * len(body_values),
+                    },
+                }
+            )
+        )
+
+    reference_path = tmp_path / "reference_stageii.pkl"
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    _write_stageii(
+        candidate_path,
+        body_values=[0.0, 2.0, 4.0, 4.0, 4.0],
+        left_hand_values=[0.0, 0.0, 4.0, 4.0, 4.0],
+        right_hand_values=[0.0, 1.0, 1.0, 4.0, 4.0],
+    )
+    _write_stageii(
+        reference_path,
+        body_values=[0.0, 0.0, 0.0, 0.0, 0.0],
+        left_hand_values=[0.0, 1.0, 2.0, 3.0, 4.0],
+        right_hand_values=[0.0, 1.0, 2.0, 3.0, 4.0],
+    )
+
+    summary = stageii_benchmark.summarize_compared_stageii_pose_window_hotspots(
+        reference_path,
+        candidate_path,
+        window_size=1,
+        top_k=2,
+        positive_threshold=0.5,
+        negative_threshold=0.5,
+    )
+
+    assert summary["window_size"] == 1
+    assert summary["left_hand_pose_frame_delta_l2"]["positive_peak_count"] == 1
+    assert summary["left_hand_pose_frame_delta_l2"]["positive_peaks"][0]["frame_start"] == 2
+    assert summary["left_hand_pose_frame_delta_l2"]["positive_peaks"][0]["delta_mean"] == pytest.approx(3.0)
+    assert summary["left_hand_pose_frame_delta_l2"]["negative_peak_count"] == 3
+    assert summary["body_pose_jitter_l2"]["positive_peak_count"] == 1
+    assert summary["body_pose_jitter_l2"]["positive_peaks"][0]["frame_start"] == 3
+    assert summary["body_pose_jitter_l2"]["positive_peaks"][0]["delta_mean"] == pytest.approx(2.0)
+    assert summary["all_hands_pose_frame_delta_l2"]["positive_peak_count"] == 2
 
 
 def test_summarize_stageii_quality_reads_legacy_marker_residual_from_public_sample():

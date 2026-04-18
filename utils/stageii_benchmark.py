@@ -23,6 +23,15 @@ PREVIEW_RENDER_BENCHMARK_WORKLOAD = {
     "height": 128,
 }
 
+REFERENCE_STAGEII_POSE_WINDOW_SIZE = 15
+
+_POSE_REGION_NAMES = ("body_pose", "left_hand_pose", "right_hand_pose", "all_hands_pose")
+_POSE_REGION_METRIC_NAMES = tuple(
+    metric_name
+    for region_name in _POSE_REGION_NAMES
+    for metric_name in (f"{region_name}_frame_delta_l2", f"{region_name}_jitter_l2")
+)
+
 
 @dataclass
 class NormalizedStageIISample:
@@ -394,6 +403,149 @@ def _temporal_accel_l2_samples(array_like):
     return [float(value) for value in accel_norm[finite_mask].tolist()]
 
 
+def _frame_delta_l2_series(array_like):
+    array = np.asarray(array_like, dtype=np.float64)
+    series = np.full(array.shape[0], np.nan, dtype=np.float64)
+    if array.shape[0] < 2:
+        return series
+    delta = np.diff(array, axis=0)
+    delta = np.nan_to_num(delta, copy=False)
+    delta = delta.reshape(delta.shape[0], -1)
+    delta_norm = np.linalg.norm(delta, axis=1)
+    finite_mask = np.isfinite(delta_norm)
+    series[1:][finite_mask] = delta_norm[finite_mask]
+    return series
+
+
+def _temporal_accel_l2_series(array_like):
+    array = np.asarray(array_like, dtype=np.float64)
+    series = np.full(array.shape[0], np.nan, dtype=np.float64)
+    if array.shape[0] < 3:
+        return series
+    accel = np.diff(array, n=2, axis=0)
+    accel = np.nan_to_num(accel, copy=False)
+    accel = accel.reshape(accel.shape[0], -1)
+    accel_norm = np.linalg.norm(accel, axis=1)
+    finite_mask = np.isfinite(accel_norm)
+    series[2:][finite_mask] = accel_norm[finite_mask]
+    return series
+
+
+def _pose_region_slices(surface_model_type, pose_dim):
+    surface_model_type = str(surface_model_type or "").lower()
+    if pose_dim >= 165:
+        return {
+            "body_pose": slice(3, 66),
+            "left_hand_pose": slice(75, 120),
+            "right_hand_pose": slice(120, 165),
+        }
+    if pose_dim >= 156:
+        return {
+            "body_pose": slice(3, 66),
+            "left_hand_pose": slice(66, 111),
+            "right_hand_pose": slice(111, 156),
+        }
+    if pose_dim >= 66 or surface_model_type in {"smpl", "smplh", "smplx"}:
+        return {
+            "body_pose": slice(3, min(66, pose_dim)),
+            "left_hand_pose": None,
+            "right_hand_pose": None,
+        }
+    return {
+        "body_pose": None,
+        "left_hand_pose": None,
+        "right_hand_pose": None,
+    }
+
+
+def _pose_region_arrays(sample):
+    pose_array = np.asarray(sample.poses, dtype=np.float64)
+    if pose_array.ndim != 2:
+        return {region_name: None for region_name in _POSE_REGION_NAMES}
+
+    region_slices = _pose_region_slices(sample.surface_model_type, pose_array.shape[1])
+    region_arrays = {}
+    for region_name in ("body_pose", "left_hand_pose", "right_hand_pose"):
+        region_slice = region_slices.get(region_name)
+        if region_slice is None:
+            region_arrays[region_name] = None
+            continue
+        region_array = pose_array[:, region_slice]
+        region_arrays[region_name] = region_array if region_array.shape[1] > 0 else None
+
+    left_hand = region_arrays["left_hand_pose"]
+    right_hand = region_arrays["right_hand_pose"]
+    if left_hand is None or right_hand is None:
+        region_arrays["all_hands_pose"] = None
+    else:
+        region_arrays["all_hands_pose"] = np.concatenate((left_hand, right_hand), axis=1)
+    return region_arrays
+
+
+def _window_ranges(length, *, window_size):
+    if window_size <= 0:
+        raise ValueError("window_size must be > 0")
+    return [(start, min(start + window_size, length)) for start in range(0, length, window_size)]
+
+
+def _summarize_compared_temporal_window_metric(
+    candidate_series,
+    reference_series,
+    *,
+    window_size,
+    top_k,
+    positive_threshold,
+    negative_threshold,
+):
+    candidate_series = np.asarray(candidate_series, dtype=np.float64)
+    reference_series = np.asarray(reference_series, dtype=np.float64)
+    if candidate_series.shape != reference_series.shape:
+        raise ValueError("candidate and reference metric series must match in shape")
+
+    windows = []
+    for start, end in _window_ranges(candidate_series.shape[0], window_size=window_size):
+        candidate_window = candidate_series[start:end]
+        reference_window = reference_series[start:end]
+        finite_mask = np.isfinite(candidate_window) & np.isfinite(reference_window)
+        if not finite_mask.any():
+            continue
+        candidate_values = candidate_window[finite_mask]
+        reference_values = reference_window[finite_mask]
+        delta_values = candidate_values - reference_values
+        frame_indices = np.nonzero(finite_mask)[0] + start
+        windows.append(
+            {
+                "frame_start": int(frame_indices[0]),
+                "frame_end": int(frame_indices[-1]),
+                "frame_count": int(frame_indices.shape[0]),
+                "candidate_mean": float(np.mean(candidate_values)),
+                "reference_mean": float(np.mean(reference_values)),
+                "delta_mean": float(np.mean(delta_values)),
+                "candidate_max": float(np.max(candidate_values)),
+                "reference_max": float(np.max(reference_values)),
+                "delta_max": float(np.max(delta_values)),
+                "delta_min": float(np.min(delta_values)),
+            }
+        )
+
+    positive_peaks = sorted(
+        [window for window in windows if window["delta_mean"] >= positive_threshold],
+        key=lambda window: window["delta_mean"],
+        reverse=True,
+    )
+    negative_peaks = sorted(
+        [window for window in windows if window["delta_mean"] <= -negative_threshold],
+        key=lambda window: window["delta_mean"],
+    )
+    return {
+        "window_count": len(windows),
+        "positive_peak_count": len(positive_peaks),
+        "negative_peak_count": len(negative_peaks),
+        "positive_peaks": positive_peaks[:top_k],
+        "negative_peaks": negative_peaks[:top_k],
+    }
+
+
 def _sequence_chunk_ranges(total_frames, chunk_size, overlap):
     if total_frames <= 0:
         return []
@@ -758,6 +910,64 @@ def summarize_compared_stageii_chunk_seam_diagnostics(
     }
 
 
+def summarize_compared_stageii_pose_window_hotspots(
+    reference_path,
+    candidate_path,
+    *,
+    window_size=REFERENCE_STAGEII_POSE_WINDOW_SIZE,
+    top_k=5,
+    positive_threshold=0.0,
+    negative_threshold=0.0,
+):
+    if window_size <= 0:
+        raise ValueError("window_size must be > 0")
+    if top_k < 0:
+        raise ValueError("top_k must be non-negative")
+    if positive_threshold < 0:
+        raise ValueError("positive_threshold must be non-negative")
+    if negative_threshold < 0:
+        raise ValueError("negative_threshold must be non-negative")
+
+    reference = normalize_stageii_sample(reference_path)
+    candidate = normalize_stageii_sample(candidate_path)
+    if reference.poses.shape[0] != candidate.poses.shape[0]:
+        raise ValueError("reference and candidate stageii samples must have matching frame counts")
+
+    reference_regions = _pose_region_arrays(reference)
+    candidate_regions = _pose_region_arrays(candidate)
+    summary = {"window_size": int(window_size)}
+    for region_name in _POSE_REGION_NAMES:
+        reference_region = reference_regions.get(region_name)
+        candidate_region = candidate_regions.get(region_name)
+        frame_delta_metric_name = f"{region_name}_frame_delta_l2"
+        jitter_metric_name = f"{region_name}_jitter_l2"
+        if (
+            reference_region is None
+            or candidate_region is None
+            or reference_region.shape != candidate_region.shape
+        ):
+            summary[frame_delta_metric_name] = None
+            summary[jitter_metric_name] = None
+            continue
+        summary[frame_delta_metric_name] = _summarize_compared_temporal_window_metric(
+            _frame_delta_l2_series(candidate_region),
+            _frame_delta_l2_series(reference_region),
+            window_size=window_size,
+            top_k=top_k,
+            positive_threshold=positive_threshold,
+            negative_threshold=negative_threshold,
+        )
+        summary[jitter_metric_name] = _summarize_compared_temporal_window_metric(
+            _temporal_accel_l2_series(candidate_region),
+            _temporal_accel_l2_series(reference_region),
+            window_size=window_size,
+            top_k=top_k,
+            positive_threshold=positive_threshold,
+            negative_threshold=negative_threshold,
+        )
+    return summary
+
+
 def _summarize_stageii_quality(sample_path, baseline):
     trans_frame_delta = _summarize_numeric_samples(
         _frame_delta_l2_samples(baseline.trans),
@@ -785,11 +995,23 @@ def _summarize_stageii_quality(sample_path, baseline):
         "pose_frame_delta_l2": pose_frame_delta,
         "trans_jitter_l2": trans_jitter,
         "pose_jitter_l2": pose_jitter,
+        **{metric_name: None for metric_name in _POSE_REGION_METRIC_NAMES},
         "chunk_seam_transl_jump_l2": None,
         "chunk_seam_pose_jump_l2": None,
         "chunk_seam_transl_jump_over_trans_frame_delta_ratio": None,
         "chunk_seam_pose_jump_over_pose_frame_delta_ratio": None,
     }
+    for region_name, region_array in _pose_region_arrays(baseline).items():
+        if region_array is None:
+            continue
+        quality[f"{region_name}_frame_delta_l2"] = _summarize_numeric_samples(
+            _frame_delta_l2_samples(region_array),
+            include_samples=False,
+        )
+        quality[f"{region_name}_jitter_l2"] = _summarize_numeric_samples(
+            _temporal_accel_l2_samples(region_array),
+            include_samples=False,
+        )
     chunk_config = _sequence_chunk_config(stageii_data)
     if chunk_config is None:
         return quality
@@ -893,6 +1115,20 @@ def _summarize_reference_stageii_chunk_seam_hotspots(reference_path, candidate_p
         comparison,
         positive_threshold=0.05,
         negative_threshold=0.05,
+    )
+
+
+def _summarize_reference_stageii_pose_window_hotspots(reference_path, candidate_path):
+    reference_sample = _normalize_reference_stageii_sample(reference_path)
+    if reference_sample is None:
+        return None
+    return summarize_compared_stageii_pose_window_hotspots(
+        reference_path,
+        candidate_path,
+        window_size=REFERENCE_STAGEII_POSE_WINDOW_SIZE,
+        top_k=5,
+        positive_threshold=0.0,
+        negative_threshold=0.0,
     )
 
 
@@ -1276,6 +1512,7 @@ def run_public_stageii_benchmark(
     quality_summary["reference_stageii_quality"] = None
     quality_summary["reference_stageii_delta"] = None
     quality_summary["reference_stageii_chunk_seam_hotspots"] = None
+    quality_summary["reference_stageii_pose_window_hotspots"] = None
     quality_summary["mesh_compare"] = None
     reference_stageii_elapsed_s = None
     reference_stageii_elapsed_delta_s = None
@@ -1288,6 +1525,10 @@ def run_public_stageii_benchmark(
             reference_quality,
         )
         quality_summary["reference_stageii_chunk_seam_hotspots"] = _summarize_reference_stageii_chunk_seam_hotspots(
+            mesh_reference_path,
+            sample_path,
+        )
+        quality_summary["reference_stageii_pose_window_hotspots"] = _summarize_reference_stageii_pose_window_hotspots(
             mesh_reference_path,
             sample_path,
         )
