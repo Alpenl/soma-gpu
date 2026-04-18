@@ -625,6 +625,33 @@ def _select_chunk_keep_start(
     return _finalize(best_keep_start)
 
 
+def _override_chunk_keep_start(*, keep_start, override_keep_start, overlap_count, stitch_diagnostics):
+    override_keep_start = int(override_keep_start)
+    overlap_count = int(overlap_count)
+    if override_keep_start < 0 or override_keep_start > overlap_count:
+        raise ValueError(
+            f"Runtime sequence_chunk_keep_start_override_value must be between 0 and overlap_count ({overlap_count}). "
+            f"Got {override_keep_start}."
+        )
+
+    selected_before_override = int(keep_start)
+    selected_metric = None
+    for row in stitch_diagnostics.get("candidate_metrics", []):
+        is_selected = int(row["keep_start"]) == override_keep_start
+        row["selected"] = is_selected
+        if is_selected:
+            selected_metric = row
+
+    stitch_diagnostics["selected_keep_start_before_override"] = selected_before_override
+    stitch_diagnostics["selected_keep_start"] = override_keep_start
+    stitch_diagnostics["keep_start_override_value"] = override_keep_start
+    stitch_diagnostics["keep_start_override_applied"] = override_keep_start != selected_before_override
+    stitch_diagnostics["selected_transl_jump"] = None if selected_metric is None else selected_metric["transl_jump"]
+    stitch_diagnostics["selected_pose_jump"] = None if selected_metric is None else selected_metric["pose_jump"]
+    stitch_diagnostics["selected_mesh_jump"] = None if selected_metric is None else selected_metric["mesh_jump"]
+    return override_keep_start, stitch_diagnostics
+
+
 def _trim_perframe_tail(perframe_data, trim_count):
     trim_count = max(int(trim_count), 0)
     if trim_count <= 0:
@@ -1194,6 +1221,14 @@ def mosh_stageii_torch(
         "sequence_overlap_transl_seed_from_previous_chunk_indices",
     )
     sequence_probe_chunk_indices = _runtime_optional_nonnegative_int_set(runtime, "sequence_probe_chunk_indices")
+    sequence_chunk_keep_start_override_indices = _runtime_optional_nonnegative_int_set(
+        runtime,
+        "sequence_chunk_keep_start_override_indices",
+    )
+    sequence_chunk_keep_start_override_value = _runtime_optional_nonnegative_int(
+        runtime,
+        "sequence_chunk_keep_start_override_value",
+    )
     sequence_local_window_start = _runtime_optional_nonnegative_int(runtime, "sequence_local_window_start")
     sequence_local_window = _runtime_optional_positive_int(runtime, "sequence_local_window")
     sequence_local_pose_reference_from_previous_chunk_indices = _runtime_optional_nonnegative_int_set(
@@ -1269,6 +1304,11 @@ def mosh_stageii_torch(
         )
     if sequence_overlap_pose_seed_window is not None and sequence_overlap_pose_seed_window_start is None:
         sequence_overlap_pose_seed_window_start = 0
+    if (sequence_chunk_keep_start_override_indices is None) != (sequence_chunk_keep_start_override_value is None):
+        raise ValueError(
+            "Runtime sequence_chunk_keep_start_override_indices and sequence_chunk_keep_start_override_value "
+            "must be provided together."
+        )
     if sequence_local_data_scale is not None and sequence_local_data_chunk_indices is None:
         raise ValueError(
             "Runtime sequence_local_data_chunk_indices must be provided when sequence_local_data_scale is set."
@@ -1720,6 +1760,16 @@ def mosh_stageii_torch(
                     current_vertices=result.vertices,
                     return_diagnostics=True,
                 )
+                if (
+                    sequence_chunk_keep_start_override_indices is not None
+                    and chunk_idx in sequence_chunk_keep_start_override_indices
+                ):
+                    keep_start, stitch_diagnostics = _override_chunk_keep_start(
+                        keep_start=keep_start,
+                        override_keep_start=sequence_chunk_keep_start_override_value,
+                        overlap_count=overlap_count,
+                        stitch_diagnostics=stitch_diagnostics,
+                    )
                 stitch_diagnostics.update(
                     {
                         "chunk_index": int(chunk_idx),
