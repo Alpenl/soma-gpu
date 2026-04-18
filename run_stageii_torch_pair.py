@@ -56,6 +56,7 @@ def build_parser():
         default=DEFAULT_CANDIDATE_PRESET,
         help=(
             "Preset used for the candidate run. Defaults to the retained mid-risk translation candidate; "
+            "use real-mcp-chunk48ov8-deltapose4 for the current structure-only slice candidate, "
             "use real-mcp-transvelo100-seedvelowindow for the higher-gain variant or "
             "real-mcp-transvelo10-seedvelowindow for the lower-risk variant."
         ),
