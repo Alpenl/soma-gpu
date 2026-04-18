@@ -10,6 +10,8 @@ from utils.mesh_io import readPC2
 from utils.script_utils import load_pickle_compat, resolve_stageii_model_path
 from utils.stageii_benchmark import (
     _chunk_seam_jump_l2_samples,
+    _chunk_seam_plans,
+    _local_transition_diagnostics_at,
     _sequence_chunk_config,
     _sequence_chunk_keep_starts,
     _summarize_numeric_samples,
@@ -175,6 +177,10 @@ def load_mesh_sequence(input_path, *, support_base_dir=None, chunk_size=None, ch
 
 
 def _frame_delta_l2_samples(reference_vertices, candidate_vertices):
+    return [float(value) for value in _frame_delta_l2_array(reference_vertices, candidate_vertices).tolist()]
+
+
+def _frame_delta_l2_array(reference_vertices, candidate_vertices):
     reference_vertices = np.asarray(reference_vertices, dtype=np.float64)
     candidate_vertices = np.asarray(candidate_vertices, dtype=np.float64)
     if reference_vertices.shape != candidate_vertices.shape:
@@ -185,9 +191,146 @@ def _frame_delta_l2_samples(reference_vertices, candidate_vertices):
 
     delta = np.nan_to_num(candidate_vertices - reference_vertices, copy=False)
     delta = delta.reshape(delta.shape[0], -1)
-    delta_norm = np.linalg.norm(delta, axis=1)
-    finite_mask = np.isfinite(delta_norm)
-    return [float(value) for value in delta_norm[finite_mask].tolist()]
+    return np.linalg.norm(delta, axis=1)
+
+
+def _summarize_frame_delta_window(frame_delta_l2, *, seam_index, window_size):
+    window_size = int(window_size)
+    if window_size <= 0:
+        raise ValueError("frame_delta_window must be > 0")
+
+    frame_delta_l2 = np.asarray(frame_delta_l2, dtype=np.float64)
+    if seam_index < 0 or seam_index >= frame_delta_l2.shape[0]:
+        raise ValueError(f"seam_index {seam_index} is out of bounds for frame_delta_l2 with {frame_delta_l2.shape[0]} frames")
+
+    window_end = min(int(seam_index) + window_size, frame_delta_l2.shape[0])
+    window_values = frame_delta_l2[int(seam_index):window_end]
+    summary = _summarize_numeric_samples([float(value) for value in window_values.tolist()], include_samples=False)
+    if summary is None:
+        return None
+    peak_offset = int(np.argmax(window_values))
+    summary.update(
+        {
+            "window_start": int(seam_index),
+            "window_end": int(window_end),
+            "seam_frame_delta_l2": float(window_values[0]),
+            "last_frame_delta_l2": float(window_values[-1]),
+            "peak_frame_index": int(seam_index) + peak_offset,
+            "peak_offset": peak_offset,
+        }
+    )
+    return summary
+
+
+def summarize_mesh_chunk_seam_diagnostics(sequence):
+    if sequence.chunk_size is None:
+        return None
+
+    rows = []
+    for seam_plan in _chunk_seam_plans(
+        int(sequence.vertices.shape[0]),
+        chunk_size=sequence.chunk_size,
+        overlap=sequence.chunk_overlap or 0,
+        keep_starts=sequence.chunk_keep_starts,
+    ):
+        rows.append(
+            {
+                **seam_plan,
+                **_local_transition_diagnostics_at(sequence.vertices, int(seam_plan["seam_index"])),
+            }
+        )
+    return {
+        "chunk_size": sequence.chunk_size,
+        "chunk_overlap": sequence.chunk_overlap,
+        "chunk_keep_starts": sequence.chunk_keep_starts,
+        "rows": rows,
+    }
+
+
+def compare_mesh_chunk_seam_diagnostics(
+    reference_path,
+    candidate_path,
+    *,
+    support_base_dir=None,
+    chunk_size=None,
+    chunk_overlap=None,
+    frame_delta_window=None,
+):
+    if _normalized_path(reference_path) == _normalized_path(candidate_path):
+        raise ValueError(f"candidate_path resolves to reference_path: {reference_path}")
+
+    reference = load_mesh_sequence(
+        reference_path,
+        support_base_dir=support_base_dir,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    candidate = load_mesh_sequence(
+        candidate_path,
+        support_base_dir=support_base_dir,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    frame_delta_l2 = _frame_delta_l2_array(reference.vertices, candidate.vertices)
+    candidate_diagnostics = summarize_mesh_chunk_seam_diagnostics(candidate)
+    if candidate_diagnostics is None:
+        return None
+
+    resolved_frame_delta_window = (
+        int(candidate.chunk_overlap or 0) if frame_delta_window is None else int(frame_delta_window)
+    )
+    if resolved_frame_delta_window < 0:
+        raise ValueError("frame_delta_window must be >= 0")
+
+    rows = []
+    for row in candidate_diagnostics["rows"]:
+        seam_index = int(row["seam_index"])
+        reference_metrics = _local_transition_diagnostics_at(reference.vertices, seam_index)
+        delta_metrics = {}
+        for key, candidate_value in row.items():
+            if key in {"chunk_index", "row_start", "row_end", "keep_start", "trim_count", "seam_index"}:
+                continue
+            reference_value = reference_metrics.get(key)
+            if candidate_value is None or reference_value is None:
+                delta_metrics[key] = None
+            else:
+                delta_metrics[key] = float(candidate_value) - float(reference_value)
+        compared_row = {
+            "chunk_index": row["chunk_index"],
+            "row_start": row["row_start"],
+            "row_end": row["row_end"],
+            "keep_start": row["keep_start"],
+            "trim_count": row["trim_count"],
+            "seam_index": seam_index,
+            "candidate": {
+                key: row[key]
+                for key in (
+                    "prev_frame_delta_l2",
+                    "seam_jump_l2",
+                    "next_frame_delta_l2",
+                    "pre_accel_l2",
+                    "post_accel_l2",
+                )
+            },
+            "reference": reference_metrics,
+            "delta": delta_metrics,
+            "frame_delta_window": None,
+        }
+        if resolved_frame_delta_window > 0:
+            compared_row["frame_delta_window"] = _summarize_frame_delta_window(
+                frame_delta_l2,
+                seam_index=seam_index,
+                window_size=resolved_frame_delta_window,
+            )
+        rows.append(compared_row)
+
+    return {
+        "chunk_size": candidate_diagnostics["chunk_size"],
+        "chunk_overlap": candidate_diagnostics["chunk_overlap"],
+        "chunk_keep_starts": candidate_diagnostics["chunk_keep_starts"],
+        "frame_delta_window": resolved_frame_delta_window,
+        "rows": rows,
+    }
 
 
 def summarize_mesh_sequence(sequence):

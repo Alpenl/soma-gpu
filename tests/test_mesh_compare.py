@@ -360,6 +360,200 @@ def test_compare_mesh_sequences_reports_mesh_accel_seam_and_frame_delta_summarie
     assert report["frame_delta_l2"]["max"] == pytest.approx(1.0)
 
 
+def test_compare_mesh_chunk_seam_diagnostics_reports_local_delta_and_post_seam_spread(
+    tmp_path, monkeypatch
+):
+    mesh_compare = _load_mesh_compare_module()
+    reference_path = tmp_path / "reference_stageii.pkl"
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+
+    def _write_stageii(path):
+        path.write_bytes(
+            pickle.dumps(
+                {
+                    "fullpose": np.zeros((6, 165), dtype=np.float32),
+                    "betas": np.zeros(10, dtype=np.float32),
+                    "trans": np.zeros((6, 3), dtype=np.float32),
+                    "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                    "latent_labels": ["A"],
+                    "stageii_debug_details": {
+                        "cfg": {
+                            "surface_model": {
+                                "type": "smplx",
+                                "gender": "male",
+                                "fname": "/old-machine/support_files/smplx/male/model.npz",
+                            },
+                            "runtime": {
+                                "sequence_chunk_size": 4,
+                                "sequence_chunk_overlap": 2,
+                            },
+                        },
+                        "sequence_chunk_keep_starts": [0, 1],
+                        "markers_obs": np.zeros((6, 1, 3), dtype=np.float32),
+                        "labels_obs": [["A"]] * 6,
+                    },
+                }
+            )
+        )
+
+    _write_stageii(reference_path)
+    _write_stageii(candidate_path)
+
+    resolved_model_path = tmp_path / "resolved" / "model.npz"
+    resolved_model_path.parent.mkdir(parents=True)
+    resolved_model_path.write_bytes(b"npz")
+    monkeypatch.setattr(mesh_compare, "resolve_stageii_model_path", lambda *args, **kwargs: str(resolved_model_path))
+    monkeypatch.setattr(mesh_compare.render_video, "load_render_model", lambda model_path: SimpleNamespace(name=model_path))
+
+    reference_vertices = np.asarray(
+        [
+            [[0.0, 0.0, 0.0]],
+            [[1.0, 0.0, 0.0]],
+            [[2.0, 0.0, 0.0]],
+            [[10.0, 0.0, 0.0]],
+            [[11.0, 0.0, 0.0]],
+            [[12.0, 0.0, 0.0]],
+        ],
+        dtype=np.float32,
+    )
+    candidate_vertices = np.asarray(
+        [
+            [[0.0, 0.0, 0.0]],
+            [[1.0, 0.0, 0.0]],
+            [[2.0, 0.0, 0.0]],
+            [[9.0, 0.0, 0.0]],
+            [[7.0, 0.0, 0.0]],
+            [[8.0, 0.0, 0.0]],
+        ],
+        dtype=np.float32,
+    )
+
+    def fake_load_vertices(stageii_pkl, model):
+        if Path(stageii_pkl) == reference_path:
+            return reference_vertices
+        if Path(stageii_pkl) == candidate_path:
+            return candidate_vertices
+        raise AssertionError(f"unexpected stageii path: {stageii_pkl}")
+
+    monkeypatch.setattr(mesh_compare.render_video, "load_vertices", fake_load_vertices)
+
+    comparison = mesh_compare.compare_mesh_chunk_seam_diagnostics(
+        reference_path,
+        candidate_path,
+        support_base_dir="/support-files",
+        frame_delta_window=3,
+    )
+
+    assert comparison["chunk_size"] == 4
+    assert comparison["chunk_overlap"] == 2
+    assert comparison["chunk_keep_starts"] == [0, 1]
+    assert comparison["frame_delta_window"] == 3
+    row = comparison["rows"][0]
+    assert row["seam_index"] == 3
+    assert row["delta"]["seam_jump_l2"] == pytest.approx(-1.0)
+    assert row["candidate"]["seam_jump_l2"] == pytest.approx(7.0)
+    assert row["reference"]["seam_jump_l2"] == pytest.approx(8.0)
+    assert row["frame_delta_window"]["window_start"] == 3
+    assert row["frame_delta_window"]["window_end"] == 6
+    assert row["frame_delta_window"]["count"] == 3
+    assert row["frame_delta_window"]["mean"] == pytest.approx(3.0)
+    assert row["frame_delta_window"]["max"] == pytest.approx(4.0)
+    assert row["frame_delta_window"]["seam_frame_delta_l2"] == pytest.approx(1.0)
+    assert row["frame_delta_window"]["last_frame_delta_l2"] == pytest.approx(4.0)
+    assert row["frame_delta_window"]["peak_frame_index"] == 4
+    assert row["frame_delta_window"]["peak_offset"] == 1
+
+
+def test_compare_mesh_chunk_seam_diagnostics_defaults_frame_delta_window_to_chunk_overlap(
+    tmp_path, monkeypatch
+):
+    mesh_compare = _load_mesh_compare_module()
+    reference_path = tmp_path / "reference_stageii.pkl"
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+
+    def _write_stageii(path):
+        path.write_bytes(
+            pickle.dumps(
+                {
+                    "fullpose": np.zeros((6, 165), dtype=np.float32),
+                    "betas": np.zeros(10, dtype=np.float32),
+                    "trans": np.zeros((6, 3), dtype=np.float32),
+                    "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                    "latent_labels": ["A"],
+                    "stageii_debug_details": {
+                        "cfg": {
+                            "surface_model": {
+                                "type": "smplx",
+                                "gender": "male",
+                                "fname": "/old-machine/support_files/smplx/male/model.npz",
+                            },
+                            "runtime": {
+                                "sequence_chunk_size": 4,
+                                "sequence_chunk_overlap": 2,
+                            },
+                        },
+                        "sequence_chunk_keep_starts": [0, 1],
+                        "markers_obs": np.zeros((6, 1, 3), dtype=np.float32),
+                        "labels_obs": [["A"]] * 6,
+                    },
+                }
+            )
+        )
+
+    _write_stageii(reference_path)
+    _write_stageii(candidate_path)
+
+    resolved_model_path = tmp_path / "resolved" / "model.npz"
+    resolved_model_path.parent.mkdir(parents=True)
+    resolved_model_path.write_bytes(b"npz")
+    monkeypatch.setattr(mesh_compare, "resolve_stageii_model_path", lambda *args, **kwargs: str(resolved_model_path))
+    monkeypatch.setattr(mesh_compare.render_video, "load_render_model", lambda model_path: SimpleNamespace(name=model_path))
+    monkeypatch.setattr(
+        mesh_compare.render_video,
+        "load_vertices",
+        lambda stageii_pkl, model: (
+            np.asarray(
+                [
+                    [[0.0, 0.0, 0.0]],
+                    [[1.0, 0.0, 0.0]],
+                    [[2.0, 0.0, 0.0]],
+                    [[10.0, 0.0, 0.0]],
+                    [[11.0, 0.0, 0.0]],
+                    [[12.0, 0.0, 0.0]],
+                ],
+                dtype=np.float32,
+            )
+            if Path(stageii_pkl) == reference_path
+            else np.asarray(
+                [
+                    [[0.0, 0.0, 0.0]],
+                    [[1.0, 0.0, 0.0]],
+                    [[2.0, 0.0, 0.0]],
+                    [[9.0, 0.0, 0.0]],
+                    [[7.0, 0.0, 0.0]],
+                    [[8.0, 0.0, 0.0]],
+                ],
+                dtype=np.float32,
+            )
+        ),
+    )
+
+    comparison = mesh_compare.compare_mesh_chunk_seam_diagnostics(
+        reference_path,
+        candidate_path,
+        support_base_dir="/support-files",
+    )
+
+    assert comparison["frame_delta_window"] == 2
+    row = comparison["rows"][0]
+    assert row["frame_delta_window"]["window_start"] == 3
+    assert row["frame_delta_window"]["window_end"] == 5
+    assert row["frame_delta_window"]["count"] == 2
+    assert row["frame_delta_window"]["mean"] == pytest.approx(2.5)
+    assert row["frame_delta_window"]["peak_frame_index"] == 4
+    assert row["frame_delta_window"]["peak_offset"] == 1
+
+
 def test_compare_mesh_sequences_rejects_frame_shape_mismatch(tmp_path):
     mesh_compare = _load_mesh_compare_module()
     reference_path = tmp_path / "reference.pc2"
