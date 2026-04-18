@@ -316,6 +316,19 @@ def _runtime_optional_positive_int(runtime, key):
     return parsed
 
 
+def _runtime_optional_nonnegative_int(runtime, key):
+    value = _runtime_get(runtime, key, None)
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Runtime {key} must be a non-negative integer when provided. Got {value!r}.") from exc
+    if parsed < 0:
+        raise ValueError(f"Runtime {key} must be a non-negative integer when provided. Got {parsed}.")
+    return parsed
+
+
 def _runtime_optional_nonnegative_int_set(runtime, key):
     value = _runtime_get(runtime, key, None)
     if value is None:
@@ -847,18 +860,72 @@ def _splice_chunk_overlap_reference(
     *,
     include_keep_seam=False,
     keep_seam_window=0,
+    window_start=None,
+    window_size=None,
 ):
     if base_reference is None or previous_tail is None or overlap_count <= 0:
         return base_reference
     reference = base_reference.detach().clone()
-    reference[:overlap_count] = previous_tail[-overlap_count:].detach().clone()
-    if include_keep_seam and overlap_count < reference.shape[0]:
-        keep_seam_window = max(int(keep_seam_window or 1), 1)
-        seam_window_end = min(overlap_count + keep_seam_window, reference.shape[0])
-        seam_window = base_reference[overlap_count:seam_window_end].detach().clone()
-        seam_window = seam_window - seam_window[:1].clone()
-        reference[overlap_count:seam_window_end] = previous_tail[-1:].detach().clone() + seam_window
+    overlap_count = min(int(overlap_count), reference.shape[0], previous_tail.shape[0])
+    if overlap_count <= 0:
+        return reference
+    previous_tail = previous_tail[-overlap_count:].detach().clone()
+
+    if window_size is None:
+        window_start = 0
+        window_end = overlap_count
+        if include_keep_seam and overlap_count < reference.shape[0]:
+            keep_seam_window = max(int(keep_seam_window or 1), 1)
+            window_end = min(overlap_count + keep_seam_window, reference.shape[0])
+    else:
+        if window_start is None:
+            window_start = 0
+        window_start = int(window_start)
+        if window_start < 0:
+            raise ValueError(f"window_start must be non-negative, got {window_start}")
+        window_size = int(window_size)
+        if window_size <= 0:
+            raise ValueError(f"window_size must be positive, got {window_size}")
+        window_end = min(window_start + window_size, reference.shape[0])
+        if window_end <= window_start:
+            return reference
+
+    prefix_start = min(window_start, overlap_count)
+    prefix_end = min(window_end, overlap_count)
+    if prefix_end > prefix_start:
+        reference[prefix_start:prefix_end] = previous_tail[prefix_start:prefix_end]
+    if include_keep_seam and overlap_count < reference.shape[0] and window_end > overlap_count:
+        seam_start = max(window_start, overlap_count)
+        seam_end = min(window_end, reference.shape[0])
+        if seam_end > seam_start:
+            seam_window = base_reference[overlap_count:seam_end].detach().clone()
+            seam_window = seam_window - seam_window[:1].clone()
+            seam_window = previous_tail[-1:].detach().clone() + seam_window
+            seam_offset = seam_start - overlap_count
+            reference[seam_start:seam_end] = seam_window[seam_offset : seam_offset + (seam_end - seam_start)]
     return reference
+
+
+def _apply_chunk_marker_data_scale(
+    weights,
+    *,
+    chunk_length,
+    marker_count,
+    start,
+    window_size,
+    scale,
+    device,
+):
+    if scale == 1.0:
+        return weights, False
+    start = max(int(start), 0)
+    end = min(start + int(window_size), int(chunk_length))
+    if end <= start:
+        return weights, False
+    if weights is None:
+        weights = torch.ones((chunk_length, marker_count), dtype=torch.float32, device=device)
+    weights[start:end] = weights[start:end] * float(scale)
+    return weights, True
 
 
 def _build_chunk_velocity_reference(base_reference, previous_tail, overlap_count, *, keep_seam_window=0):
@@ -1076,6 +1143,20 @@ def mosh_stageii_torch(
         runtime,
         "sequence_overlap_transl_seed_from_previous_chunk_indices",
     )
+    sequence_local_window_start = _runtime_optional_nonnegative_int(runtime, "sequence_local_window_start")
+    sequence_local_window = _runtime_optional_positive_int(runtime, "sequence_local_window")
+    sequence_local_pose_reference_from_previous_chunk_indices = _runtime_optional_nonnegative_int_set(
+        runtime,
+        "sequence_local_pose_reference_from_previous_chunk_indices",
+    )
+    sequence_local_transl_reference_from_previous_chunk_indices = _runtime_optional_nonnegative_int_set(
+        runtime,
+        "sequence_local_transl_reference_from_previous_chunk_indices",
+    )
+    sequence_local_data_chunk_indices = _runtime_optional_nonnegative_int_set(
+        runtime,
+        "sequence_local_data_chunk_indices",
+    )
     sequence_boundary_transl_seam_window = _runtime_optional_positive_int(
         runtime,
         "sequence_boundary_transl_seam_window",
@@ -1096,6 +1177,36 @@ def mosh_stageii_torch(
             raise ValueError(
                 f"Runtime sequence_boundary_data_scale must be a non-negative float when provided. Got {sequence_boundary_data_scale}."
             )
+    sequence_local_data_scale = _runtime_get(runtime, "sequence_local_data_scale", None)
+    if sequence_local_data_scale is not None:
+        try:
+            sequence_local_data_scale = float(sequence_local_data_scale)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Runtime sequence_local_data_scale must be a non-negative float when provided. Got {sequence_local_data_scale!r}."
+            ) from exc
+        if sequence_local_data_scale < 0.0:
+            raise ValueError(
+                f"Runtime sequence_local_data_scale must be a non-negative float when provided. Got {sequence_local_data_scale}."
+            )
+    local_window_targets_enabled = any(
+        value is not None
+        for value in (
+            sequence_local_pose_reference_from_previous_chunk_indices,
+            sequence_local_transl_reference_from_previous_chunk_indices,
+            sequence_local_data_chunk_indices,
+        )
+    )
+    if local_window_targets_enabled and sequence_local_window is None:
+        raise ValueError(
+            "Runtime sequence_local_window must be a positive integer when local chunk window overrides are provided."
+        )
+    if sequence_local_data_scale is not None and sequence_local_data_chunk_indices is None:
+        raise ValueError(
+            "Runtime sequence_local_data_chunk_indices must be provided when sequence_local_data_scale is set."
+        )
+    if sequence_local_window is not None and sequence_local_window_start is None:
+        sequence_local_window_start = 0
     compile_evaluator = bool(_runtime_get(runtime, "compile_evaluator", False))
     compile_mode = str(_runtime_get(runtime, "compile_mode", "default"))
     compile_fullgraph = bool(_runtime_get(runtime, "compile_fullgraph", False))
@@ -1353,6 +1464,9 @@ def mosh_stageii_torch(
             chunk_transl_reference = chunk_transl_init
             chunk_expression_reference = chunk_expression_init
             chunk_marker_data_weights = None
+            local_pose_reference_applied = False
+            local_transl_reference_applied = False
+            local_data_scale_applied = False
             if (
                 sequence_boundary_data_scale is not None
                 and sequence_boundary_data_scale != 1.0
@@ -1360,14 +1474,15 @@ def mosh_stageii_torch(
                 and chunk_overlap_count < chunk_length
             ):
                 keep_seam_window = sequence_boundary_data_window or 1
-                window_end = min(chunk_overlap_count + keep_seam_window, chunk_length)
-                if window_end > chunk_overlap_count:
-                    chunk_marker_data_weights = torch.ones(
-                        (chunk_length, chunk_markers_obs.shape[1]),
-                        dtype=torch.float32,
-                        device=device,
-                    )
-                    chunk_marker_data_weights[chunk_overlap_count:window_end] = sequence_boundary_data_scale
+                chunk_marker_data_weights, _ = _apply_chunk_marker_data_scale(
+                    chunk_marker_data_weights,
+                    chunk_length=chunk_length,
+                    marker_count=chunk_markers_obs.shape[1],
+                    start=chunk_overlap_count,
+                    window_size=keep_seam_window,
+                    scale=sequence_boundary_data_scale,
+                    device=device,
+                )
             if chunk_overlap_count > 0:
                 if float(getattr(sequence_weights, "delta_pose", 0.0)) != 0.0 and previous_chunk_latent_tail is not None:
                     chunk_latent_reference = _splice_chunk_overlap_reference(
@@ -1396,6 +1511,53 @@ def mosh_stageii_torch(
                         chunk_expression_init,
                         previous_chunk_expression_tail,
                         chunk_overlap_count,
+                    )
+                if (
+                    sequence_local_window is not None
+                    and sequence_local_pose_reference_from_previous_chunk_indices is not None
+                    and chunk_idx in sequence_local_pose_reference_from_previous_chunk_indices
+                    and previous_chunk_latent_tail is not None
+                ):
+                    chunk_latent_reference = _splice_chunk_overlap_reference(
+                        chunk_latent_reference,
+                        previous_chunk_latent_tail,
+                        chunk_overlap_count,
+                        include_keep_seam=True,
+                        keep_seam_window=sequence_local_window,
+                        window_start=sequence_local_window_start,
+                        window_size=sequence_local_window,
+                    )
+                    local_pose_reference_applied = True
+                if (
+                    sequence_local_window is not None
+                    and sequence_local_transl_reference_from_previous_chunk_indices is not None
+                    and chunk_idx in sequence_local_transl_reference_from_previous_chunk_indices
+                    and previous_chunk_transl_tail is not None
+                ):
+                    chunk_transl_reference = _splice_chunk_overlap_reference(
+                        chunk_transl_reference,
+                        previous_chunk_transl_tail,
+                        chunk_overlap_count,
+                        include_keep_seam=True,
+                        keep_seam_window=sequence_local_window,
+                        window_start=sequence_local_window_start,
+                        window_size=sequence_local_window,
+                    )
+                    local_transl_reference_applied = True
+                if (
+                    sequence_local_window is not None
+                    and sequence_local_data_scale is not None
+                    and sequence_local_data_chunk_indices is not None
+                    and chunk_idx in sequence_local_data_chunk_indices
+                ):
+                    chunk_marker_data_weights, local_data_scale_applied = _apply_chunk_marker_data_scale(
+                        chunk_marker_data_weights,
+                        chunk_length=chunk_length,
+                        marker_count=chunk_markers_obs.shape[1],
+                        start=sequence_local_window_start,
+                        window_size=sequence_local_window,
+                        scale=sequence_local_data_scale,
+                        device=device,
                     )
 
             result = fit_stageii_sequence_torch(
@@ -1447,6 +1609,9 @@ def mosh_stageii_torch(
                 "trim_count": 0,
                 "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
                 "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
+                "local_pose_reference_from_previous": local_pose_reference_applied,
+                "local_transl_reference_from_previous": local_transl_reference_applied,
+                "local_data_scale_applied": local_data_scale_applied,
                 "candidate_metrics": [],
             }
             if chunk_idx > 0:
@@ -1470,6 +1635,9 @@ def mosh_stageii_torch(
                         "trim_count": int(overlap_count - keep_start),
                         "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
                         "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
+                        "local_pose_reference_from_previous": local_pose_reference_applied,
+                        "local_transl_reference_from_previous": local_transl_reference_applied,
+                        "local_data_scale_applied": local_data_scale_applied,
                     }
                 )
                 _trim_perframe_tail(perframe_data, overlap_count - keep_start)
