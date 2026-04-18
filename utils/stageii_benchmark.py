@@ -465,14 +465,17 @@ def _sequence_chunk_keep_starts(stageii_data, *, total_frames, chunk_size, overl
     return normalized_keep_starts
 
 
-def _chunk_seam_indices(total_frames, *, chunk_size, overlap, keep_starts=None):
+def _chunk_seam_plans(total_frames, *, chunk_size, overlap, keep_starts=None):
     chunk_ranges = _sequence_chunk_ranges(total_frames, chunk_size, overlap)
     if keep_starts is None:
-        keep_starts = [0 if chunk_idx == 0 else min(overlap, row_end - row_start) for chunk_idx, (row_start, row_end) in enumerate(chunk_ranges)]
+        keep_starts = [
+            0 if chunk_idx == 0 else min(overlap, row_end - row_start)
+            for chunk_idx, (row_start, row_end) in enumerate(chunk_ranges)
+        ]
     elif len(keep_starts) != len(chunk_ranges):
         raise ValueError("keep_starts must align with chunk count")
 
-    seam_indices = []
+    seam_plans = []
     output_length = 0
     for chunk_idx, ((row_start, row_end), keep_start) in enumerate(zip(chunk_ranges, keep_starts)):
         chunk_length = row_end - row_start
@@ -486,9 +489,44 @@ def _chunk_seam_indices(total_frames, *, chunk_size, overlap, keep_starts=None):
         output_length = max(output_length - trim_count, 0)
         if kept_length <= 0:
             continue
-        seam_indices.append(output_length)
+        seam_plans.append(
+            {
+                "chunk_index": chunk_idx,
+                "row_start": row_start,
+                "row_end": row_end,
+                "keep_start": keep_start,
+                "trim_count": trim_count,
+                "seam_index": output_length,
+            }
+        )
         output_length += kept_length
-    return seam_indices
+    return seam_plans
+
+
+def _chunk_seam_indices(total_frames, *, chunk_size, overlap, keep_starts=None):
+    return [
+        seam_plan["seam_index"]
+        for seam_plan in _chunk_seam_plans(
+            total_frames,
+            chunk_size=chunk_size,
+            overlap=overlap,
+            keep_starts=keep_starts,
+        )
+    ]
+
+
+def _frame_delta_l2_at(array, left_idx, right_idx):
+    if left_idx < 0 or right_idx >= array.shape[0]:
+        return None
+    delta = np.nan_to_num(array[right_idx] - array[left_idx], copy=False)
+    return float(np.linalg.norm(delta.reshape(-1)))
+
+
+def _accel_l2_at(array, start_idx):
+    if start_idx < 0 or start_idx + 2 >= array.shape[0]:
+        return None
+    accel = np.nan_to_num(array[start_idx + 2] - 2.0 * array[start_idx + 1] + array[start_idx], copy=False)
+    return float(np.linalg.norm(accel.reshape(-1)))
 
 
 def _chunk_seam_jump_l2_samples(array_like, *, chunk_size, overlap, keep_starts=None):
@@ -507,6 +545,65 @@ def _chunk_seam_jump_l2_samples(array_like, *, chunk_size, overlap, keep_starts=
         seam_delta = np.nan_to_num(array[seam_index] - array[seam_index - 1], copy=False)
         seam_samples.append(float(np.linalg.norm(seam_delta.reshape(-1))))
     return seam_samples
+
+
+def _chunk_seam_local_diagnostics(array_like, *, chunk_size, overlap, keep_starts=None):
+    array = np.asarray(array_like, dtype=np.float64)
+    if array.shape[0] < 2:
+        return []
+
+    diagnostics = []
+    for seam_plan in _chunk_seam_plans(
+        array.shape[0],
+        chunk_size=chunk_size,
+        overlap=overlap,
+        keep_starts=keep_starts,
+    ):
+        seam_index = seam_plan["seam_index"]
+        diagnostics.append(
+            {
+                **seam_plan,
+                "prev_frame_delta_l2": _frame_delta_l2_at(array, seam_index - 2, seam_index - 1),
+                "seam_jump_l2": _frame_delta_l2_at(array, seam_index - 1, seam_index),
+                "next_frame_delta_l2": _frame_delta_l2_at(array, seam_index, seam_index + 1),
+                "pre_accel_l2": _accel_l2_at(array, seam_index - 2),
+                "post_accel_l2": _accel_l2_at(array, seam_index - 1),
+            }
+        )
+    return diagnostics
+
+
+def summarize_stageii_chunk_seam_diagnostics(sample_path):
+    baseline = normalize_stageii_sample(sample_path)
+    stageii_data = _load_pickle_compat(sample_path)
+    chunk_config = _sequence_chunk_config(stageii_data)
+    if chunk_config is None:
+        return None
+
+    chunk_size, chunk_overlap = chunk_config
+    chunk_keep_starts = _sequence_chunk_keep_starts(
+        stageii_data,
+        total_frames=baseline.trans.shape[0],
+        chunk_size=chunk_size,
+        overlap=chunk_overlap,
+    )
+    return {
+        "chunk_size": chunk_size,
+        "chunk_overlap": chunk_overlap,
+        "chunk_keep_starts": chunk_keep_starts,
+        "transl": _chunk_seam_local_diagnostics(
+            baseline.trans,
+            chunk_size=chunk_size,
+            overlap=chunk_overlap,
+            keep_starts=chunk_keep_starts,
+        ),
+        "pose": _chunk_seam_local_diagnostics(
+            baseline.poses,
+            chunk_size=chunk_size,
+            overlap=chunk_overlap,
+            keep_starts=chunk_keep_starts,
+        ),
+    }
 
 
 def _summarize_stageii_quality(sample_path, baseline):
