@@ -397,7 +397,12 @@ def _runtime_sequence_chunk_stitch_mode(runtime):
     if stitch_mode is None:
         stitch_mode = "keep_overlap_tail"
     stitch_mode = str(stitch_mode)
-    valid_modes = {"keep_overlap_tail", "adaptive_transl_jump", "adaptive_transl_jump_pose_guard"}
+    valid_modes = {
+        "keep_overlap_tail",
+        "adaptive_transl_jump",
+        "adaptive_transl_jump_pose_guard",
+        "adaptive_transl_jump_pose_mesh_guard",
+    }
     if stitch_mode not in valid_modes:
         raise ValueError(
             f"Runtime sequence_chunk_stitch_mode must be one of {sorted(valid_modes)}. Got {stitch_mode!r}."
@@ -411,8 +416,10 @@ def _select_chunk_keep_start(
     overlap_count,
     previous_fullpose_tail,
     previous_transl_tail,
+    previous_vertices_tail=None,
     current_fullpose,
     current_transl,
+    current_vertices=None,
 ):
     overlap_count = max(int(overlap_count), 0)
     if overlap_count <= 0:
@@ -438,8 +445,15 @@ def _select_chunk_keep_start(
         else torch.as_tensor(previous_fullpose_tail, dtype=torch.float32)
     )
     current_fullpose = None if current_fullpose is None else torch.as_tensor(current_fullpose, dtype=torch.float32)
+    previous_vertices_tail = (
+        None
+        if previous_vertices_tail is None
+        else torch.as_tensor(previous_vertices_tail, dtype=torch.float32)
+    )
+    current_vertices = None if current_vertices is None else torch.as_tensor(current_vertices, dtype=torch.float32)
     default_pose_jump = None
-    if stitch_mode == "adaptive_transl_jump_pose_guard":
+    requires_pose_guard = stitch_mode in {"adaptive_transl_jump_pose_guard", "adaptive_transl_jump_pose_mesh_guard"}
+    if requires_pose_guard:
         if (
             previous_fullpose_tail is None
             or current_fullpose is None
@@ -452,6 +466,23 @@ def _select_chunk_keep_start(
         default_pose_jump = float(
             torch.linalg.vector_norm(
                 current_fullpose[default_keep_start] - previous_fullpose_tail[default_keep_start - 1]
+            ).item()
+        )
+
+    default_mesh_jump = None
+    if stitch_mode == "adaptive_transl_jump_pose_mesh_guard":
+        if (
+            previous_vertices_tail is None
+            or current_vertices is None
+            or previous_vertices_tail.ndim < 3
+            or current_vertices.ndim < 3
+            or previous_vertices_tail.shape[0] < default_keep_start
+            or current_vertices.shape[0] <= default_keep_start
+        ):
+            return default_keep_start
+        default_mesh_jump = float(
+            torch.linalg.vector_norm(
+                current_vertices[default_keep_start] - previous_vertices_tail[default_keep_start - 1]
             ).item()
         )
 
@@ -475,7 +506,21 @@ def _select_chunk_keep_start(
             )
         if default_pose_jump is not None and pose_jump > default_pose_jump:
             continue
-        score = (transl_jump, pose_jump, -keep_start)
+        mesh_jump = 0.0
+        if (
+            previous_vertices_tail is not None
+            and current_vertices is not None
+            and previous_vertices_tail.ndim >= 3
+            and current_vertices.ndim >= 3
+            and previous_vertices_tail.shape[0] >= keep_start
+            and current_vertices.shape[0] > keep_start
+        ):
+            mesh_jump = float(
+                torch.linalg.vector_norm(current_vertices[keep_start] - previous_vertices_tail[keep_start - 1]).item()
+            )
+        if default_mesh_jump is not None and mesh_jump > default_mesh_jump:
+            continue
+        score = (transl_jump, pose_jump, mesh_jump, -keep_start)
         if best_score is None or score < best_score:
             best_score = score
             best_keep_start = keep_start
@@ -999,6 +1044,7 @@ def mosh_stageii_torch(
         previous_chunk_latent_tail = None
         previous_chunk_fullpose_tail = None
         previous_chunk_transl_tail = None
+        previous_chunk_vertices_tail = None
         previous_chunk_expression_tail = None
         sequence_chunk_keep_starts = []
         if sequence_seed_options is not None:
@@ -1276,8 +1322,10 @@ def mosh_stageii_torch(
                     overlap_count=min(sequence_chunk_overlap, row_end - row_start),
                     previous_fullpose_tail=previous_chunk_fullpose_tail,
                     previous_transl_tail=previous_chunk_transl_tail,
+                    previous_vertices_tail=previous_chunk_vertices_tail,
                     current_fullpose=result.fullpose,
                     current_transl=result.transl,
+                    current_vertices=result.vertices,
                 )
                 _trim_perframe_tail(perframe_data, min(sequence_chunk_overlap, row_end - row_start) - keep_start)
             sequence_chunk_keep_starts.append(int(keep_start))
@@ -1298,6 +1346,7 @@ def mosh_stageii_torch(
                 previous_chunk_latent_tail = torch.as_tensor(result.latent_pose[-tail_count:]).detach()
                 previous_chunk_fullpose_tail = torch.as_tensor(result.fullpose[-tail_count:]).detach()
                 previous_chunk_transl_tail = torch.as_tensor(result.transl[-tail_count:]).detach()
+                previous_chunk_vertices_tail = torch.as_tensor(result.vertices[-tail_count:]).detach()
                 previous_chunk_expression_tail = (
                     torch.as_tensor(result.expression[-tail_count:]).detach()
                     if result.expression is not None

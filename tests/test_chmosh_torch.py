@@ -1567,6 +1567,112 @@ def test_select_chunk_keep_start_can_preserve_legacy_pose_jump_when_guarded():
     assert keep_start == 2
 
 
+def test_select_chunk_keep_start_can_choose_earlier_boundary_when_mesh_guard_holds():
+    module = _load_chmosh_torch_module()
+
+    keep_start = module._select_chunk_keep_start(
+        stitch_mode="adaptive_transl_jump_pose_mesh_guard",
+        overlap_count=2,
+        previous_fullpose_tail=torch.tensor([[90.0], [100.0]], dtype=torch.float32),
+        previous_transl_tail=torch.tensor(
+            [
+                [90.0, 0.0, 0.0],
+                [100.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        previous_vertices_tail=torch.tensor(
+            [
+                [[90.0, 0.0, 0.0]],
+                [[100.0, 0.0, 0.0]],
+            ],
+            dtype=torch.float32,
+        ),
+        current_fullpose=torch.tensor(
+            [
+                [89.0],
+                [91.0],
+                [101.0],
+                [102.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_transl=torch.tensor(
+            [
+                [89.0, 0.0, 0.0],
+                [91.0, 0.0, 0.0],
+                [109.0, 0.0, 0.0],
+                [110.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_vertices=torch.tensor(
+            [
+                [[89.0, 0.0, 0.0]],
+                [[91.0, 0.0, 0.0]],
+                [[101.0, 0.0, 0.0]],
+                [[102.0, 0.0, 0.0]],
+            ],
+            dtype=torch.float32,
+        ),
+    )
+
+    assert keep_start == 1
+
+
+def test_select_chunk_keep_start_can_preserve_legacy_mesh_jump_when_guarded():
+    module = _load_chmosh_torch_module()
+
+    keep_start = module._select_chunk_keep_start(
+        stitch_mode="adaptive_transl_jump_pose_mesh_guard",
+        overlap_count=2,
+        previous_fullpose_tail=torch.tensor([[90.0], [100.0]], dtype=torch.float32),
+        previous_transl_tail=torch.tensor(
+            [
+                [90.0, 0.0, 0.0],
+                [100.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        previous_vertices_tail=torch.tensor(
+            [
+                [[90.0, 0.0, 0.0]],
+                [[100.0, 0.0, 0.0]],
+            ],
+            dtype=torch.float32,
+        ),
+        current_fullpose=torch.tensor(
+            [
+                [89.0],
+                [91.0],
+                [101.0],
+                [102.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_transl=torch.tensor(
+            [
+                [89.0, 0.0, 0.0],
+                [91.0, 0.0, 0.0],
+                [109.0, 0.0, 0.0],
+                [110.0, 0.0, 0.0],
+            ],
+            dtype=torch.float32,
+        ),
+        current_vertices=torch.tensor(
+            [
+                [[89.0, 0.0, 0.0]],
+                [[120.0, 0.0, 0.0]],
+                [[101.0, 0.0, 0.0]],
+                [[102.0, 0.0, 0.0]],
+            ],
+            dtype=torch.float32,
+        ),
+    )
+
+    assert keep_start == 2
+
+
 def test_mosh_stageii_torch_can_stitch_chunk_outputs_at_adaptive_translation_boundary(
     tmp_path,
     monkeypatch,
@@ -1842,6 +1948,152 @@ def test_mosh_stageii_torch_pose_guarded_stitching_can_keep_legacy_boundary_when
     )
 
     assert stageii_data["trans"][:, 0].tolist() == pytest.approx([0.0, 1.0, 90.0, 100.0, 92.0, 93.0])
+    assert stageii_data["stageii_debug_details"]["sequence_chunk_keep_starts"] == [0, 2]
+
+
+def test_mosh_stageii_torch_mesh_guarded_stitching_can_keep_legacy_boundary_when_mesh_would_regress(
+    tmp_path,
+    monkeypatch,
+):
+    module = _load_chmosh_torch_module()
+
+    markers_latent = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    ).numpy()
+    latent_labels = ["A", "B", "C", "D"]
+    marker_offsets = torch.tensor(
+        [
+            [0.10, 0.00, 0.00],
+            [0.25, -0.15, 0.35],
+            [0.05, 0.20, -0.10],
+            [-0.15, 0.10, 0.05],
+            [0.30, 0.10, 0.15],
+            [-0.20, -0.05, 0.10],
+        ],
+        dtype=torch.float32,
+    )
+    markers = markers_latent[None, :, :] + marker_offsets[:, None, :].numpy()
+    mocap_fname = tmp_path / "synthetic_sequence_mesh_guarded_stitch.pkl"
+    with mocap_fname.open("wb") as handle:
+        pickle.dump({"markers": markers, "labels": latent_labels, "frame_rate": 120.0}, handle)
+
+    cfg = _ns(
+        {
+            "mocap": {
+                "unit": "m",
+                "rotate": None,
+                "subject_name": None,
+                "multi_subject": False,
+                "start_fidx": 0,
+                "end_fidx": -1,
+                "ds_rate": 1,
+            },
+            "surface_model": {
+                "type": "smplx",
+                "num_betas": 10,
+                "dof_per_hand": 24,
+                "num_expressions": 10,
+                "use_hands_mean": True,
+                "betas_expr_start_id": 300,
+            },
+            "moshpp": {
+                "optimize_fingers": False,
+                "optimize_face": False,
+                "optimize_toes": False,
+                "optimize_dynamics": False,
+                "verbosity": 0,
+            },
+            "opt_settings": {
+                "maxiter": 0,
+                "weights": {
+                    "stageii_wt_data": 1.0,
+                    "stageii_wt_poseB": 0.0,
+                    "stageii_wt_poseH": 0.0,
+                    "stageii_wt_poseF": 0.0,
+                    "stageii_wt_expr": 0.0,
+                    "stageii_wt_dmpl": 0.0,
+                    "stageii_wt_velo": 0.0,
+                    "stageii_wt_annealing": 0.0,
+                },
+            },
+            "runtime": {
+                "backend": "torch",
+                "device": "cpu",
+                "sequence_chunk_size": 4,
+                "sequence_chunk_overlap": 2,
+                "sequence_optimizer": "adam",
+                "sequence_chunk_stitch_mode": "adaptive_transl_jump_pose_mesh_guard",
+            },
+        }
+    )
+
+    recorded = {"sequence_calls": 0}
+
+    def fake_fit_stageii_sequence_torch(**kwargs):
+        chunk_idx = recorded["sequence_calls"]
+        recorded["sequence_calls"] += 1
+        markers_obs = torch.as_tensor(kwargs["marker_observations"], dtype=torch.float32)
+        transl_values = (
+            [0.0, 1.0, 90.0, 100.0]
+            if chunk_idx == 0
+            else [89.0, 91.0, 109.0, 110.0]
+        )
+        fullpose_values = transl_values
+        vertex_values = (
+            [0.0, 1.0, 90.0, 100.0]
+            if chunk_idx == 0
+            else [89.0, 120.0, 101.0, 102.0]
+        )
+        transl = torch.tensor([[value, 0.0, 0.0] for value in transl_values], dtype=torch.float32)
+        fullpose = torch.zeros((len(fullpose_values), 165), dtype=torch.float32)
+        fullpose[:, 0] = torch.tensor(fullpose_values, dtype=torch.float32)
+        vertices = torch.tensor(
+            [[[value, 0.0, 0.0]] for value in vertex_values],
+            dtype=torch.float32,
+        )
+        latent_pose = torch.as_tensor(kwargs["latent_pose_init"], dtype=torch.float32)
+        if latent_pose.ndim == 2 and latent_pose.shape[0] == 1 and markers_obs.shape[0] > 1:
+            latent_pose = latent_pose.expand(markers_obs.shape[0], -1).clone()
+        return SimpleNamespace(
+            latent_pose=latent_pose,
+            fullpose=fullpose,
+            transl=transl,
+            expression=None,
+            predicted_markers=markers_obs.clone(),
+            vertices=vertices,
+            joints=torch.zeros(markers_obs.shape[0], 3, 3, dtype=torch.float32),
+            loss_terms={
+                "data": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseB": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseH": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseF": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "expr": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "velo": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "accel": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+            },
+        )
+
+    monkeypatch.setattr(module, "fit_stageii_sequence_torch", fake_fit_stageii_sequence_torch, raising=False)
+
+    stageii_data = module.mosh_stageii_torch(
+        mocap_fname=str(mocap_fname),
+        cfg=cfg,
+        markers_latent=markers_latent,
+        latent_labels=latent_labels,
+        betas=torch.zeros(10).numpy(),
+        marker_meta={"marker_type_mask": {}, "marker_type": {}, "surface_model_type": "smplx"},
+        body_model_factory=lambda: TranslOnlyBodyModel(torch.as_tensor(markers_latent, dtype=torch.float32)),
+        pose_prior=ZeroPosePrior(63),
+        device="cpu",
+    )
+
+    assert stageii_data["trans"][:, 0].tolist() == pytest.approx([0.0, 1.0, 90.0, 100.0, 109.0, 110.0])
     assert stageii_data["stageii_debug_details"]["sequence_chunk_keep_starts"] == [0, 2]
 
 
