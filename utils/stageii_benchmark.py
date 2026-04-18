@@ -440,18 +440,68 @@ def _sequence_chunk_config(stageii_data):
     return chunk_size, chunk_overlap
 
 
-def _chunk_seam_jump_l2_samples(array_like, *, chunk_size, overlap):
+def _sequence_chunk_keep_starts(stageii_data, *, total_frames, chunk_size, overlap):
+    stageii_debug = stageii_data.get("stageii_debug_details", {})
+    keep_starts = stageii_debug.get("sequence_chunk_keep_starts")
+    if keep_starts is None:
+        return None
+    if isinstance(keep_starts, np.ndarray):
+        keep_starts = keep_starts.tolist()
+    if not isinstance(keep_starts, (list, tuple)):
+        raise ValueError("stageii_debug_details.sequence_chunk_keep_starts must be a list when present")
+    chunk_ranges = _sequence_chunk_ranges(total_frames, chunk_size, overlap)
+    if len(keep_starts) != len(chunk_ranges):
+        raise ValueError("stageii_debug_details.sequence_chunk_keep_starts must align with chunk count")
+    normalized_keep_starts = []
+    for chunk_idx, ((row_start, row_end), keep_start) in enumerate(zip(chunk_ranges, keep_starts)):
+        chunk_length = row_end - row_start
+        keep_start = int(keep_start)
+        max_keep_start = min(overlap, chunk_length)
+        if keep_start < 0 or keep_start > max_keep_start:
+            raise ValueError("stageii_debug_details.sequence_chunk_keep_starts contains an out-of-range value")
+        if chunk_idx == 0 and keep_start != 0:
+            raise ValueError("stageii_debug_details.sequence_chunk_keep_starts must start with 0 for the first chunk")
+        normalized_keep_starts.append(keep_start)
+    return normalized_keep_starts
+
+
+def _chunk_seam_indices(total_frames, *, chunk_size, overlap, keep_starts=None):
+    chunk_ranges = _sequence_chunk_ranges(total_frames, chunk_size, overlap)
+    if keep_starts is None:
+        keep_starts = [0 if chunk_idx == 0 else min(overlap, row_end - row_start) for chunk_idx, (row_start, row_end) in enumerate(chunk_ranges)]
+    elif len(keep_starts) != len(chunk_ranges):
+        raise ValueError("keep_starts must align with chunk count")
+
+    seam_indices = []
+    output_length = 0
+    for chunk_idx, ((row_start, row_end), keep_start) in enumerate(zip(chunk_ranges, keep_starts)):
+        chunk_length = row_end - row_start
+        overlap_count = 0 if chunk_idx == 0 else min(overlap, chunk_length)
+        keep_start = int(keep_start)
+        kept_length = max(chunk_length - keep_start, 0)
+        if chunk_idx == 0:
+            output_length += kept_length
+            continue
+        trim_count = max(overlap_count - keep_start, 0)
+        output_length = max(output_length - trim_count, 0)
+        if kept_length <= 0:
+            continue
+        seam_indices.append(output_length)
+        output_length += kept_length
+    return seam_indices
+
+
+def _chunk_seam_jump_l2_samples(array_like, *, chunk_size, overlap, keep_starts=None):
     array = np.asarray(array_like, dtype=np.float64)
     if array.shape[0] < 2:
         return []
     seam_samples = []
-    for chunk_idx, (row_start, row_end) in enumerate(
-        _sequence_chunk_ranges(array.shape[0], chunk_size, overlap)
+    for seam_index in _chunk_seam_indices(
+        array.shape[0],
+        chunk_size=chunk_size,
+        overlap=overlap,
+        keep_starts=keep_starts,
     ):
-        if chunk_idx == 0:
-            continue
-        keep_start = min(overlap, row_end - row_start)
-        seam_index = row_start + keep_start
         if seam_index <= 0 or seam_index >= array.shape[0]:
             continue
         seam_delta = np.nan_to_num(array[seam_index] - array[seam_index - 1], copy=False)
@@ -496,11 +546,18 @@ def _summarize_stageii_quality(sample_path, baseline):
         return quality
 
     chunk_size, chunk_overlap = chunk_config
+    chunk_keep_starts = _sequence_chunk_keep_starts(
+        stageii_data,
+        total_frames=baseline.trans.shape[0],
+        chunk_size=chunk_size,
+        overlap=chunk_overlap,
+    )
     quality["chunk_seam_transl_jump_l2"] = _summarize_numeric_samples(
         _chunk_seam_jump_l2_samples(
             baseline.trans,
             chunk_size=chunk_size,
             overlap=chunk_overlap,
+            keep_starts=chunk_keep_starts,
         ),
         include_samples=False,
     )
@@ -509,6 +566,7 @@ def _summarize_stageii_quality(sample_path, baseline):
             baseline.poses,
             chunk_size=chunk_size,
             overlap=chunk_overlap,
+            keep_starts=chunk_keep_starts,
         ),
         include_samples=False,
     )

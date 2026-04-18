@@ -392,6 +392,108 @@ def _sequence_chunk_ranges(total_frames, chunk_size, overlap):
     return ranges
 
 
+def _runtime_sequence_chunk_stitch_mode(runtime):
+    stitch_mode = _runtime_get(runtime, "sequence_chunk_stitch_mode", "keep_overlap_tail")
+    if stitch_mode is None:
+        stitch_mode = "keep_overlap_tail"
+    stitch_mode = str(stitch_mode)
+    valid_modes = {"keep_overlap_tail", "adaptive_transl_jump", "adaptive_transl_jump_pose_guard"}
+    if stitch_mode not in valid_modes:
+        raise ValueError(
+            f"Runtime sequence_chunk_stitch_mode must be one of {sorted(valid_modes)}. Got {stitch_mode!r}."
+        )
+    return stitch_mode
+
+
+def _select_chunk_keep_start(
+    *,
+    stitch_mode,
+    overlap_count,
+    previous_fullpose_tail,
+    previous_transl_tail,
+    current_fullpose,
+    current_transl,
+):
+    overlap_count = max(int(overlap_count), 0)
+    if overlap_count <= 0:
+        return 0
+    default_keep_start = overlap_count
+    if stitch_mode == "keep_overlap_tail":
+        return default_keep_start
+    if previous_transl_tail is None or current_transl is None:
+        return default_keep_start
+
+    previous_transl_tail = torch.as_tensor(previous_transl_tail, dtype=torch.float32)
+    current_transl = torch.as_tensor(current_transl, dtype=torch.float32)
+    if previous_transl_tail.ndim < 2 or current_transl.ndim < 2:
+        return default_keep_start
+
+    max_keep_start = min(overlap_count, previous_transl_tail.shape[0], current_transl.shape[0] - 1)
+    if max_keep_start < 1:
+        return default_keep_start
+
+    previous_fullpose_tail = (
+        None
+        if previous_fullpose_tail is None
+        else torch.as_tensor(previous_fullpose_tail, dtype=torch.float32)
+    )
+    current_fullpose = None if current_fullpose is None else torch.as_tensor(current_fullpose, dtype=torch.float32)
+    default_pose_jump = None
+    if stitch_mode == "adaptive_transl_jump_pose_guard":
+        if (
+            previous_fullpose_tail is None
+            or current_fullpose is None
+            or previous_fullpose_tail.ndim < 2
+            or current_fullpose.ndim < 2
+            or previous_fullpose_tail.shape[0] < default_keep_start
+            or current_fullpose.shape[0] <= default_keep_start
+        ):
+            return default_keep_start
+        default_pose_jump = float(
+            torch.linalg.vector_norm(
+                current_fullpose[default_keep_start] - previous_fullpose_tail[default_keep_start - 1]
+            ).item()
+        )
+
+    best_keep_start = default_keep_start
+    best_score = None
+    for keep_start in range(1, max_keep_start + 1):
+        transl_jump = float(
+            torch.linalg.vector_norm(current_transl[keep_start] - previous_transl_tail[keep_start - 1]).item()
+        )
+        pose_jump = 0.0
+        if (
+            previous_fullpose_tail is not None
+            and current_fullpose is not None
+            and previous_fullpose_tail.ndim >= 2
+            and current_fullpose.ndim >= 2
+            and previous_fullpose_tail.shape[0] >= keep_start
+            and current_fullpose.shape[0] > keep_start
+        ):
+            pose_jump = float(
+                torch.linalg.vector_norm(current_fullpose[keep_start] - previous_fullpose_tail[keep_start - 1]).item()
+            )
+        if default_pose_jump is not None and pose_jump > default_pose_jump:
+            continue
+        score = (transl_jump, pose_jump, -keep_start)
+        if best_score is None or score < best_score:
+            best_score = score
+            best_keep_start = keep_start
+    return best_keep_start
+
+
+def _trim_perframe_tail(perframe_data, trim_count):
+    trim_count = max(int(trim_count), 0)
+    if trim_count <= 0:
+        return
+    for key, values in perframe_data.items():
+        if key == "stageii_errs":
+            for loss_history in values.values():
+                del loss_history[-trim_count:]
+            continue
+        del values[-trim_count:]
+
+
 def _build_chunk_observations(*, chunk_frames, observed_markers_dict, latent_labels, label_to_latent_id, device):
     chunk_markers = []
     chunk_visible = []
@@ -814,6 +916,7 @@ def mosh_stageii_torch(
     label_to_latent_id = {label: idx for idx, label in enumerate(latent_labels)}
     sequence_chunk_size = max(int(_runtime_get(runtime, "sequence_chunk_size", 1) or 1), 1)
     sequence_chunk_overlap = max(int(_runtime_get(runtime, "sequence_chunk_overlap", 0) or 0), 0)
+    sequence_chunk_stitch_mode = _runtime_sequence_chunk_stitch_mode(runtime)
     sequence_boundary_velocity_reference = bool(_runtime_get(runtime, "sequence_boundary_velocity_reference", False))
     sequence_boundary_velocity_reference_full_length = bool(
         _runtime_get(runtime, "sequence_boundary_velocity_reference_full_length", False)
@@ -894,8 +997,10 @@ def mosh_stageii_torch(
         sequence_seed_options = _runtime_sequence_seed_options(sequence_options, runtime)
         sequence_seed_cache = None
         previous_chunk_latent_tail = None
+        previous_chunk_fullpose_tail = None
         previous_chunk_transl_tail = None
         previous_chunk_expression_tail = None
+        sequence_chunk_keep_starts = []
         if sequence_seed_options is not None:
             try:
                 sequence_markers_obs, sequence_visible = _build_chunk_observations(
@@ -1163,17 +1268,19 @@ def mosh_stageii_torch(
             current_expression = torch.as_tensor(result.expression[-1:]).detach() if result.expression is not None else None
             prev_latent_pose = torch.as_tensor(result.latent_pose[-1:]).detach()
             prev_transl = torch.as_tensor(result.transl[-1:]).detach()
-            if sequence_chunk_overlap > 0:
-                tail_count = min(sequence_chunk_overlap, result.latent_pose.shape[0])
-                previous_chunk_latent_tail = torch.as_tensor(result.latent_pose[-tail_count:]).detach()
-                previous_chunk_transl_tail = torch.as_tensor(result.transl[-tail_count:]).detach()
-                previous_chunk_expression_tail = (
-                    torch.as_tensor(result.expression[-tail_count:]).detach()
-                    if result.expression is not None
-                    else None
-                )
 
-            keep_start = 0 if chunk_idx == 0 else min(sequence_chunk_overlap, row_end - row_start)
+            keep_start = 0
+            if chunk_idx > 0:
+                keep_start = _select_chunk_keep_start(
+                    stitch_mode=sequence_chunk_stitch_mode,
+                    overlap_count=min(sequence_chunk_overlap, row_end - row_start),
+                    previous_fullpose_tail=previous_chunk_fullpose_tail,
+                    previous_transl_tail=previous_chunk_transl_tail,
+                    current_fullpose=result.fullpose,
+                    current_transl=result.transl,
+                )
+                _trim_perframe_tail(perframe_data, min(sequence_chunk_overlap, row_end - row_start) - keep_start)
+            sequence_chunk_keep_starts.append(int(keep_start))
             for local_idx in range(keep_start, row_end - row_start):
                 visible_labels = [latent_labels[idx] for idx in torch.nonzero(chunk_visible[local_idx], as_tuple=False).flatten().tolist()]
                 for key, value in result.loss_terms.items():
@@ -1186,6 +1293,16 @@ def mosh_stageii_torch(
                 perframe_data["labels_obs"].append(visible_labels)
                 perframe_data["fullpose"].append(result.fullpose[local_idx].detach().cpu().numpy().copy())
                 perframe_data["trans"].append(result.transl[local_idx].detach().cpu().numpy().copy())
+            if sequence_chunk_overlap > 0:
+                tail_count = min(sequence_chunk_overlap, result.fullpose.shape[0])
+                previous_chunk_latent_tail = torch.as_tensor(result.latent_pose[-tail_count:]).detach()
+                previous_chunk_fullpose_tail = torch.as_tensor(result.fullpose[-tail_count:]).detach()
+                previous_chunk_transl_tail = torch.as_tensor(result.transl[-tail_count:]).detach()
+                previous_chunk_expression_tail = (
+                    torch.as_tensor(result.expression[-tail_count:]).detach()
+                    if result.expression is not None
+                    else None
+                )
     else:
         for fidx, t in enumerate(selected_frames):
             frame_obs = observed_markers_dict[t]
@@ -1270,6 +1387,9 @@ def mosh_stageii_torch(
         "mocap_frame_rate": mocap.frame_rate,
         "mocap_time_length": mocap.time_length(),
     }
+    if sequence_chunk_size > 1:
+        stageii_debug_details["sequence_chunk_stitch_mode"] = sequence_chunk_stitch_mode
+        stageii_debug_details["sequence_chunk_keep_starts"] = sequence_chunk_keep_starts
     stageii_data = {key: np.array(values) for key, values in perframe_data.items()}
     stageii_data["stageii_debug_details"] = stageii_debug_details
     return stageii_data

@@ -1279,6 +1279,61 @@ def test_summarize_stageii_quality_rejects_non_positive_runtime_chunk_size(tmp_p
         )
 
 
+def test_summarize_stageii_quality_uses_explicit_chunk_keep_starts_when_present(tmp_path):
+    sample_path = tmp_path / "synthetic_stageii.pkl"
+    sample_path.write_bytes(
+        pickle.dumps(
+            {
+                "fullpose": np.asarray([[0.0], [1.0], [50.0], [90.0], [91.0], [92.0]], dtype=np.float32),
+                "betas": np.zeros(10, dtype=np.float32),
+                "trans": np.asarray(
+                    [
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [50.0, 0.0, 0.0],
+                        [90.0, 0.0, 0.0],
+                        [91.0, 0.0, 0.0],
+                        [92.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+                "markers_latent": np.zeros((1, 3), dtype=np.float32),
+                "latent_labels": ["A"],
+                "stageii_debug_details": {
+                    "cfg": {
+                        "surface_model": {
+                            "type": "smplx",
+                            "gender": "male",
+                        },
+                        "runtime": {
+                            "sequence_chunk_size": 4,
+                            "sequence_chunk_overlap": 2,
+                        },
+                    },
+                    "sequence_chunk_keep_starts": [0, 1],
+                    "mocap_frame_rate": 120.0,
+                    "mocap_time_length": 6,
+                    "markers_obs": np.zeros((6, 1, 3), dtype=np.float32),
+                    "markers_sim": np.tile(
+                        np.asarray([[[1.0, 0.0, 0.0]]], dtype=np.float32),
+                        (6, 1, 1),
+                    ),
+                    "labels_obs": [["A"]] * 6,
+                },
+            }
+        )
+    )
+
+    quality = stageii_benchmark._summarize_stageii_quality(
+        sample_path,
+        stageii_benchmark.normalize_stageii_sample(sample_path),
+    )
+
+    assert quality["chunk_seam_transl_jump_l2"]["count"] == 1
+    assert quality["chunk_seam_transl_jump_l2"]["mean"] == pytest.approx(40.0)
+    assert quality["chunk_seam_pose_jump_l2"]["mean"] == pytest.approx(40.0)
+
+
 def test_summarize_stageii_quality_reads_legacy_marker_residual_from_public_sample():
     sample_path = ROOT / "support_data/tests/mosh_stageii.pkl"
     quality = stageii_benchmark._summarize_stageii_quality(
