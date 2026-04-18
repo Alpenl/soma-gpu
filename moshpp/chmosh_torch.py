@@ -1157,6 +1157,8 @@ def mosh_stageii_torch(
         runtime,
         "sequence_local_data_chunk_indices",
     )
+    sequence_local_data_window_start = _runtime_optional_nonnegative_int(runtime, "sequence_local_data_window_start")
+    sequence_local_data_window = _runtime_optional_positive_int(runtime, "sequence_local_data_window")
     sequence_boundary_transl_seam_window = _runtime_optional_positive_int(
         runtime,
         "sequence_boundary_transl_seam_window",
@@ -1189,15 +1191,14 @@ def mosh_stageii_torch(
             raise ValueError(
                 f"Runtime sequence_local_data_scale must be a non-negative float when provided. Got {sequence_local_data_scale}."
             )
-    local_window_targets_enabled = any(
+    local_reference_targets_enabled = any(
         value is not None
         for value in (
             sequence_local_pose_reference_from_previous_chunk_indices,
             sequence_local_transl_reference_from_previous_chunk_indices,
-            sequence_local_data_chunk_indices,
         )
     )
-    if local_window_targets_enabled and sequence_local_window is None:
+    if local_reference_targets_enabled and sequence_local_window is None:
         raise ValueError(
             "Runtime sequence_local_window must be a positive integer when local chunk window overrides are provided."
         )
@@ -1207,6 +1208,16 @@ def mosh_stageii_torch(
         )
     if sequence_local_window is not None and sequence_local_window_start is None:
         sequence_local_window_start = 0
+    if sequence_local_data_window is None:
+        sequence_local_data_window = sequence_local_window
+    if sequence_local_data_window_start is None:
+        sequence_local_data_window_start = sequence_local_window_start
+    if sequence_local_data_window is not None and sequence_local_data_window_start is None:
+        sequence_local_data_window_start = 0
+    if sequence_local_data_scale is not None and sequence_local_data_window is None:
+        raise ValueError(
+            "Runtime sequence_local_window or sequence_local_data_window must be a positive integer when sequence_local_data_scale is set."
+        )
     compile_evaluator = bool(_runtime_get(runtime, "compile_evaluator", False))
     compile_mode = str(_runtime_get(runtime, "compile_mode", "default"))
     compile_fullgraph = bool(_runtime_get(runtime, "compile_fullgraph", False))
@@ -1545,7 +1556,7 @@ def mosh_stageii_torch(
                     )
                     local_transl_reference_applied = True
                 if (
-                    sequence_local_window is not None
+                    sequence_local_data_window is not None
                     and sequence_local_data_scale is not None
                     and sequence_local_data_chunk_indices is not None
                     and chunk_idx in sequence_local_data_chunk_indices
@@ -1554,8 +1565,8 @@ def mosh_stageii_torch(
                         chunk_marker_data_weights,
                         chunk_length=chunk_length,
                         marker_count=chunk_markers_obs.shape[1],
-                        start=sequence_local_window_start,
-                        window_size=sequence_local_window,
+                        start=sequence_local_data_window_start,
+                        window_size=sequence_local_data_window,
                         scale=sequence_local_data_scale,
                         device=device,
                     )
