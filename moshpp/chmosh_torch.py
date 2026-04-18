@@ -357,6 +357,73 @@ def _runtime_optional_nonnegative_int_set(runtime, key):
     return parsed
 
 
+def _runtime_optional_string_list(runtime, key):
+    value = _runtime_get(runtime, key, None)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        tokens = [token for token in value.replace(",", " ").split() if token]
+    elif isinstance(value, (list, tuple, set)):
+        tokens = [str(token).strip() for token in value if str(token).strip()]
+    else:
+        tokens = [str(value).strip()]
+    return tokens or None
+
+
+_LOCAL_POSE_REFERENCE_REGION_ALIASES = {
+    "body": "body_pose",
+    "body_pose": "body_pose",
+    "left_hand": "left_hand_pose",
+    "left_hand_pose": "left_hand_pose",
+    "right_hand": "right_hand_pose",
+    "right_hand_pose": "right_hand_pose",
+    "all_hands": "all_hands_pose",
+    "all_hands_pose": "all_hands_pose",
+    "hands": "all_hands_pose",
+}
+
+
+def _canonicalize_local_pose_reference_regions(region_names):
+    if region_names is None:
+        return None
+    canonical = []
+    for region_name in region_names:
+        normalized = str(region_name).strip().lower()
+        if not normalized:
+            continue
+        canonical_region = _LOCAL_POSE_REFERENCE_REGION_ALIASES.get(normalized)
+        if canonical_region is None:
+            raise ValueError(
+                "Runtime sequence_local_pose_reference_regions must be a comma/space separated list "
+                f"of {sorted(_LOCAL_POSE_REFERENCE_REGION_ALIASES)}. Got {region_name!r}."
+            )
+        if canonical_region not in canonical:
+            canonical.append(canonical_region)
+    return canonical or None
+
+
+def _latent_pose_region_ids(layout, region_names):
+    if region_names is None:
+        return None
+
+    region_ids = []
+    for region_name in region_names:
+        if region_name == "body_pose":
+            region_ids.extend(layout.body_ids())
+        elif region_name == "left_hand_pose":
+            if layout.left_hand_coeff_slice is not None:
+                region_ids.extend(range(layout.left_hand_coeff_slice.start, layout.left_hand_coeff_slice.stop))
+        elif region_name == "right_hand_pose":
+            if layout.right_hand_coeff_slice is not None:
+                region_ids.extend(range(layout.right_hand_coeff_slice.start, layout.right_hand_coeff_slice.stop))
+        elif region_name == "all_hands_pose":
+            region_ids.extend(layout.hand_ids())
+        else:
+            raise ValueError(f"Unsupported local pose reference region: {region_name}")
+
+    return sorted(set(region_ids))
+
+
 def _runtime_stage_fit_options(cfg, runtime):
     valid_optimizers = {"lbfgs", "adam"}
 
@@ -933,6 +1000,35 @@ def _splice_chunk_overlap_reference(
     return reference
 
 
+def _splice_chunk_overlap_reference_regions(
+    base_reference,
+    previous_tail,
+    overlap_count,
+    *,
+    feature_ids=None,
+    include_keep_seam=False,
+    keep_seam_window=0,
+    window_start=None,
+    window_size=None,
+):
+    spliced_reference = _splice_chunk_overlap_reference(
+        base_reference,
+        previous_tail,
+        overlap_count,
+        include_keep_seam=include_keep_seam,
+        keep_seam_window=keep_seam_window,
+        window_start=window_start,
+        window_size=window_size,
+    )
+    if feature_ids is None or spliced_reference is None or base_reference is None:
+        return spliced_reference
+    if not feature_ids:
+        return base_reference.detach().clone()
+    reference = base_reference.detach().clone()
+    reference[:, feature_ids] = spliced_reference[:, feature_ids]
+    return reference
+
+
 def _apply_chunk_marker_data_scale(
     weights,
     *,
@@ -1235,6 +1331,10 @@ def mosh_stageii_torch(
         runtime,
         "sequence_local_pose_reference_from_previous_chunk_indices",
     )
+    sequence_local_pose_reference_regions = _canonicalize_local_pose_reference_regions(
+        _runtime_optional_string_list(runtime, "sequence_local_pose_reference_regions")
+    )
+    sequence_local_pose_reference_region_ids = _latent_pose_region_ids(layout, sequence_local_pose_reference_regions)
     sequence_local_transl_reference_from_previous_chunk_indices = _runtime_optional_nonnegative_int_set(
         runtime,
         "sequence_local_transl_reference_from_previous_chunk_indices",
@@ -1287,6 +1387,14 @@ def mosh_stageii_torch(
     if local_reference_targets_enabled and sequence_local_window is None:
         raise ValueError(
             "Runtime sequence_local_window must be a positive integer when local chunk window overrides are provided."
+        )
+    if (
+        sequence_local_pose_reference_regions is not None
+        and sequence_local_pose_reference_from_previous_chunk_indices is None
+    ):
+        raise ValueError(
+            "Runtime sequence_local_pose_reference_from_previous_chunk_indices must be provided when "
+            "sequence_local_pose_reference_regions is set."
         )
     if (
         sequence_overlap_pose_seed_window_start is not None
@@ -1586,6 +1694,7 @@ def mosh_stageii_torch(
             chunk_expression_reference = chunk_expression_init
             chunk_marker_data_weights = None
             local_pose_reference_applied = False
+            local_pose_reference_regions_applied = None
             local_transl_reference_applied = False
             local_data_scale_applied = False
             if (
@@ -1639,16 +1748,18 @@ def mosh_stageii_torch(
                     and chunk_idx in sequence_local_pose_reference_from_previous_chunk_indices
                     and previous_chunk_latent_tail is not None
                 ):
-                    chunk_latent_reference = _splice_chunk_overlap_reference(
+                    chunk_latent_reference = _splice_chunk_overlap_reference_regions(
                         chunk_latent_reference,
                         previous_chunk_latent_tail,
                         chunk_overlap_count,
+                        feature_ids=sequence_local_pose_reference_region_ids,
                         include_keep_seam=True,
                         keep_seam_window=sequence_local_window,
                         window_start=sequence_local_window_start,
                         window_size=sequence_local_window,
                     )
                     local_pose_reference_applied = True
+                    local_pose_reference_regions_applied = sequence_local_pose_reference_regions
                 if (
                     sequence_local_window is not None
                     and sequence_local_transl_reference_from_previous_chunk_indices is not None
@@ -1744,6 +1855,7 @@ def mosh_stageii_torch(
                 "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
                 "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
                 "local_pose_reference_from_previous": local_pose_reference_applied,
+                "local_pose_reference_regions": local_pose_reference_regions_applied,
                 "local_transl_reference_from_previous": local_transl_reference_applied,
                 "local_data_scale_applied": local_data_scale_applied,
                 "candidate_metrics": [],
@@ -1780,6 +1892,7 @@ def mosh_stageii_torch(
                         "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
                         "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
                         "local_pose_reference_from_previous": local_pose_reference_applied,
+                        "local_pose_reference_regions": local_pose_reference_regions_applied,
                         "local_transl_reference_from_previous": local_transl_reference_applied,
                         "local_data_scale_applied": local_data_scale_applied,
                     }
