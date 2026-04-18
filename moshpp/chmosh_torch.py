@@ -1181,6 +1181,14 @@ def mosh_stageii_torch(
         runtime,
         "sequence_overlap_pose_seed_from_previous_chunk_indices",
     )
+    sequence_overlap_pose_seed_window_start = _runtime_optional_nonnegative_int(
+        runtime,
+        "sequence_overlap_pose_seed_window_start",
+    )
+    sequence_overlap_pose_seed_window = _runtime_optional_positive_int(
+        runtime,
+        "sequence_overlap_pose_seed_window",
+    )
     sequence_overlap_transl_seed_from_previous_chunk_indices = _runtime_optional_nonnegative_int_set(
         runtime,
         "sequence_overlap_transl_seed_from_previous_chunk_indices",
@@ -1245,6 +1253,22 @@ def mosh_stageii_torch(
         raise ValueError(
             "Runtime sequence_local_window must be a positive integer when local chunk window overrides are provided."
         )
+    if (
+        sequence_overlap_pose_seed_window_start is not None
+        and sequence_overlap_pose_seed_window is None
+    ):
+        raise ValueError(
+            "Runtime sequence_overlap_pose_seed_window must be a positive integer when sequence_overlap_pose_seed_window_start is provided."
+        )
+    if (
+        sequence_overlap_pose_seed_window is not None
+        and sequence_overlap_pose_seed_from_previous_chunk_indices is None
+    ):
+        raise ValueError(
+            "Runtime sequence_overlap_pose_seed_from_previous_chunk_indices must be provided when sequence_overlap_pose_seed_window is set."
+        )
+    if sequence_overlap_pose_seed_window is not None and sequence_overlap_pose_seed_window_start is None:
+        sequence_overlap_pose_seed_window_start = 0
     if sequence_local_data_scale is not None and sequence_local_data_chunk_indices is None:
         raise ValueError(
             "Runtime sequence_local_data_chunk_indices must be provided when sequence_local_data_scale is set."
@@ -1418,6 +1442,8 @@ def mosh_stageii_torch(
                         chunk_latent_init,
                         previous_chunk_latent_tail,
                         chunk_overlap_count,
+                        window_start=sequence_overlap_pose_seed_window_start,
+                        window_size=sequence_overlap_pose_seed_window,
                     )
                     overlap_pose_seeded_from_previous = True
                 if (
