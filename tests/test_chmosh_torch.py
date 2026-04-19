@@ -1435,9 +1435,21 @@ def test_mosh_stageii_torch_sequence_seed_chunk_init_can_skip_cache_for_selected
     assert stitch_diagnostics[2]["seed_cache_used"] is True
 
 
-def test_mosh_stageii_torch_sequence_seed_chunk_init_can_replace_post_overlap_prefix_from_default_init(
+@pytest.mark.parametrize(
+    ("post_overlap_channels", "expected_chunk1_latent", "expected_chunk1_transl", "expected_applied_channels"),
+    [
+        (None, [12.0, 12.0, 14.0], [22.0, 103.0, 24.0], ["pose", "transl"]),
+        ("pose", [12.0, 12.0, 14.0], [22.0, 23.0, 24.0], ["pose"]),
+        ("transl", [12.0, 13.0, 14.0], [22.0, 103.0, 24.0], ["transl"]),
+    ],
+)
+def test_mosh_stageii_torch_sequence_seed_chunk_init_can_replace_selected_post_overlap_channels_from_default_init(
     tmp_path,
     monkeypatch,
+    post_overlap_channels,
+    expected_chunk1_latent,
+    expected_chunk1_transl,
+    expected_applied_channels,
 ):
     module = _load_chmosh_torch_module()
 
@@ -1466,6 +1478,19 @@ def test_mosh_stageii_torch_sequence_seed_chunk_init_can_replace_post_overlap_pr
     mocap_fname = tmp_path / "synthetic_sequence_seed_post_overlap_prefix.pkl"
     with mocap_fname.open("wb") as handle:
         pickle.dump({"markers": markers, "labels": latent_labels, "frame_rate": 120.0}, handle)
+
+    runtime_cfg = {
+        "backend": "torch",
+        "device": "cpu",
+        "sequence_chunk_size": 3,
+        "sequence_chunk_overlap": 1,
+        "sequence_optimizer": "adam",
+        "sequence_seed_refine_iters": 1,
+        "sequence_seed_no_cache_post_overlap_chunk_indices": "1",
+        "sequence_seed_no_cache_post_overlap_window": 1,
+    }
+    if post_overlap_channels is not None:
+        runtime_cfg["sequence_seed_no_cache_post_overlap_channels"] = post_overlap_channels
 
     cfg = _ns(
         {
@@ -1506,16 +1531,7 @@ def test_mosh_stageii_torch_sequence_seed_chunk_init_can_replace_post_overlap_pr
                     "stageii_wt_annealing": 0.0,
                 },
             },
-            "runtime": {
-                "backend": "torch",
-                "device": "cpu",
-                "sequence_chunk_size": 3,
-                "sequence_chunk_overlap": 1,
-                "sequence_optimizer": "adam",
-                "sequence_seed_refine_iters": 1,
-                "sequence_seed_no_cache_post_overlap_chunk_indices": "1",
-                "sequence_seed_no_cache_post_overlap_window": 1,
-            },
+            "runtime": runtime_cfg,
         }
     )
 
@@ -1594,8 +1610,8 @@ def test_mosh_stageii_torch_sequence_seed_chunk_init_can_replace_post_overlap_pr
     assert len(recorded["sequence_kwargs"]) == 3
     assert recorded["sequence_kwargs"][0]["latent_pose_init"][:, 0].tolist() == pytest.approx([10.0, 11.0, 12.0])
     assert recorded["sequence_kwargs"][0]["transl_init"][:, 0].tolist() == pytest.approx([20.0, 21.0, 22.0])
-    assert recorded["sequence_kwargs"][1]["latent_pose_init"][:, 0].tolist() == pytest.approx([12.0, 12.0, 14.0])
-    assert recorded["sequence_kwargs"][1]["transl_init"][:, 0].tolist() == pytest.approx([22.0, 103.0, 24.0])
+    assert recorded["sequence_kwargs"][1]["latent_pose_init"][:, 0].tolist() == pytest.approx(expected_chunk1_latent)
+    assert recorded["sequence_kwargs"][1]["transl_init"][:, 0].tolist() == pytest.approx(expected_chunk1_transl)
     assert recorded["sequence_kwargs"][2]["latent_pose_init"][:, 0].tolist() == pytest.approx([14.0, 15.0])
     assert recorded["sequence_kwargs"][2]["transl_init"][:, 0].tolist() == pytest.approx([24.0, 25.0])
 
@@ -1606,6 +1622,7 @@ def test_mosh_stageii_torch_sequence_seed_chunk_init_can_replace_post_overlap_pr
     assert stitch_diagnostics[1]["seed_cache_post_overlap_window_applied"] is True
     assert stitch_diagnostics[1]["seed_cache_post_overlap_window_start"] == 1
     assert stitch_diagnostics[1]["seed_cache_post_overlap_window_size"] == 1
+    assert stitch_diagnostics[1]["seed_cache_post_overlap_channels"] == expected_applied_channels
     assert stitch_diagnostics[2]["seed_cache_post_overlap_window_applied"] is False
 
 

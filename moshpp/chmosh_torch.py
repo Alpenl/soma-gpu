@@ -402,6 +402,53 @@ def _canonicalize_local_pose_reference_regions(region_names):
     return canonical or None
 
 
+_SEED_CACHE_POST_OVERLAP_CHANNEL_ALIASES = {
+    "all": "all",
+    "pose": "pose",
+    "latent": "pose",
+    "latent_pose": "pose",
+    "transl": "transl",
+    "translation": "transl",
+    "expression": "expression",
+    "expr": "expression",
+}
+
+
+def _canonicalize_seed_cache_post_overlap_channels(channel_names, *, optimize_face):
+    if channel_names is None:
+        return None
+
+    canonical = []
+    include_all = False
+    for channel_name in channel_names:
+        normalized = str(channel_name).strip().lower()
+        if not normalized:
+            continue
+        canonical_channel = _SEED_CACHE_POST_OVERLAP_CHANNEL_ALIASES.get(normalized)
+        if canonical_channel is None:
+            raise ValueError(
+                "Runtime sequence_seed_no_cache_post_overlap_channels must be a comma/space separated list "
+                f"of {sorted(_SEED_CACHE_POST_OVERLAP_CHANNEL_ALIASES)}. Got {channel_name!r}."
+            )
+        if canonical_channel == "all":
+            include_all = True
+            continue
+        if canonical_channel == "expression" and not optimize_face:
+            raise ValueError(
+                "Runtime sequence_seed_no_cache_post_overlap_channels cannot include expression "
+                "when moshpp.optimize_face is disabled."
+            )
+        if canonical_channel not in canonical:
+            canonical.append(canonical_channel)
+
+    if include_all:
+        canonical = ["pose", "transl"]
+        if optimize_face:
+            canonical.append("expression")
+
+    return canonical or None
+
+
 def _latent_pose_region_ids(layout, region_names):
     if region_names is None:
         return None
@@ -1432,6 +1479,10 @@ def mosh_stageii_torch(
         runtime,
         "sequence_seed_no_cache_post_overlap_window",
     )
+    sequence_seed_no_cache_post_overlap_channels = _canonicalize_seed_cache_post_overlap_channels(
+        _runtime_optional_string_list(runtime, "sequence_seed_no_cache_post_overlap_channels"),
+        optimize_face=optimize_face,
+    )
     sequence_probe_chunk_indices = _runtime_optional_nonnegative_int_set(runtime, "sequence_probe_chunk_indices")
     sequence_chunk_keep_start_override_indices = _runtime_optional_nonnegative_int_set(
         runtime,
@@ -1573,6 +1624,14 @@ def mosh_stageii_torch(
         and sequence_seed_no_cache_post_overlap_window_start is None
     ):
         sequence_seed_no_cache_post_overlap_window_start = 0
+    if (
+        sequence_seed_no_cache_post_overlap_channels is not None
+        and sequence_seed_no_cache_post_overlap_window is None
+    ):
+        raise ValueError(
+            "Runtime sequence_seed_no_cache_post_overlap_window must be a positive integer when "
+            "sequence_seed_no_cache_post_overlap_channels is provided."
+        )
     if (sequence_chunk_keep_start_override_indices is None) != (sequence_chunk_keep_start_override_value is None):
         raise ValueError(
             "Runtime sequence_chunk_keep_start_override_indices and sequence_chunk_keep_start_override_value "
@@ -1728,6 +1787,7 @@ def mosh_stageii_torch(
             seed_cache_post_overlap_window_applied = False
             seed_cache_post_overlap_window_start = None
             seed_cache_post_overlap_window_size = None
+            seed_cache_post_overlap_channels_applied = None
 
             default_chunk_latent_init = None
             default_chunk_transl_init = None
@@ -1781,19 +1841,26 @@ def mosh_stageii_torch(
                         chunk_length,
                     )
                     if post_overlap_window_end > post_overlap_window_start:
-                        chunk_latent_init = _replace_chunk_reference_window(
-                            chunk_latent_init,
-                            default_chunk_latent_init,
-                            window_start=post_overlap_window_start,
-                            window_size=sequence_seed_no_cache_post_overlap_window,
-                        )
-                        chunk_transl_init = _replace_chunk_reference_window(
-                            chunk_transl_init,
-                            default_chunk_transl_init,
-                            window_start=post_overlap_window_start,
-                            window_size=sequence_seed_no_cache_post_overlap_window,
-                        )
-                        if optimize_face:
+                        replacement_channels = sequence_seed_no_cache_post_overlap_channels
+                        if replacement_channels is None:
+                            replacement_channels = ["pose", "transl"]
+                            if optimize_face:
+                                replacement_channels.append("expression")
+                        if "pose" in replacement_channels:
+                            chunk_latent_init = _replace_chunk_reference_window(
+                                chunk_latent_init,
+                                default_chunk_latent_init,
+                                window_start=post_overlap_window_start,
+                                window_size=sequence_seed_no_cache_post_overlap_window,
+                            )
+                        if "transl" in replacement_channels:
+                            chunk_transl_init = _replace_chunk_reference_window(
+                                chunk_transl_init,
+                                default_chunk_transl_init,
+                                window_start=post_overlap_window_start,
+                                window_size=sequence_seed_no_cache_post_overlap_window,
+                            )
+                        if optimize_face and "expression" in replacement_channels:
                             chunk_expression_init = _replace_chunk_reference_window(
                                 chunk_expression_init,
                                 default_chunk_expression_init,
@@ -1803,6 +1870,7 @@ def mosh_stageii_torch(
                         seed_cache_post_overlap_window_applied = True
                         seed_cache_post_overlap_window_start = int(post_overlap_window_start)
                         seed_cache_post_overlap_window_size = int(post_overlap_window_end - post_overlap_window_start)
+                        seed_cache_post_overlap_channels_applied = list(replacement_channels)
 
             overlap_pose_seeded_from_previous = False
             overlap_transl_seeded_from_previous = False
@@ -2090,6 +2158,7 @@ def mosh_stageii_torch(
                 "seed_cache_post_overlap_window_applied": seed_cache_post_overlap_window_applied,
                 "seed_cache_post_overlap_window_start": seed_cache_post_overlap_window_start,
                 "seed_cache_post_overlap_window_size": seed_cache_post_overlap_window_size,
+                "seed_cache_post_overlap_channels": seed_cache_post_overlap_channels_applied,
                 "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
                 "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
                 "local_pose_reference_from_previous": local_pose_reference_applied,
@@ -2134,6 +2203,7 @@ def mosh_stageii_torch(
                         "seed_cache_post_overlap_window_applied": seed_cache_post_overlap_window_applied,
                         "seed_cache_post_overlap_window_start": seed_cache_post_overlap_window_start,
                         "seed_cache_post_overlap_window_size": seed_cache_post_overlap_window_size,
+                        "seed_cache_post_overlap_channels": seed_cache_post_overlap_channels_applied,
                         "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
                         "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
                         "local_pose_reference_from_previous": local_pose_reference_applied,
