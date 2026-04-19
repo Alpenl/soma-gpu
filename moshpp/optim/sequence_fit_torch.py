@@ -22,6 +22,9 @@ class TorchSequenceFitWeights:
     transl_velocity: float = 0.0
     boundary_transl_seam: float = 0.0
     temporal_accel: float = 0.0
+    pose_accel: float = 0.0
+    body_accel: float = 0.0
+    hand_accel: float = 0.0
     delta_pose: float = 0.0
     delta_trans: float = 0.0
     delta_expr: float = 0.0
@@ -83,6 +86,9 @@ def _coerce_sequence_weights(weights):
         transl_velocity=float(getattr(weights, "transl_velocity", 0.0)),
         boundary_transl_seam=float(getattr(weights, "boundary_transl_seam", 0.0)),
         temporal_accel=float(getattr(weights, "temporal_accel", 0.0)),
+        pose_accel=float(getattr(weights, "pose_accel", 0.0)),
+        body_accel=float(getattr(weights, "body_accel", 0.0)),
+        hand_accel=float(getattr(weights, "hand_accel", 0.0)),
         delta_pose=float(getattr(weights, "delta_pose", 0.0)),
         delta_trans=float(getattr(weights, "delta_trans", 0.0)),
         delta_expr=float(getattr(weights, "delta_expr", 0.0)),

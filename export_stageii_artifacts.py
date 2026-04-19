@@ -81,6 +81,28 @@ def build_parser():
         help="Output video height.",
     )
     parser.add_argument(
+        "--supersample",
+        type=int,
+        default=1,
+        help="Render preview MP4 internally at N times the output resolution and downsample. Use 2 for final videos.",
+    )
+    parser.add_argument(
+        "--ffmpeg-crf",
+        type=int,
+        default=None,
+        help="Use ffmpeg/libx264 CRF encoding for preview MP4. Try 16 for high-quality MP4.",
+    )
+    parser.add_argument(
+        "--ffmpeg-preset",
+        default="medium",
+        help="ffmpeg/libx264 preset used when --ffmpeg-crf is set.",
+    )
+    parser.add_argument(
+        "--ffmpeg-path",
+        default="ffmpeg",
+        help="Path to the ffmpeg executable used when --ffmpeg-crf is set.",
+    )
+    parser.add_argument(
         "--arch",
         default="gpu",
         help="Taichi backend to use, for example gpu or cuda.",
@@ -145,6 +167,10 @@ def export_stageii_artifacts(
     camera_preset="frontal",
     video_suffix="_stageii.mp4",
     show_progress=True,
+    supersample=1,
+    ffmpeg_crf=None,
+    ffmpeg_preset="medium",
+    ffmpeg_path="ffmpeg",
     **camera_overrides,
 ):
     if model is None:
@@ -179,6 +205,10 @@ def export_stageii_artifacts(
         arch=arch,
         camera_preset=camera_preset,
         show_progress=show_progress,
+        supersample=supersample,
+        ffmpeg_crf=ffmpeg_crf,
+        ffmpeg_preset=ffmpeg_preset,
+        ffmpeg_path=ffmpeg_path,
         **camera_overrides,
     )
     return {
@@ -200,6 +230,10 @@ def export_stageii_artifacts_batch(
     arch="gpu",
     camera_preset="frontal",
     show_progress=True,
+    supersample=1,
+    ffmpeg_crf=None,
+    ffmpeg_preset="medium",
+    ffmpeg_path="ffmpeg",
     **camera_overrides,
 ):
     input_pkls = [str(Path(input_pkl)) for input_pkl in input_pkls]
@@ -238,6 +272,10 @@ def export_stageii_artifacts_batch(
                 arch=arch,
                 camera_preset=camera_preset,
                 show_progress=show_progress,
+                supersample=supersample,
+                ffmpeg_crf=ffmpeg_crf,
+                ffmpeg_preset=ffmpeg_preset,
+                ffmpeg_path=ffmpeg_path,
                 **camera_overrides,
             )
         )
@@ -293,6 +331,10 @@ def main(argv=None):
                 height=args.height,
                 arch=args.arch,
                 camera_preset=args.camera_preset,
+                supersample=args.supersample,
+                ffmpeg_crf=args.ffmpeg_crf,
+                ffmpeg_preset=args.ffmpeg_preset,
+                ffmpeg_path=args.ffmpeg_path,
                 **camera_overrides,
             )
         except ValueError as exc:
@@ -319,6 +361,10 @@ def main(argv=None):
             height=args.height,
             arch=args.arch,
             camera_preset=args.camera_preset,
+            supersample=args.supersample,
+            ffmpeg_crf=args.ffmpeg_crf,
+            ffmpeg_preset=args.ffmpeg_preset,
+            ffmpeg_path=args.ffmpeg_path,
             **camera_overrides,
         )
     except ValueError as exc:

@@ -38,6 +38,31 @@ REAL_MCP_STRUCTURE_CHUNK48_DELTAPOSE_PRESET = {
     "runtime.sequence_delta_pose": "4",
     "runtime.sequence_chunk_stitch_mode": "adaptive_transl_jump_pose_guard",
 }
+REAL_MCP_QUALITY_VIDEO_PRESET = {
+    **REAL_MCP_BASELINE_PRESET,
+    # Fewer chunk boundaries and a wider overlap reduce visible seams.
+    "runtime.sequence_chunk_size": "96",
+    "runtime.sequence_chunk_overlap": "16",
+    "runtime.sequence_chunk_stitch_mode": "adaptive_transl_jump_pose_mesh_guard",
+    # Final-video solve: slower than the baseline, but much less twitchy.
+    "runtime.sequence_seed_refine_iters": "10",
+    "runtime.sequence_max_iters": "120",
+    "runtime.refine_lr": "0.02",
+    "runtime.sequence_lr": "0.02",
+    # Stay near the stitched reference while allowing marker data to correct it.
+    "runtime.sequence_delta_pose": "0.25",
+    "runtime.sequence_delta_trans": "25.0",
+    # Smooth translation, body pose, and finger PCA coefficients in the optimizer.
+    "runtime.sequence_temporal_accel": "25.0",
+    "runtime.sequence_pose_accel": "0.15",
+    "runtime.sequence_body_accel": "0.35",
+    "runtime.sequence_hand_accel": "1.25",
+    # Preserve velocity through chunk boundaries instead of snapping to each chunk.
+    "runtime.sequence_transl_velocity": "32",
+    "runtime.sequence_boundary_transl_velocity_reference": "true",
+    "runtime.sequence_boundary_transl_velocity_reference_window": "8",
+    "runtime.sequence_boundary_transl_velocity_reference_zero_seam": "true",
+}
 REAL_MCP_CORRECTED_BASELINE_REQUIRED_CFG = {
     "moshpp.optimize_fingers": "true",
     "runtime.refine_lr": "0.05",
@@ -47,6 +72,7 @@ REAL_MCP_CORRECTED_BASELINE_REQUIRED_CFG = {
 OFFICIAL_PRESETS = {
     "real-mcp-baseline": REAL_MCP_BASELINE_PRESET,
     "real-mcp-chunk48ov8-deltapose4": REAL_MCP_STRUCTURE_CHUNK48_DELTAPOSE_PRESET,
+    "real-mcp-quality-video": REAL_MCP_QUALITY_VIDEO_PRESET,
     "real-mcp-transvelo10-seedvelowindow": {
         **REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET,
         "runtime.sequence_transl_velocity": "10",
@@ -104,6 +130,7 @@ def build_parser():
             "Optional named override pack applied before --cfg. "
             "Use real-mcp-baseline for the corrected real .mcp torch baseline, "
             "real-mcp-chunk48ov8-deltapose4 for the retained structure-only slice candidate, "
+            "real-mcp-quality-video for the slower low-jitter final-video solve, "
             "real-mcp-transvelo10-seedvelowindow for the low-risk translation candidate, or "
             "real-mcp-transvelo32-seedvelowindow for the mid-risk translation candidate, or "
             "real-mcp-transvelo100-seedvelowindow for the higher-gain translation-friendly candidate. "

@@ -100,6 +100,32 @@ python export_stageii_artifacts.py \
 ````
 此时脚本会优先从 stageii pickle 内嵌的 `stageii_debug_details.cfg.surface_model.fname` 解析模型路径；若该路径来自旧机器，则会优先回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`。如需强制指定单一模型，仍可显式传 `--model-path`。
 
+如果当前目标是出最终交付视频，而不是快速 smoke preview，可直接在同一个入口上开启高质量渲染参数：
+````
+python export_stageii_artifacts.py \
+  --input-pkl ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl \
+  --support-base-dir support_files \
+  --width 1024 \
+  --height 1024 \
+  --supersample 2 \
+  --ffmpeg-crf 16 \
+  --ffmpeg-preset slow
+````
+`--supersample 2` 会内部按 `2x` 分辨率渲染后再下采样，减少锯齿和闪烁；`--ffmpeg-crf 16 --ffmpeg-preset slow` 会绕过默认的 OpenCV `VideoWriter`，改用 `ffmpeg/libx264` 生成更干净的 MP4。若只想单独重渲染 preview MP4，而不重复导 OBJ/PC2，可直接使用 `render_video.py`：
+````
+python render_video.py \
+  --input-path ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl \
+  --model-path support_files/smplx/[gender]/model.npz \
+  --output-path ROOT/previews/[seq]_quality.mp4 \
+  --width 1024 \
+  --height 1024 \
+  --supersample 2 \
+  --ffmpeg-crf 16 \
+  --ffmpeg-preset slow \
+  --force
+````
+补充说明见 [docs/高质量mcp到mp4导出.md](docs/高质量mcp到mp4导出.md)。
+
 若想递归扫描整个 session / 目录下的现有 stageii 结果并批量补导出，可运行：
 ````
 python export_stageii_artifacts.py \
@@ -175,6 +201,37 @@ single runner 现在还会继续校验 helper 返回 payload 本身：`export_st
 对于 direct single-run 的 `.mcp` 命令，如果你故意不传 `--preset`，现在也必须显式补齐这三条 corrected-baseline anchor：`--cfg moshpp.optimize_fingers=true --cfg runtime.refine_lr=0.05 --cfg runtime.sequence_lr=0.05`。否则 CLI 会直接拒绝运行，避免继续把已确认会掉进 bad replay cfg 的裸跑路径误当成官方 code-first 主线入口。
 
 如果想直接复现当前三类固定切片上已经站住的 structure-only 候选，可把 preset 换成 `real-mcp-chunk48ov8-deltapose4`；它会在同一组 corrected baseline 参数上把 chunk 结构切到 `runtime.sequence_chunk_size=48`、`runtime.sequence_chunk_overlap=8`，叠加 `runtime.sequence_delta_pose=4`，并默认开启 `runtime.sequence_chunk_stitch_mode=adaptive_transl_jump_pose_guard`。修正 mesh seam benchmark 口径后，这条 preset 在 stable / fast-turn / dirty 三段上都同时保住了 `chunk_seam_transl/pose` 非正 delta、`mesh_seam` 非正 delta，以及负向 `reference_stageii_elapsed_delta_s`；剩余只是一致但很小的 `pose_jitter` 正向回退，因此它现在更适合作为固定切片上的 retained structure-only candidate，而不是继续停留在“待确认实验态”。
+
+如果当前目标不是 benchmark 速度，而是尽量压低长序列视频里的 body/hand twitch，可把 preset 换成 `real-mcp-quality-video`；它会在 corrected baseline 之上切到更重的 final-video solve：
+- `runtime.sequence_chunk_size=96`
+- `runtime.sequence_chunk_overlap=16`
+- `runtime.sequence_chunk_stitch_mode=adaptive_transl_jump_pose_mesh_guard`
+- `runtime.sequence_seed_refine_iters=10`
+- `runtime.sequence_max_iters=120`
+- `runtime.refine_lr=0.02`
+- `runtime.sequence_lr=0.02`
+- `runtime.sequence_delta_pose=0.25`
+- `runtime.sequence_delta_trans=25.0`
+- `runtime.sequence_temporal_accel=25.0`
+- `runtime.sequence_pose_accel=0.15`
+- `runtime.sequence_body_accel=0.35`
+- `runtime.sequence_hand_accel=1.25`
+- `runtime.sequence_transl_velocity=32`
+- `runtime.sequence_boundary_transl_velocity_reference=true`
+- `runtime.sequence_boundary_transl_velocity_reference_window=8`
+- `runtime.sequence_boundary_transl_velocity_reference_zero_seam=true`
+
+这条 preset 会明显慢于 `real-mcp-baseline`，但目标是减少最终 MP4 中的 chunk seam、身体抖动和手指乱跳，而不是作为速度候选。典型用法如下：
+````
+python run_stageii_torch_official.py \
+  --mocap-fname ROOT/mocap_raw/[session]/[subject]/[seq].mcp \
+  --support-base-dir support_files \
+  --work-base-dir ROOT/work \
+  --preset real-mcp-quality-video \
+  --cfg surface_model.gender=male \
+  --skip-benchmark
+````
+随后可直接接上前面的高质量 `export_stageii_artifacts.py` / `render_video.py` 命令。如果你当前只想复核拟合本身、暂时不测 speed/report，这条 preset 最适合和 `--skip-benchmark` 搭配使用。更详细的操作和取舍说明见 [docs/高质量mcp到mp4导出.md](docs/高质量mcp到mp4导出.md)。
 
 如果想直接复现一个更保守的 low-risk translation 候选，可把 preset 换成 `real-mcp-transvelo10-seedvelowindow`；它会在同一组 corrected baseline 参数上再叠加 `runtime.sequence_transl_velocity=10` 与 `runtime.sequence_boundary_transl_velocity_reference=true`，对应当前已确认可稳定复现、且五个主质量指标都仍朝正确方向轻微改善的低权重 candidate。
 

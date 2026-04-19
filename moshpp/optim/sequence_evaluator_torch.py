@@ -172,6 +172,29 @@ def _boundary_term(sequence, *, weight, reference=None, reference_index=None, in
     return term
 
 
+def _accel_term(sequence, *, weight):
+    """Second-order temporal smoothness for a time-major tensor.
+
+    The first two frames intentionally receive zero acceleration loss because the
+    stencil needs frames t-2, t-1, and t. Keeping the result time-major preserves
+    the existing per-frame loss-term summaries.
+    """
+    term = sequence.new_zeros((sequence.shape[0],))
+    if weight == 0.0 or sequence.shape[0] < 3:
+        return term
+
+    accel = sequence[2:] - (2.0 * sequence[1:-1]) + sequence[:-2]
+    reduce_dims = tuple(range(1, sequence.ndim))
+    term[2:] = torch.sum((accel * weight) ** 2, dim=reduce_dims)
+    return term
+
+
+def _latent_region_accel_term(latent_pose, ids, *, weight):
+    if weight == 0.0 or not ids:
+        return latent_pose.new_zeros((latent_pose.shape[0],))
+    return _accel_term(latent_pose[:, ids], weight=weight)
+
+
 class StageIISequenceEvaluator(torch.nn.Module):
     def __init__(
         self,
@@ -273,11 +296,25 @@ class StageIISequenceEvaluator(torch.nn.Module):
                 index_name="transl_boundary_reference_index",
             )
 
-        accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
         temporal_accel = float(getattr(weights, "temporal_accel", 0.0))
-        if temporal_accel != 0.0 and transl.shape[0] >= 3:
-            accel = transl[2:] - (2.0 * transl[1:-1]) + transl[:-2]
-            accel_term[2:] = torch.sum((accel * temporal_accel) ** 2, dim=1)
+        accel_term = _accel_term(transl, weight=temporal_accel)
+
+        pose_accel_term = _accel_term(
+            latent_pose,
+            weight=float(getattr(weights, "pose_accel", 0.0)),
+        )
+        body_accel_term = _latent_region_accel_term(
+            latent_pose,
+            self.layout.body_ids(),
+            weight=float(getattr(weights, "body_accel", 0.0)),
+        )
+        hand_accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
+        if self.optimize_fingers and self.layout.left_hand_coeff_slice is not None:
+            hand_accel_term = _latent_region_accel_term(
+                latent_pose,
+                self.layout.hand_ids(),
+                weight=float(getattr(weights, "hand_accel", 0.0)),
+            )
 
         terms = {
             "data": data_term,
@@ -289,6 +326,9 @@ class StageIISequenceEvaluator(torch.nn.Module):
             "veloT": transl_velocity_term,
             "seamT": boundary_transl_seam_term,
             "accel": accel_term,
+            "accelP": pose_accel_term,
+            "accelB": body_accel_term,
+            "accelH": hand_accel_term,
         }
 
         delta_pose_weight = float(getattr(weights, "delta_pose", 0.0))

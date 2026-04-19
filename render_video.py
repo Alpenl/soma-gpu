@@ -3,6 +3,7 @@ import os
 import inspect
 import os.path as osp
 import pickle
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -78,6 +79,28 @@ def build_parser():
         type=int,
         default=512,
         help="Output video height.",
+    )
+    parser.add_argument(
+        "--supersample",
+        type=int,
+        default=1,
+        help="Render internally at N times the output resolution and downsample before encoding. Use 2 for final videos.",
+    )
+    parser.add_argument(
+        "--ffmpeg-crf",
+        type=int,
+        default=None,
+        help="Use ffmpeg/libx264 CRF encoding instead of cv2 VideoWriter. Try 16 for high-quality MP4.",
+    )
+    parser.add_argument(
+        "--ffmpeg-preset",
+        default="medium",
+        help="ffmpeg/libx264 preset used when --ffmpeg-crf is set, for example medium or slow.",
+    )
+    parser.add_argument(
+        "--ffmpeg-path",
+        default="ffmpeg",
+        help="Path to the ffmpeg executable used when --ffmpeg-crf is set.",
     )
     parser.add_argument(
         "--arch",
@@ -378,6 +401,71 @@ def _create_preview_renderer(ti, *, num_vertices, faces, width, height):
     )
 
 
+class _OpenCvVideoSink:
+    def __init__(self, cv2, output_path, *, fps, width, height):
+        self.writer = cv2.VideoWriter(
+            str(output_path),
+            cv2.VideoWriter_fourcc(*codec_for_video_path(str(output_path))),
+            fps,
+            (width, height),
+        )
+        if not self.writer.isOpened():
+            raise RuntimeError(f"failed to open video writer for {output_path}")
+
+    def write(self, image):
+        self.writer.write(image)
+
+    def release(self):
+        self.writer.release()
+
+
+class _FfmpegVideoSink:
+    def __init__(self, output_path, *, fps, width, height, crf, preset, ffmpeg_path):
+        cmd = [
+            ffmpeg_path,
+            "-y",
+            "-f", "rawvideo",
+            "-vcodec", "rawvideo",
+            "-pix_fmt", "bgr24",
+            "-s", f"{width}x{height}",
+            "-r", str(fps),
+            "-i", "-",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", str(preset),
+            "-crf", str(crf),
+            "-pix_fmt", "yuv420p",
+            str(output_path),
+        ]
+        self.process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+
+    def write(self, image):
+        if image.dtype != np.uint8:
+            raise TypeError(f"ffmpeg video frames must be uint8, got {image.dtype}")
+        self.process.stdin.write(np.ascontiguousarray(image).tobytes())
+
+    def release(self):
+        if self.process.stdin is not None:
+            self.process.stdin.close()
+        ret = self.process.wait()
+        if ret != 0:
+            raise RuntimeError(f"ffmpeg exited with status {ret}")
+
+
+def _make_video_sink(cv2, output_path, *, fps, width, height, ffmpeg_crf=None, ffmpeg_preset="medium", ffmpeg_path="ffmpeg"):
+    if ffmpeg_crf is None:
+        return _OpenCvVideoSink(cv2, output_path, fps=fps, width=width, height=height)
+    return _FfmpegVideoSink(
+        output_path,
+        fps=fps,
+        width=width,
+        height=height,
+        crf=ffmpeg_crf,
+        preset=ffmpeg_preset,
+        ffmpeg_path=ffmpeg_path,
+    )
+
+
 def _write_vertices_video(
     *,
     cv2,
@@ -390,16 +478,29 @@ def _write_vertices_video(
     camera_cfg,
     progress_label,
     show_progress,
+    render_width=None,
+    render_height=None,
+    ffmpeg_crf=None,
+    ffmpeg_preset="medium",
+    ffmpeg_path="ffmpeg",
 ):
     from tqdm import tqdm
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    video_writer = cv2.VideoWriter(
-        str(output_path),
-        cv2.VideoWriter_fourcc(*codec_for_video_path(str(output_path))),
-        fps,
-        (width, height),
+    width = int(width)
+    height = int(height)
+    render_width = int(render_width or width)
+    render_height = int(render_height or height)
+    video_writer = _make_video_sink(
+        cv2,
+        output_path,
+        fps=fps,
+        width=width,
+        height=height,
+        ffmpeg_crf=ffmpeg_crf,
+        ffmpeg_preset=ffmpeg_preset,
+        ffmpeg_path=ffmpeg_path,
     )
 
     try:
@@ -427,6 +528,8 @@ def _write_vertices_video(
             image = cv2.cvtColor((image[:, :, :3] * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
             image = np.transpose(image, (1, 0, 2))
             image = np.flip(image, axis=0)
+            if render_width != width or render_height != height:
+                image = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)
             video_writer.write(image)
     finally:
         video_writer.release()
@@ -443,6 +546,10 @@ def render_vertices_to_video(
     arch="gpu",
     camera_preset="frontal",
     show_progress=True,
+    supersample=1,
+    ffmpeg_crf=None,
+    ffmpeg_preset="medium",
+    ffmpeg_path="ffmpeg",
     **camera_overrides,
 ):
     import cv2
@@ -457,6 +564,10 @@ def render_vertices_to_video(
         ti.reset()
     ti.init(arch=getattr(ti, arch), debug=False, log_level=ti.ERROR)
 
+    supersample = max(int(supersample), 1)
+    render_width = int(width) * supersample
+    render_height = int(height) * supersample
+
     vertices = np.asarray(vertices, dtype=np.float32)
     camera_args = SimpleNamespace(camera_preset=camera_preset, **{field: None for field in CAMERA_FIELDS})
     for field in CAMERA_FIELDS:
@@ -467,8 +578,8 @@ def render_vertices_to_video(
         ti,
         num_vertices=vertices.shape[1],
         faces=faces,
-        width=width,
-        height=height,
+        width=render_width,
+        height=render_height,
     )
 
     try:
@@ -483,6 +594,11 @@ def render_vertices_to_video(
             camera_cfg=camera_cfg,
             progress_label=Path(output_path).name,
             show_progress=show_progress,
+            render_width=render_width,
+            render_height=render_height,
+            ffmpeg_crf=ffmpeg_crf,
+            ffmpeg_preset=ffmpeg_preset,
+            ffmpeg_path=ffmpeg_path,
         )
     finally:
         if hasattr(renderer.window, "destroy"):
@@ -506,12 +622,15 @@ def render_preview_jobs(args):
 
     model = getattr(args, "model", None) or load_render_model(args.model_path)
     camera_cfg = resolve_camera_config(args)
+    supersample = max(int(getattr(args, "supersample", 1)), 1)
+    render_width = int(args.width) * supersample
+    render_height = int(args.height) * supersample
     renderer = _create_preview_renderer(
         ti,
         num_vertices=model.v_template.shape[0],
         faces=model.faces,
-        width=args.width,
-        height=args.height,
+        width=render_width,
+        height=render_height,
     )
     show_progress = getattr(args, "show_progress", True)
 
@@ -532,6 +651,11 @@ def render_preview_jobs(args):
                 camera_cfg=camera_cfg,
                 progress_label=osp.basename(pkl_path),
                 show_progress=show_progress,
+                render_width=render_width,
+                render_height=render_height,
+                ffmpeg_crf=getattr(args, "ffmpeg_crf", None),
+                ffmpeg_preset=getattr(args, "ffmpeg_preset", "medium"),
+                ffmpeg_path=getattr(args, "ffmpeg_path", "ffmpeg"),
             )
     finally:
         if hasattr(renderer.window, "destroy"):
@@ -551,6 +675,10 @@ def render_stageii_preview(
     input_suffix="_stageii.pkl",
     video_suffix="_stageii.mp4",
     force=False,
+    supersample=1,
+    ffmpeg_crf=None,
+    ffmpeg_preset="medium",
+    ffmpeg_path="ffmpeg",
     **camera_overrides,
 ):
     args_dict = {field: None for field in CAMERA_FIELDS}
@@ -573,6 +701,10 @@ def render_stageii_preview(
         arch=arch,
         camera_preset=camera_preset,
         force=force,
+        supersample=supersample,
+        ffmpeg_crf=ffmpeg_crf,
+        ffmpeg_preset=ffmpeg_preset,
+        ffmpeg_path=ffmpeg_path,
         **args_dict,
     )
     render_preview_jobs(args)
