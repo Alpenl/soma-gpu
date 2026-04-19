@@ -424,6 +424,54 @@ def _latent_pose_region_ids(layout, region_names):
     return sorted(set(region_ids))
 
 
+def _canonicalize_local_data_marker_types(marker_meta, marker_type_names):
+    if marker_type_names is None:
+        return None
+
+    raw_marker_type_masks = marker_meta.get("marker_type_mask") or {}
+    available_marker_types = {}
+    for marker_type in raw_marker_type_masks:
+        normalized = str(marker_type).strip().lower()
+        if normalized and normalized not in available_marker_types:
+            available_marker_types[normalized] = str(marker_type)
+
+    canonical = []
+    for marker_type_name in marker_type_names:
+        normalized = str(marker_type_name).strip().lower()
+        canonical_marker_type = available_marker_types.get(normalized)
+        if canonical_marker_type is None:
+            raise ValueError(
+                "Runtime sequence_local_data_marker_types must be a comma/space separated list "
+                f"of available marker types {sorted(available_marker_types)}. Got {marker_type_name!r}."
+            )
+        if canonical_marker_type not in canonical:
+            canonical.append(canonical_marker_type)
+    return canonical or None
+
+
+def _local_data_marker_mask(marker_meta, marker_type_names, *, marker_count, device):
+    if marker_type_names is None:
+        return None
+
+    raw_marker_type_masks = marker_meta.get("marker_type_mask") or {}
+    combined_mask = np.zeros(int(marker_count), dtype=bool)
+    for marker_type_name in marker_type_names:
+        marker_mask = np.asarray(raw_marker_type_masks[marker_type_name], dtype=bool).reshape(-1)
+        if marker_mask.shape[0] != int(marker_count):
+            raise ValueError(
+                "Runtime sequence_local_data_marker_types resolved to a marker mask with unexpected length: "
+                f"{marker_mask.shape[0]} != {marker_count} for {marker_type_name!r}."
+            )
+        combined_mask |= marker_mask
+
+    if not np.any(combined_mask):
+        raise ValueError(
+            "Runtime sequence_local_data_marker_types resolved to zero active markers; "
+            f"got {marker_type_names!r}."
+        )
+    return torch.as_tensor(combined_mask, dtype=torch.bool, device=device)
+
+
 def _runtime_stage_fit_options(cfg, runtime):
     valid_optimizers = {"lbfgs", "adam"}
 
@@ -1038,6 +1086,7 @@ def _apply_chunk_marker_data_scale(
     window_size,
     scale,
     device,
+    marker_mask=None,
 ):
     if scale == 1.0:
         return weights, False
@@ -1047,7 +1096,19 @@ def _apply_chunk_marker_data_scale(
         return weights, False
     if weights is None:
         weights = torch.ones((chunk_length, marker_count), dtype=torch.float32, device=device)
-    weights[start:end] = weights[start:end] * float(scale)
+    if marker_mask is None:
+        weights[start:end] = weights[start:end] * float(scale)
+        return weights, True
+
+    marker_mask = torch.as_tensor(marker_mask, dtype=torch.bool, device=device).reshape(-1)
+    if marker_mask.shape[0] != int(marker_count):
+        raise ValueError(
+            "local data marker mask length must match marker_count. "
+            f"Got {marker_mask.shape[0]} != {marker_count}."
+        )
+    if not bool(marker_mask.any()):
+        return weights, False
+    weights[start:end, marker_mask] = weights[start:end, marker_mask] * float(scale)
     return weights, True
 
 
@@ -1200,11 +1261,16 @@ def mosh_stageii_torch(
 
     optimize_fingers = bool(cfg.moshpp.optimize_fingers)
     optimize_face = bool(cfg.moshpp.optimize_face)
+    runtime = getattr(cfg, "runtime", None)
 
     if optimize_fingers and not np.any(["finger" in part for part in marker_meta["marker_type_mask"].keys()]):
         optimize_fingers = False
     if optimize_face and not np.any(["face" in part for part in marker_meta["marker_type_mask"].keys()]):
         optimize_face = False
+    sequence_local_data_marker_types = _canonicalize_local_data_marker_types(
+        marker_meta,
+        _runtime_optional_string_list(runtime, "sequence_local_data_marker_types"),
+    )
 
     if body_model_factory is None:
         body_model_factory = make_body_model_factory_torch(cfg, device=device)
@@ -1232,6 +1298,12 @@ def mosh_stageii_torch(
 
     betas_tensor = torch.as_tensor(betas[: cfg.surface_model.num_betas], dtype=torch.float32, device=device).unsqueeze(0)
     markers_latent_tensor = torch.as_tensor(markers_latent, dtype=torch.float32, device=device)
+    sequence_local_data_marker_mask = _local_data_marker_mask(
+        marker_meta,
+        sequence_local_data_marker_types,
+        marker_count=markers_latent_tensor.shape[0],
+        device=device,
+    )
     wrapper = SmplxTorchWrapper(body_model=body_model, surface_model_type=cfg.surface_model.type)
     canonical_fullpose = decode_stageii_latent_pose(
         torch.zeros(1, layout.latent_dim, dtype=torch.float32, device=device),
@@ -1248,7 +1320,6 @@ def mosh_stageii_torch(
         markers_latent_tensor.detach().cpu(),
         surface_model_type=cfg.surface_model.type,
     ).to(device=device, dtype=torch.float32)
-    runtime = getattr(cfg, "runtime", None)
     perframe_data = {
         "markers_sim": [],
         "markers_obs": [],
@@ -1420,6 +1491,10 @@ def mosh_stageii_torch(
     if sequence_local_data_scale is not None and sequence_local_data_chunk_indices is None:
         raise ValueError(
             "Runtime sequence_local_data_chunk_indices must be provided when sequence_local_data_scale is set."
+        )
+    if sequence_local_data_marker_types is not None and sequence_local_data_scale is None:
+        raise ValueError(
+            "Runtime sequence_local_data_scale must be provided when sequence_local_data_marker_types is set."
         )
     if sequence_local_window is not None and sequence_local_window_start is None:
         sequence_local_window_start = 0
@@ -1697,6 +1772,7 @@ def mosh_stageii_torch(
             local_pose_reference_regions_applied = None
             local_transl_reference_applied = False
             local_data_scale_applied = False
+            local_data_marker_types_applied = None
             if (
                 sequence_boundary_data_scale is not None
                 and sequence_boundary_data_scale != 1.0
@@ -1790,7 +1866,10 @@ def mosh_stageii_torch(
                         window_size=sequence_local_data_window,
                         scale=sequence_local_data_scale,
                         device=device,
+                        marker_mask=sequence_local_data_marker_mask,
                     )
+                    if local_data_scale_applied:
+                        local_data_marker_types_applied = sequence_local_data_marker_types
 
             result = fit_stageii_sequence_torch(
                 body_model=body_model,
@@ -1858,6 +1937,7 @@ def mosh_stageii_torch(
                 "local_pose_reference_regions": local_pose_reference_regions_applied,
                 "local_transl_reference_from_previous": local_transl_reference_applied,
                 "local_data_scale_applied": local_data_scale_applied,
+                "local_data_marker_types": local_data_marker_types_applied,
                 "candidate_metrics": [],
             }
             if chunk_idx > 0:
@@ -1895,6 +1975,7 @@ def mosh_stageii_torch(
                         "local_pose_reference_regions": local_pose_reference_regions_applied,
                         "local_transl_reference_from_previous": local_transl_reference_applied,
                         "local_data_scale_applied": local_data_scale_applied,
+                        "local_data_marker_types": local_data_marker_types_applied,
                     }
                 )
                 if solver_probe is not None:
