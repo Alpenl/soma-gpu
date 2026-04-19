@@ -1387,6 +1387,14 @@ def mosh_stageii_torch(
         runtime,
         "sequence_overlap_transl_seed_from_previous_chunk_indices",
     )
+    sequence_overlap_transl_seed_window_start = _runtime_optional_nonnegative_int(
+        runtime,
+        "sequence_overlap_transl_seed_window_start",
+    )
+    sequence_overlap_transl_seed_window = _runtime_optional_positive_int(
+        runtime,
+        "sequence_overlap_transl_seed_window",
+    )
     sequence_seed_no_cache_chunk_indices = _runtime_optional_nonnegative_int_set(
         runtime,
         "sequence_seed_no_cache_chunk_indices",
@@ -1487,6 +1495,22 @@ def mosh_stageii_torch(
         )
     if sequence_overlap_pose_seed_window is not None and sequence_overlap_pose_seed_window_start is None:
         sequence_overlap_pose_seed_window_start = 0
+    if (
+        sequence_overlap_transl_seed_window_start is not None
+        and sequence_overlap_transl_seed_window is None
+    ):
+        raise ValueError(
+            "Runtime sequence_overlap_transl_seed_window must be a positive integer when sequence_overlap_transl_seed_window_start is provided."
+        )
+    if (
+        sequence_overlap_transl_seed_window is not None
+        and sequence_overlap_transl_seed_from_previous_chunk_indices is None
+    ):
+        raise ValueError(
+            "Runtime sequence_overlap_transl_seed_from_previous_chunk_indices must be provided when sequence_overlap_transl_seed_window is set."
+        )
+    if sequence_overlap_transl_seed_window is not None and sequence_overlap_transl_seed_window_start is None:
+        sequence_overlap_transl_seed_window_start = 0
     if (sequence_chunk_keep_start_override_indices is None) != (sequence_chunk_keep_start_override_value is None):
         raise ValueError(
             "Runtime sequence_chunk_keep_start_override_indices and sequence_chunk_keep_start_override_value "
@@ -1690,6 +1714,8 @@ def mosh_stageii_torch(
                         chunk_transl_init,
                         previous_chunk_transl_tail,
                         chunk_overlap_count,
+                        window_start=sequence_overlap_transl_seed_window_start,
+                        window_size=sequence_overlap_transl_seed_window,
                     )
                     overlap_transl_seeded_from_previous = True
 
