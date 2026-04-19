@@ -11,8 +11,14 @@ import numpy as np
 
 from utils.script_utils import codec_for_video_path, list_stageii_pickles
 
+WORLD_FRONTAL_CAMERA_PRESET = "frontal"
+SUBJECT_FRONTAL_CAMERA_PRESET = "subject-frontal"
+DEFAULT_CAMERA_PRESET = SUBJECT_FRONTAL_CAMERA_PRESET
+SUBJECT_CAMERA_DISTANCE = 3.0
+SUBJECT_CAMERA_LOOKAT_HEIGHT = 0.15
+
 CAMERA_PRESETS = {
-    "frontal": {
+    WORLD_FRONTAL_CAMERA_PRESET: {
         "camera_x": 0.0,
         "camera_y": -3.0,
         "camera_z": 1.0,
@@ -24,7 +30,8 @@ CAMERA_PRESETS = {
         "up_z": 1.0,
     }
 }
-CAMERA_FIELDS = tuple(CAMERA_PRESETS["frontal"].keys())
+CAMERA_FIELDS = tuple(CAMERA_PRESETS[WORLD_FRONTAL_CAMERA_PRESET].keys())
+CAMERA_CHOICES = sorted(tuple(CAMERA_PRESETS) + (SUBJECT_FRONTAL_CAMERA_PRESET,))
 
 
 def build_parser():
@@ -103,15 +110,30 @@ def build_parser():
         help="Path to the ffmpeg executable used when --ffmpeg-crf is set.",
     )
     parser.add_argument(
+        "--neutral-face",
+        action="store_true",
+        help="Render with neutral face by zeroing jaw/eye pose and expression.",
+    )
+    parser.add_argument(
+        "--zero-jaw",
+        action="store_true",
+        help="Zero the SMPL-X jaw and eye pose channels before rendering.",
+    )
+    parser.add_argument(
+        "--zero-expression",
+        action="store_true",
+        help="Zero expression coefficients before rendering.",
+    )
+    parser.add_argument(
         "--arch",
         default="gpu",
         help="Taichi backend to use, for example gpu or cuda.",
     )
     parser.add_argument(
         "--camera-preset",
-        default="frontal",
-        choices=sorted(CAMERA_PRESETS),
-        help="Stable preview camera preset. Manual camera args override preset fields.",
+        default=DEFAULT_CAMERA_PRESET,
+        choices=CAMERA_CHOICES,
+        help="Preview camera preset. subject-frontal follows the actor's facing direction and manual camera args override preset fields.",
     )
     parser.add_argument("--camera-x", type=float, default=None, help="Camera position X.")
     parser.add_argument("--camera-y", type=float, default=None, help="Camera position Y.")
@@ -221,10 +243,22 @@ def _load_stageii_render_inputs(pkl_path):
     }
 
 
-def load_vertices(pkl_path, model):
+def load_stageii_render_inputs(pkl_path):
+    return _load_stageii_render_inputs(pkl_path)
+
+
+def load_vertices(
+    pkl_path,
+    model,
+    *,
+    stageii_inputs=None,
+    neutral_face=False,
+    zero_jaw=False,
+    zero_expression=False,
+):
     import torch
 
-    stageii_inputs = _load_stageii_render_inputs(pkl_path)
+    stageii_inputs = stageii_inputs or _load_stageii_render_inputs(pkl_path)
     fullpose = torch.from_numpy(stageii_inputs["fullpose"]).float()
     shape_components = torch.from_numpy(stageii_inputs["betas"]).float()
     trans = torch.from_numpy(stageii_inputs["trans"]).float()
@@ -232,11 +266,16 @@ def load_vertices(pkl_path, model):
     if stageii_inputs["expression"] is not None:
         expression = torch.from_numpy(stageii_inputs["expression"]).float()
     else:
-        expression = (
-            shape_components[:, 300:310]
-            if shape_components.shape[1] >= 310
-            else torch.zeros(num_frames, 10, dtype=shape_components.dtype)
-        )
+        expression = torch.zeros(num_frames, 10, dtype=shape_components.dtype)
+
+    if neutral_face:
+        zero_jaw = True
+        zero_expression = True
+    if zero_jaw:
+        fullpose = fullpose.clone()
+        fullpose[:, 66:75] = 0.0
+    if zero_expression:
+        expression = torch.zeros_like(expression)
 
     ret = model(
         global_orient=fullpose[:, :3],
@@ -359,8 +398,75 @@ def build_preview_jobs(args):
     ]
 
 
-def resolve_camera_config(args):
-    camera_values = CAMERA_PRESETS[args.camera_preset].copy()
+def _apply_axis_angle(axis_angle, vector):
+    axis_angle = np.asarray(axis_angle, dtype=np.float32)
+    vector = np.asarray(vector, dtype=np.float32)
+    theta = float(np.linalg.norm(axis_angle))
+    if theta < 1e-8:
+        return vector.copy()
+    axis = axis_angle / theta
+    cos_theta = float(np.cos(theta))
+    sin_theta = float(np.sin(theta))
+    return (
+        vector * cos_theta
+        + np.cross(axis, vector) * sin_theta
+        + axis * np.dot(axis, vector) * (1.0 - cos_theta)
+    )
+
+
+def _estimate_subject_front_vector(fullpose):
+    fullpose = np.asarray(fullpose, dtype=np.float32)
+    local_front = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+    front_xy_vectors = []
+    for axis_angle in fullpose[:, :3]:
+        world_front = _apply_axis_angle(axis_angle, local_front)
+        world_front[2] = 0.0
+        norm = float(np.linalg.norm(world_front))
+        if norm > 1e-8:
+            front_xy_vectors.append(world_front / norm)
+
+    if not front_xy_vectors:
+        return np.array([0.0, -1.0, 0.0], dtype=np.float32)
+
+    mean_front = np.mean(np.asarray(front_xy_vectors, dtype=np.float32), axis=0)
+    norm = float(np.linalg.norm(mean_front))
+    if norm <= 1e-8:
+        return np.array([0.0, -1.0, 0.0], dtype=np.float32)
+    return mean_front / norm
+
+
+def _subject_frontal_camera_values(stageii_inputs):
+    trans = np.asarray(stageii_inputs["trans"], dtype=np.float32)
+    fullpose = np.asarray(stageii_inputs["fullpose"], dtype=np.float32)
+    lookat_xy = np.median(trans[:, :2], axis=0)
+    lookat_z = max(
+        1.0,
+        float(np.median(trans[:, 2]) + SUBJECT_CAMERA_LOOKAT_HEIGHT),
+    )
+    front = _estimate_subject_front_vector(fullpose)
+    camera_xy = lookat_xy + front[:2] * SUBJECT_CAMERA_DISTANCE
+    return {
+        "camera_x": float(camera_xy[0]),
+        "camera_y": float(camera_xy[1]),
+        "camera_z": lookat_z,
+        "lookat_x": float(lookat_xy[0]),
+        "lookat_y": float(lookat_xy[1]),
+        "lookat_z": lookat_z,
+        "up_x": 0.0,
+        "up_y": 0.0,
+        "up_z": 1.0,
+    }
+
+
+def resolve_camera_config(args, *, stageii_inputs=None):
+    if args.camera_preset == SUBJECT_FRONTAL_CAMERA_PRESET:
+        if stageii_inputs is None:
+            raise ValueError(
+                "subject-frontal camera preset requires stageii pose/trans inputs"
+            )
+        camera_values = _subject_frontal_camera_values(stageii_inputs)
+    else:
+        camera_values = CAMERA_PRESETS[args.camera_preset].copy()
     for field in CAMERA_FIELDS:
         value = getattr(args, field, None)
         if value is not None:
@@ -544,7 +650,7 @@ def render_vertices_to_video(
     width=512,
     height=512,
     arch="gpu",
-    camera_preset="frontal",
+    camera_preset=WORLD_FRONTAL_CAMERA_PRESET,
     show_progress=True,
     supersample=1,
     ffmpeg_crf=None,
@@ -621,7 +727,6 @@ def render_preview_jobs(args):
     ti.init(arch=getattr(ti, args.arch), debug=False, log_level=ti.ERROR)
 
     model = getattr(args, "model", None) or load_render_model(args.model_path)
-    camera_cfg = resolve_camera_config(args)
     supersample = max(int(getattr(args, "supersample", 1)), 1)
     render_width = int(args.width) * supersample
     render_height = int(args.height) * supersample
@@ -639,7 +744,16 @@ def render_preview_jobs(args):
             if osp.exists(video_path) and not args.force:
                 continue
 
-            vertices = load_vertices(pkl_path, model)
+            stageii_inputs = load_stageii_render_inputs(pkl_path)
+            camera_cfg = resolve_camera_config(args, stageii_inputs=stageii_inputs)
+            vertices = load_vertices(
+                pkl_path,
+                model,
+                stageii_inputs=stageii_inputs,
+                neutral_face=getattr(args, "neutral_face", False),
+                zero_jaw=getattr(args, "zero_jaw", False),
+                zero_expression=getattr(args, "zero_expression", False),
+            )
             _write_vertices_video(
                 cv2=cv2,
                 renderer=renderer,
@@ -671,7 +785,7 @@ def render_stageii_preview(
     width=512,
     height=512,
     arch="gpu",
-    camera_preset="frontal",
+    camera_preset=DEFAULT_CAMERA_PRESET,
     input_suffix="_stageii.pkl",
     video_suffix="_stageii.mp4",
     force=False,
@@ -679,6 +793,9 @@ def render_stageii_preview(
     ffmpeg_crf=None,
     ffmpeg_preset="medium",
     ffmpeg_path="ffmpeg",
+    neutral_face=False,
+    zero_jaw=False,
+    zero_expression=False,
     **camera_overrides,
 ):
     args_dict = {field: None for field in CAMERA_FIELDS}
@@ -705,6 +822,9 @@ def render_stageii_preview(
         ffmpeg_crf=ffmpeg_crf,
         ffmpeg_preset=ffmpeg_preset,
         ffmpeg_path=ffmpeg_path,
+        neutral_face=neutral_face,
+        zero_jaw=zero_jaw,
+        zero_expression=zero_expression,
         **args_dict,
     )
     render_preview_jobs(args)

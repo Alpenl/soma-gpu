@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from types import SimpleNamespace
 
 import render_video
 import save_smplx_verts
@@ -103,15 +104,30 @@ def build_parser():
         help="Path to the ffmpeg executable used when --ffmpeg-crf is set.",
     )
     parser.add_argument(
+        "--neutral-face",
+        action="store_true",
+        help="Render with neutral face by zeroing jaw/eye pose and expression.",
+    )
+    parser.add_argument(
+        "--zero-jaw",
+        action="store_true",
+        help="Zero the SMPL-X jaw and eye pose channels before rendering.",
+    )
+    parser.add_argument(
+        "--zero-expression",
+        action="store_true",
+        help="Zero expression coefficients before rendering.",
+    )
+    parser.add_argument(
         "--arch",
         default="gpu",
         help="Taichi backend to use, for example gpu or cuda.",
     )
     parser.add_argument(
         "--camera-preset",
-        default="frontal",
-        choices=sorted(render_video.CAMERA_PRESETS),
-        help="Stable preview camera preset. Manual camera args override preset fields.",
+        default=render_video.DEFAULT_CAMERA_PRESET,
+        choices=render_video.CAMERA_CHOICES,
+        help="Preview camera preset. subject-frontal follows the actor's facing direction and manual camera args override preset fields.",
     )
     for field in render_video.CAMERA_FIELDS:
         parser.add_argument(
@@ -164,21 +180,36 @@ def export_stageii_artifacts(
     width=512,
     height=512,
     arch="gpu",
-    camera_preset="frontal",
+    camera_preset=render_video.DEFAULT_CAMERA_PRESET,
     video_suffix="_stageii.mp4",
     show_progress=True,
     supersample=1,
     ffmpeg_crf=None,
     ffmpeg_preset="medium",
     ffmpeg_path="ffmpeg",
+    neutral_face=False,
+    zero_jaw=False,
+    zero_expression=False,
     **camera_overrides,
 ):
+    stageii_inputs = None
     if model is None:
         if model_path is None:
             raise ValueError("model_path is required when model is not provided")
         model = _load_render_model_with_context(model_path, input_pkl=input_pkl)
     if vertices is None:
-        vertices = render_video.load_vertices(input_pkl, model)
+        vertices = render_video.load_vertices(
+            input_pkl,
+            model,
+            neutral_face=neutral_face,
+            zero_jaw=zero_jaw,
+            zero_expression=zero_expression,
+        )
+    if stageii_inputs is None and camera_preset == render_video.SUBJECT_FRONTAL_CAMERA_PRESET:
+        try:
+            stageii_inputs = render_video.load_stageii_render_inputs(input_pkl)
+        except Exception:
+            camera_preset = render_video.WORLD_FRONTAL_CAMERA_PRESET
 
     obj_path, pc2_path, resolved_video_out = _resolve_artifact_paths(
         input_pkl,
@@ -195,6 +226,17 @@ def export_stageii_artifacts(
         obj_out=obj_path,
         pc2_out=pc2_path,
     )
+    camera_args = SimpleNamespace(
+        camera_preset=camera_preset,
+        **{field: camera_overrides.get(field) for field in render_video.CAMERA_FIELDS},
+    )
+    camera_cfg = render_video.resolve_camera_config(
+        camera_args,
+        stageii_inputs=stageii_inputs,
+    )
+    resolved_camera_overrides = {
+        field: getattr(camera_cfg, field) for field in render_video.CAMERA_FIELDS
+    }
     video_path = render_video.render_vertices_to_video(
         vertices=vertices,
         faces=model.faces,
@@ -203,13 +245,13 @@ def export_stageii_artifacts(
         width=width,
         height=height,
         arch=arch,
-        camera_preset=camera_preset,
+        camera_preset=render_video.WORLD_FRONTAL_CAMERA_PRESET,
         show_progress=show_progress,
         supersample=supersample,
         ffmpeg_crf=ffmpeg_crf,
         ffmpeg_preset=ffmpeg_preset,
         ffmpeg_path=ffmpeg_path,
-        **camera_overrides,
+        **resolved_camera_overrides,
     )
     return {
         "obj_path": obj_path,
@@ -228,12 +270,15 @@ def export_stageii_artifacts_batch(
     width=512,
     height=512,
     arch="gpu",
-    camera_preset="frontal",
+    camera_preset=render_video.DEFAULT_CAMERA_PRESET,
     show_progress=True,
     supersample=1,
     ffmpeg_crf=None,
     ffmpeg_preset="medium",
     ffmpeg_path="ffmpeg",
+    neutral_face=False,
+    zero_jaw=False,
+    zero_expression=False,
     **camera_overrides,
 ):
     input_pkls = [str(Path(input_pkl)) for input_pkl in input_pkls]
@@ -276,6 +321,9 @@ def export_stageii_artifacts_batch(
                 ffmpeg_crf=ffmpeg_crf,
                 ffmpeg_preset=ffmpeg_preset,
                 ffmpeg_path=ffmpeg_path,
+                neutral_face=neutral_face,
+                zero_jaw=zero_jaw,
+                zero_expression=zero_expression,
                 **camera_overrides,
             )
         )
@@ -335,6 +383,9 @@ def main(argv=None):
                 ffmpeg_crf=args.ffmpeg_crf,
                 ffmpeg_preset=args.ffmpeg_preset,
                 ffmpeg_path=args.ffmpeg_path,
+                neutral_face=args.neutral_face,
+                zero_jaw=args.zero_jaw,
+                zero_expression=args.zero_expression,
                 **camera_overrides,
             )
         except ValueError as exc:
@@ -365,6 +416,9 @@ def main(argv=None):
             ffmpeg_crf=args.ffmpeg_crf,
             ffmpeg_preset=args.ffmpeg_preset,
             ffmpeg_path=args.ffmpeg_path,
+            neutral_face=args.neutral_face,
+            zero_jaw=args.zero_jaw,
+            zero_expression=args.zero_expression,
             **camera_overrides,
         )
     except ValueError as exc:

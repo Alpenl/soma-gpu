@@ -111,7 +111,22 @@ def test_evaluate_stageii_sequence_returns_expected_shapes_and_near_zero_data_te
     assert result.predicted_markers.shape == marker_observations.shape
     assert result.body_output.vertices.shape == marker_observations.shape
     assert result.fullpose.shape == (marker_observations.shape[0], 165)
-    assert set(result.loss_terms) == {"data", "poseB", "poseH", "poseF", "expr", "velo", "veloT", "seamT", "accel"}
+    assert set(result.loss_terms) == {
+        "data",
+        "poseB",
+        "poseH",
+        "poseF",
+        "expr",
+        "velo",
+        "veloT",
+        "seamT",
+        "accel",
+        "accelP",
+        "accelB",
+        "accelH",
+        "accelF",
+        "accelE",
+    }
     for value in result.loss_terms.values():
         assert value.shape == (marker_observations.shape[0],)
     assert float(result.total) >= 0.0
@@ -785,3 +800,80 @@ def test_evaluate_stageii_sequence_delta_terms_match_manual_l2_with_seed_broadca
     assert torch.allclose(result.loss_terms["deltaP"], expected_pose)
     assert torch.allclose(result.loss_terms["deltaT"], expected_trans)
     assert torch.allclose(result.loss_terms["deltaE"], expected_expr)
+
+
+def test_evaluate_stageii_sequence_face_and_expression_temporal_terms_match_manual_l2():
+    module = _load_sequence_evaluator_module()
+    canonical_markers, marker_attachment, layout, transl, marker_observations = _make_problem(num_frames=4)
+    evaluator = module.build_stageii_sequence_evaluator(
+        wrapper=TranslOnlyWrapper(canonical_markers),
+        layout=layout,
+        hand_pca=None,
+        pose_prior=ZeroPosePrior(63),
+        optimize_fingers=False,
+        optimize_face=True,
+    )
+
+    latent_pose = torch.zeros(marker_observations.shape[0], layout.latent_dim)
+    latent_pose[:, layout.jaw_slice] = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [3.0, 3.0, 3.0],
+            [6.0, 6.0, 6.0],
+        ],
+        dtype=torch.float32,
+    )
+    expression = torch.tensor(
+        [
+            [0.0, 0.0],
+            [1.0, -1.0],
+            [3.0, -3.0],
+            [6.0, -6.0],
+        ],
+        dtype=torch.float32,
+    )
+    weights = SimpleNamespace(
+        data=0.0,
+        pose_body=0.0,
+        pose_hand=0.0,
+        pose_face=0.0,
+        expr=0.0,
+        velocity=0.0,
+        transl_velocity=0.0,
+        boundary_transl_seam=0.0,
+        temporal_accel=0.0,
+        pose_accel=0.0,
+        body_accel=0.0,
+        hand_accel=0.0,
+        face_accel=2.0,
+        expr_accel=3.0,
+        delta_face=4.0,
+    )
+
+    result = module.evaluate_stageii_sequence(
+        evaluator=evaluator,
+        latent_pose=latent_pose,
+        transl=transl,
+        expression=expression,
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        visible_mask=torch.ones(marker_observations.shape[:2], dtype=torch.bool),
+        marker_data_weights=None,
+        weights=weights,
+        velocity_reference=None,
+        latent_pose_reference=torch.zeros(1, layout.latent_dim),
+    )
+
+    expected_face_accel = torch.zeros(marker_observations.shape[0], dtype=torch.float32)
+    expected_face_accel[2:] = torch.tensor([12.0, 12.0], dtype=torch.float32)
+
+    expected_expr_accel = torch.zeros(marker_observations.shape[0], dtype=torch.float32)
+    expected_expr_accel[2:] = torch.tensor([18.0, 18.0], dtype=torch.float32)
+
+    expected_delta_face = torch.sum((latent_pose[:, layout.face_ids()] * weights.delta_face) ** 2, dim=1)
+
+    assert torch.allclose(result.loss_terms["accelF"], expected_face_accel)
+    assert torch.allclose(result.loss_terms["accelE"], expected_expr_accel)
+    assert torch.allclose(result.loss_terms["deltaF"], expected_delta_face)

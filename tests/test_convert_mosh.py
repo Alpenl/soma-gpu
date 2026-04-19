@@ -173,6 +173,7 @@ def test_convert_mosh_accepts_mcp_inputs_and_exports_matching_stageii_artifacts(
     assert export_calls[0]["width"] == 160
     assert export_calls[0]["height"] == 120
     assert export_calls[0]["arch"] == "cpu"
+    assert export_calls[0]["camera_preset"] == "subject-frontal"
 
 
 def test_convert_mosh_export_relocates_model_path_under_support_base_dir(

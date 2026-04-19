@@ -63,7 +63,7 @@ def test_export_stageii_artifacts_uses_default_output_paths_and_shared_render_in
     monkeypatch.setattr(
         export_stageii_artifacts.render_video,
         "load_vertices",
-        lambda pkl_path, model: captured["load_vertices_calls"].append((pkl_path, model)) or predecoded_vertices,
+        lambda pkl_path, model, **kwargs: captured["load_vertices_calls"].append((pkl_path, model, kwargs)) or predecoded_vertices,
     )
 
     def fake_export_stageii_meshes(*, input_pkl, model_path=None, model=None, vertices=None, obj_out=None, pc2_out=None):
@@ -100,7 +100,9 @@ def test_export_stageii_artifacts_uses_default_output_paths_and_shared_render_in
         "video_path": expected_video,
     }
     assert captured["load_model_calls"] == [SUPPORT_ROOT / "smplx" / "male" / "model.npz"]
-    assert captured["load_vertices_calls"] == [(input_path, preloaded_model)]
+    assert captured["load_vertices_calls"] == [
+        (input_path, preloaded_model, {"neutral_face": False, "zero_jaw": False, "zero_expression": False})
+    ]
     assert captured["mesh_calls"] == [
         (input_path, preloaded_model, predecoded_vertices, expected_obj, expected_pc2)
     ]
@@ -130,7 +132,7 @@ def test_export_stageii_artifacts_reuses_preloaded_model_and_vertices_without_lo
     monkeypatch.setattr(
         export_stageii_artifacts.render_video,
         "load_vertices",
-        lambda pkl_path, model: (_ for _ in ()).throw(AssertionError("should not reload vertices")),
+        lambda pkl_path, model, **kwargs: (_ for _ in ()).throw(AssertionError("should not reload vertices")),
     )
     monkeypatch.setattr(
         export_stageii_artifacts.save_smplx_verts,
@@ -169,6 +171,57 @@ def test_export_stageii_artifacts_reuses_preloaded_model_and_vertices_without_lo
     }
     assert captured["mesh"] == (preloaded_model, predecoded_vertices)
     assert captured["video"] == (predecoded_vertices, preloaded_model.faces)
+
+
+def test_export_stageii_artifacts_forwards_face_zeroing_args_to_vertex_decode(monkeypatch, tmp_path):
+    input_path = tmp_path / "tiny_stageii.pkl"
+    input_path.write_bytes(b"placeholder")
+
+    preloaded_model = type("PreloadedModel", (), {"faces": np.array([[0, 1, 2]], dtype=np.int32)})()
+    predecoded_vertices = np.zeros((2, 3, 3), dtype=np.float32)
+    captured = {}
+
+    monkeypatch.setattr(
+        export_stageii_artifacts.render_video,
+        "load_render_model",
+        lambda model_path: preloaded_model,
+    )
+    monkeypatch.setattr(
+        export_stageii_artifacts.render_video,
+        "load_vertices",
+        lambda pkl_path, model, **kwargs: captured.setdefault("load_vertices", (pkl_path, model, kwargs)) or predecoded_vertices,
+    )
+    monkeypatch.setattr(
+        export_stageii_artifacts.save_smplx_verts,
+        "export_stageii_meshes",
+        lambda *, input_pkl, model_path=None, model=None, vertices=None, obj_out=None, pc2_out=None: (
+            Path(obj_out).write_text("obj"),
+            Path(pc2_out).write_bytes(b"pc2"),
+            (str(obj_out), str(pc2_out)),
+        )[-1],
+    )
+    monkeypatch.setattr(
+        export_stageii_artifacts.render_video,
+        "render_vertices_to_video",
+        lambda *, vertices, faces, output_path, **kwargs: (
+            Path(output_path).write_bytes(b"mp4"),
+            str(output_path),
+        )[-1],
+    )
+
+    export_stageii_artifacts.export_stageii_artifacts(
+        input_pkl=input_path,
+        model_path=SUPPORT_ROOT / "smplx" / "male" / "model.npz",
+        neutral_face=True,
+        zero_jaw=True,
+        zero_expression=True,
+    )
+
+    assert captured["load_vertices"] == (
+        input_path,
+        preloaded_model,
+        {"neutral_face": True, "zero_jaw": True, "zero_expression": True},
+    )
 
 
 def test_export_stageii_artifacts_batch_resolves_model_path_per_stageii(monkeypatch, tmp_path):

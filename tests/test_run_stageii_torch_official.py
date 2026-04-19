@@ -741,6 +741,19 @@ def test_run_stageii_torch_official_main_applies_translation_friendly_candidate_
     }
 
 
+def test_real_mcp_quality_video_presets_split_neutral_and_face_variants():
+    neutral = run_stageii_torch_official.OFFICIAL_PRESETS["real-mcp-quality-video-neutral-face"]
+    default_alias = run_stageii_torch_official.OFFICIAL_PRESETS["real-mcp-quality-video"]
+    face = run_stageii_torch_official.OFFICIAL_PRESETS["real-mcp-quality-video-face"]
+
+    assert default_alias == neutral
+    assert neutral["moshpp.optimize_face"] == "false"
+    assert face["moshpp.optimize_face"] == "true"
+    assert face["runtime.sequence_face_accel"] == "3.0"
+    assert face["runtime.sequence_expr_accel"] == "3.0"
+    assert face["runtime.sequence_delta_expr"] == "50.0"
+
+
 def test_run_stageii_torch_official_main_applies_structure_only_chunk48_deltapose_preset(
     tmp_path, monkeypatch
 ):

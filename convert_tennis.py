@@ -3,6 +3,7 @@ import os.path as osp
 from glob import glob
 from pathlib import Path
 
+from render_video import DEFAULT_CAMERA_PRESET
 from utils.script_utils import (
     discover_stageii_pickles,
     format_stageii_match_error,
@@ -112,7 +113,7 @@ def build_parser():
     )
     parser.add_argument(
         "--export-camera-preset",
-        default="frontal",
+        default=DEFAULT_CAMERA_PRESET,
         help="Camera preset forwarded to export_stageii_artifacts.py.",
     )
     parser.add_argument(
@@ -190,7 +191,7 @@ def export_stageii_artifacts_for_dataset(
     width=512,
     height=512,
     arch="gpu",
-    camera_preset="frontal",
+    camera_preset=DEFAULT_CAMERA_PRESET,
 ):
     import export_stageii_artifacts
 

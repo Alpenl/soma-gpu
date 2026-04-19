@@ -38,8 +38,9 @@ REAL_MCP_STRUCTURE_CHUNK48_DELTAPOSE_PRESET = {
     "runtime.sequence_delta_pose": "4",
     "runtime.sequence_chunk_stitch_mode": "adaptive_transl_jump_pose_guard",
 }
-REAL_MCP_QUALITY_VIDEO_PRESET = {
+REAL_MCP_QUALITY_VIDEO_NEUTRAL_FACE_PRESET = {
     **REAL_MCP_BASELINE_PRESET,
+    "moshpp.optimize_face": "false",
     # Fewer chunk boundaries and a wider overlap reduce visible seams.
     "runtime.sequence_chunk_size": "96",
     "runtime.sequence_chunk_overlap": "16",
@@ -63,6 +64,14 @@ REAL_MCP_QUALITY_VIDEO_PRESET = {
     "runtime.sequence_boundary_transl_velocity_reference_window": "8",
     "runtime.sequence_boundary_transl_velocity_reference_zero_seam": "true",
 }
+REAL_MCP_QUALITY_VIDEO_FACE_PRESET = {
+    **REAL_MCP_QUALITY_VIDEO_NEUTRAL_FACE_PRESET,
+    "moshpp.optimize_face": "true",
+    "runtime.sequence_face_accel": "3.0",
+    "runtime.sequence_expr_accel": "3.0",
+    "runtime.sequence_delta_expr": "50.0",
+}
+REAL_MCP_QUALITY_VIDEO_PRESET = REAL_MCP_QUALITY_VIDEO_NEUTRAL_FACE_PRESET
 REAL_MCP_CORRECTED_BASELINE_REQUIRED_CFG = {
     "moshpp.optimize_fingers": "true",
     "runtime.refine_lr": "0.05",
@@ -73,6 +82,8 @@ OFFICIAL_PRESETS = {
     "real-mcp-baseline": REAL_MCP_BASELINE_PRESET,
     "real-mcp-chunk48ov8-deltapose4": REAL_MCP_STRUCTURE_CHUNK48_DELTAPOSE_PRESET,
     "real-mcp-quality-video": REAL_MCP_QUALITY_VIDEO_PRESET,
+    "real-mcp-quality-video-neutral-face": REAL_MCP_QUALITY_VIDEO_NEUTRAL_FACE_PRESET,
+    "real-mcp-quality-video-face": REAL_MCP_QUALITY_VIDEO_FACE_PRESET,
     "real-mcp-transvelo10-seedvelowindow": {
         **REAL_MCP_TRANSL_VELO_SEED_WINDOW_PRESET,
         "runtime.sequence_transl_velocity": "10",

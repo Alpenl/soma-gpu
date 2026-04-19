@@ -25,7 +25,10 @@ class TorchSequenceFitWeights:
     pose_accel: float = 0.0
     body_accel: float = 0.0
     hand_accel: float = 0.0
+    face_accel: float = 0.0
+    expr_accel: float = 0.0
     delta_pose: float = 0.0
+    delta_face: float = 0.0
     delta_trans: float = 0.0
     delta_expr: float = 0.0
 
@@ -89,7 +92,10 @@ def _coerce_sequence_weights(weights):
         pose_accel=float(getattr(weights, "pose_accel", 0.0)),
         body_accel=float(getattr(weights, "body_accel", 0.0)),
         hand_accel=float(getattr(weights, "hand_accel", 0.0)),
+        face_accel=float(getattr(weights, "face_accel", 0.0)),
+        expr_accel=float(getattr(weights, "expr_accel", 0.0)),
         delta_pose=float(getattr(weights, "delta_pose", 0.0)),
+        delta_face=float(getattr(weights, "delta_face", 0.0)),
         delta_trans=float(getattr(weights, "delta_trans", 0.0)),
         delta_expr=float(getattr(weights, "delta_expr", 0.0)),
     )
@@ -144,14 +150,27 @@ def _coerce_optional_index(index, *, num_frames, name):
     return index
 
 
-def _run_adam(*, params, closure_fn, max_iters, lr):
+def _active_sequence_pose_ids(layout, *, optimize_fingers, optimize_face, optimize_toes):
+    return layout.refine_ids(
+        optimize_fingers=optimize_fingers,
+        optimize_face=optimize_face,
+        optimize_toes=optimize_toes,
+    )
+
+
+def _run_adam(*, params, closure_fn, active_pose_ids, latent_pose_param, max_iters, lr):
     if max_iters <= 0:
         return
     optimizer = torch.optim.Adam(params, lr=lr)
+    active_mask = torch.zeros_like(latent_pose_param)
+    if active_pose_ids:
+        active_mask[:, active_pose_ids] = 1.0
     for _ in range(max_iters):
         optimizer.zero_grad()
         loss = closure_fn()
         loss.backward()
+        if latent_pose_param.grad is not None:
+            latent_pose_param.grad.mul_(active_mask)
         optimizer.step()
 
 
@@ -159,6 +178,8 @@ def _run_lbfgs(
     *,
     params,
     closure_fn,
+    active_pose_ids,
+    latent_pose_param,
     max_iters,
     lr,
     history_size,
@@ -183,20 +204,34 @@ def _run_lbfgs(
         optimizer.zero_grad()
         loss = closure_fn()
         loss.backward()
+        if latent_pose_param.grad is not None:
+            latent_pose_param.grad.mul_(active_mask)
         return loss
 
+    active_mask = torch.zeros_like(latent_pose_param)
+    if active_pose_ids:
+        active_mask[:, active_pose_ids] = 1.0
     optimizer.step(closure)
 
 
-def _run_solver(*, options, params, closure_fn):
+def _run_solver(*, options, params, closure_fn, active_pose_ids, latent_pose_param):
     optimizer_type = options.optimizer.lower()
     if optimizer_type == "adam":
-        _run_adam(params=params, closure_fn=closure_fn, max_iters=options.max_iters, lr=options.lr)
+        _run_adam(
+            params=params,
+            closure_fn=closure_fn,
+            active_pose_ids=active_pose_ids,
+            latent_pose_param=latent_pose_param,
+            max_iters=options.max_iters,
+            lr=options.lr,
+        )
         return
     if optimizer_type == "lbfgs":
         _run_lbfgs(
             params=params,
             closure_fn=closure_fn,
+            active_pose_ids=active_pose_ids,
+            latent_pose_param=latent_pose_param,
             max_iters=options.max_iters,
             lr=options.lr,
             history_size=options.history_size,
@@ -240,7 +275,6 @@ def fit_stageii_sequence_torch(
     marker_data_weights=None,
     evaluator=None,
 ):
-    del optimize_toes
     marker_observations = torch.as_tensor(marker_observations, dtype=torch.float32)
     if marker_observations.ndim != 3 or marker_observations.shape[-1] != 3:
         raise ValueError(f"marker_observations must have shape (T, M, 3), got {tuple(marker_observations.shape)}")
@@ -400,6 +434,12 @@ def fit_stageii_sequence_torch(
     params = [latent_pose_param, transl_param]
     if expression_param is not None:
         params.append(expression_param)
+    active_pose_ids = _active_sequence_pose_ids(
+        layout,
+        optimize_fingers=optimize_fingers,
+        optimize_face=optimize_face,
+        optimize_toes=optimize_toes,
+    )
 
     def closure():
         evaluation = evaluate_stageii_sequence(
@@ -425,7 +465,13 @@ def fit_stageii_sequence_torch(
         )
         return evaluation.total
 
-    _run_solver(options=options, params=params, closure_fn=closure)
+    _run_solver(
+        options=options,
+        params=params,
+        closure_fn=closure,
+        active_pose_ids=active_pose_ids,
+        latent_pose_param=latent_pose_param,
+    )
 
     evaluation = evaluate_stageii_sequence(
         evaluator=evaluator,

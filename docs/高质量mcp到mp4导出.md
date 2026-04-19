@@ -79,6 +79,8 @@ python export_stageii_artifacts.py \
   --ffmpeg-preset slow
 ```
 
+默认情况下，`export_stageii_artifacts.py` 会使用 `subject-frontal` 机位：它会根据 stageii 里的 root orientation 自动解出人物正面，而不是固定看世界坐标的某个轴向。
+
 如果只想单独重渲 MP4，不重复导 OBJ/PC2：
 
 ```bash
@@ -92,6 +94,12 @@ python render_video.py \
   --ffmpeg-crf 16 \
   --ffmpeg-preset slow \
   --force
+```
+
+`render_video.py` 现在同样默认使用 `subject-frontal`。如果你想保留旧的世界坐标前视，可显式传：
+
+```bash
+--camera-preset frontal
 ```
 
 ## 3. 为什么这些参数会改善最终视频
@@ -177,13 +185,16 @@ runtime.sequence_temporal_accel=40
 
 - 这套 preset 不是速度优先，而是最终视频优先
 - 它更擅长压低 twitch / seam，不保证一定能修掉所有局部姿态 basin 问题
-- `frontal` 相机 preset 是世界坐标前视，不一定等于人物真实正面；如果人物朝向和世界轴不对齐，建议用 `--camera-x/--camera-y/--camera-z` 手动覆盖
+- 默认的 `subject-frontal` 会根据 stageii 的 root orientation 跟随人物朝向，因此更适合作为最终视频导出的默认机位
+- `frontal` 相机 preset 仍然保留，但它只是世界坐标前视，不一定等于人物真实正面
+- 如果自动 `subject-frontal` 仍不符合你的构图目标，继续使用 `--camera-x/--camera-y/--camera-z` 和 `--lookat-*` 手动覆盖
 
 ## 6. 建议工作方式
 
 实际使用时，推荐分成两步：
 
 1. 先用 `real-mcp-quality-video` 产出 `stageii.pkl`
-2. 再反复重渲 preview MP4，调机位和编码参数
+2. 先直接看默认的 `subject-frontal` 导出结果
+3. 如果构图还不理想，再反复重渲 preview MP4，调机位和编码参数
 
 这样调视频视角、分辨率和编码时，不需要反复重跑长时间的 stageii 求解。

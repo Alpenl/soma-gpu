@@ -805,3 +805,69 @@ def test_fit_stageii_sequence_torch_passes_explicit_full_velocity_reference():
 
     assert torch.allclose(seen["velocity_reference"], velocity_reference)
     assert seen["velocity_reference_index"] is None
+
+
+def test_fit_stageii_sequence_torch_masks_inactive_face_and_hand_latents():
+    module = _load_sequence_fit_module()
+    canonical_markers, marker_attachment, layout, _, marker_observations = _make_minimal_problem(num_frames=3)
+
+    class GradientEvaluator:
+        def __call__(self, **kwargs):
+            latent_pose = kwargs["latent_pose"]
+            transl = kwargs["transl"]
+            predicted_markers = kwargs["marker_observations"]
+            total = (
+                latent_pose[:, 0].sum()
+                + latent_pose[:, layout.jaw_slice].sum()
+                + latent_pose[:, layout.left_hand_coeff_slice].sum()
+                + transl.sum() * 0.0
+            )
+            num_frames = latent_pose.shape[0]
+            body_output = DummyBodyOutput(
+                vertices=predicted_markers.detach().clone(),
+                joints=torch.zeros(num_frames, 3, 3, dtype=predicted_markers.dtype),
+            )
+            terms = {
+                "data": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "poseB": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "poseH": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "poseF": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "expr": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "velo": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "veloT": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "seamT": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+                "accel": torch.zeros(num_frames, dtype=predicted_markers.dtype),
+            }
+            fullpose = torch.zeros(num_frames, 165, dtype=predicted_markers.dtype)
+            return total, terms, fullpose, body_output, predicted_markers
+
+    result = module.fit_stageii_sequence_torch(
+        body_model=TranslOnlyBodyModel(canonical_markers),
+        betas=torch.zeros(1, 10),
+        marker_attachment=marker_attachment,
+        marker_observations=marker_observations,
+        pose_prior=ZeroPosePrior(63),
+        layout=layout,
+        latent_pose_init=torch.zeros(marker_observations.shape[0], layout.latent_dim),
+        transl_init=torch.zeros(marker_observations.shape[0], 3),
+        weights=module.TorchSequenceFitWeights(
+            data=0.0,
+            pose_body=0.0,
+            pose_hand=0.0,
+            pose_face=0.0,
+            expr=0.0,
+            velocity=0.0,
+            temporal_accel=0.0,
+        ),
+        options=module.TorchSequenceFitOptions(max_iters=1, lr=0.1, optimizer="adam"),
+        optimize_fingers=False,
+        optimize_face=False,
+        evaluator=GradientEvaluator(),
+    )
+
+    assert torch.all(result.latent_pose[:, 0] < 0.0)
+    assert torch.allclose(result.latent_pose[:, layout.jaw_slice], torch.zeros_like(result.latent_pose[:, layout.jaw_slice]))
+    assert torch.allclose(
+        result.latent_pose[:, layout.left_hand_coeff_slice],
+        torch.zeros_like(result.latent_pose[:, layout.left_hand_coeff_slice]),
+    )

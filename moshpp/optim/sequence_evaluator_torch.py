@@ -315,6 +315,19 @@ class StageIISequenceEvaluator(torch.nn.Module):
                 self.layout.hand_ids(),
                 weight=float(getattr(weights, "hand_accel", 0.0)),
             )
+        face_accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
+        if self.optimize_face and self.layout.jaw_slice is not None:
+            face_accel_term = _latent_region_accel_term(
+                latent_pose,
+                self.layout.face_ids(),
+                weight=float(getattr(weights, "face_accel", 0.0)),
+            )
+        expr_accel_term = latent_pose.new_zeros((latent_pose.shape[0],))
+        if expression is not None:
+            expr_accel_term = _accel_term(
+                expression,
+                weight=float(getattr(weights, "expr_accel", 0.0)),
+            )
 
         terms = {
             "data": data_term,
@@ -329,12 +342,23 @@ class StageIISequenceEvaluator(torch.nn.Module):
             "accelP": pose_accel_term,
             "accelB": body_accel_term,
             "accelH": hand_accel_term,
+            "accelF": face_accel_term,
+            "accelE": expr_accel_term,
         }
 
         delta_pose_weight = float(getattr(weights, "delta_pose", 0.0))
         if delta_pose_weight != 0.0:
             latent_pose_reference = _coerce_sequence_reference(latent_pose_reference, latent_pose)
             terms["deltaP"] = torch.sum(((latent_pose - latent_pose_reference) * delta_pose_weight) ** 2, dim=1)
+
+        delta_face_weight = float(getattr(weights, "delta_face", 0.0))
+        if delta_face_weight != 0.0 and self.optimize_face and self.layout.jaw_slice is not None:
+            latent_pose_reference = _coerce_sequence_reference(latent_pose_reference, latent_pose)
+            face_ids = self.layout.face_ids()
+            terms["deltaF"] = torch.sum(
+                ((latent_pose[:, face_ids] - latent_pose_reference[:, face_ids]) * delta_face_weight) ** 2,
+                dim=1,
+            )
 
         delta_trans_weight = float(getattr(weights, "delta_trans", 0.0))
         if delta_trans_weight != 0.0:

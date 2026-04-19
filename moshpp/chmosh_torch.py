@@ -925,7 +925,10 @@ def _runtime_sequence_fit_weights(cfg, runtime, *, avg_visible_count, marker_cou
         pose_accel=float(_runtime_get(runtime, "sequence_pose_accel", 0.0)),
         body_accel=float(_runtime_get(runtime, "sequence_body_accel", 0.0)),
         hand_accel=float(_runtime_get(runtime, "sequence_hand_accel", 0.0)),
+        face_accel=float(_runtime_get(runtime, "sequence_face_accel", 0.0)),
+        expr_accel=float(_runtime_get(runtime, "sequence_expr_accel", 0.0)),
         delta_pose=float(_runtime_get(runtime, "sequence_delta_pose", 0.0)),
+        delta_face=float(_runtime_get(runtime, "sequence_delta_face", 0.0)),
         delta_trans=float(_runtime_get(runtime, "sequence_delta_trans", 0.0)),
         delta_expr=float(_runtime_get(runtime, "sequence_delta_expr", 0.0)),
     )

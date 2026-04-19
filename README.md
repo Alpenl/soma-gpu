@@ -98,7 +98,7 @@ python export_stageii_artifacts.py \
   --input-pkl ROOT/mosh_results_tracklet/[session]/[subject]/[seq]_stageii.pkl \
   --support-base-dir support_files
 ````
-此时脚本会优先从 stageii pickle 内嵌的 `stageii_debug_details.cfg.surface_model.fname` 解析模型路径；若该路径来自旧机器，则会优先回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`。如需强制指定单一模型，仍可显式传 `--model-path`。
+此时脚本会优先从 stageii pickle 内嵌的 `stageii_debug_details.cfg.surface_model.fname` 解析模型路径；若该路径来自旧机器，则会优先回退到当前 `support_files/[surface_model.type]/[gender]/model.npz|model.pkl`。preview MP4 现在默认使用 `subject-frontal` 机位，会根据人物 root orientation 自动渲染出人物正面；如需强制指定单一模型，仍可显式传 `--model-path`。
 
 如果当前目标是出最终交付视频，而不是快速 smoke preview，可直接在同一个入口上开启高质量渲染参数：
 ````
@@ -124,6 +124,8 @@ python render_video.py \
   --ffmpeg-preset slow \
   --force
 ````
+`render_video.py` 也默认使用 `subject-frontal`，会根据 stageii 里的 root orientation 解出人物正面；如果只想看世界坐标前视，可显式传 `--camera-preset frontal`，如果还需要完全手工控制机位，则继续使用 `--camera-x/--camera-y/--camera-z` 等覆盖参数。
+
 补充说明见 [docs/高质量mcp到mp4导出.md](docs/高质量mcp到mp4导出.md)。
 
 若想递归扫描整个 session / 目录下的现有 stageii 结果并批量补导出，可运行：

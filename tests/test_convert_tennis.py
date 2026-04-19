@@ -133,6 +133,7 @@ def test_convert_tennis_exports_matching_stageii_artifacts_after_mosh(monkeypatc
     assert export_calls[0]["width"] == 160
     assert export_calls[0]["height"] == 120
     assert export_calls[0]["arch"] == "cpu"
+    assert export_calls[0]["camera_preset"] == "subject-frontal"
 
 
 def test_convert_tennis_auto_detects_mcp_inputs_by_default(monkeypatch, tmp_path):
