@@ -212,11 +212,27 @@ def _normalized_path(path):
     return Path(path).expanduser().resolve(strict=False)
 
 
-def _validate_mesh_reference_path(*, sample_path, mesh_reference_path):
-    if mesh_reference_path is None:
+def _validate_distinct_reference_path(*, sample_path, reference_path, reference_label):
+    if reference_path is None:
         return
-    if _normalized_path(sample_path) == _normalized_path(mesh_reference_path):
-        raise ValueError(f"mesh_reference_path resolves to sample_path: {sample_path}")
+    if _normalized_path(sample_path) == _normalized_path(reference_path):
+        raise ValueError(f"{reference_label} resolves to sample_path: {sample_path}")
+
+
+def _validate_mesh_reference_path(*, sample_path, mesh_reference_path):
+    _validate_distinct_reference_path(
+        sample_path=sample_path,
+        reference_path=mesh_reference_path,
+        reference_label="mesh_reference_path",
+    )
+
+
+def _validate_stageii_reference_path(*, sample_path, stageii_reference_path):
+    _validate_distinct_reference_path(
+        sample_path=sample_path,
+        reference_path=stageii_reference_path,
+        reference_label="stageii_reference_path",
+    )
 
 
 def validate_benchmark_output_path(output_path, *, protected_paths):
@@ -1450,9 +1466,11 @@ def run_public_stageii_benchmark(
     mesh_chunk_size=None,
     mesh_chunk_overlap=None,
     lean_benchmark=False,
+    stageii_reference_path=None,
 ):
     sample_path = Path(sample_path)
     _validate_mesh_reference_path(sample_path=sample_path, mesh_reference_path=mesh_reference_path)
+    _validate_stageii_reference_path(sample_path=sample_path, stageii_reference_path=stageii_reference_path)
     if warmup_runs < 0:
         raise ValueError("warmup_runs must be >= 0")
     if measured_runs <= 0:
@@ -1516,8 +1534,9 @@ def run_public_stageii_benchmark(
     quality_summary["mesh_compare"] = None
     reference_stageii_elapsed_s = None
     reference_stageii_elapsed_delta_s = None
-    if mesh_reference_path is not None:
-        reference_sample = _normalize_reference_stageii_sample(mesh_reference_path)
+    reference_stageii_path = stageii_reference_path or mesh_reference_path
+    if reference_stageii_path is not None:
+        reference_sample = _normalize_reference_stageii_sample(reference_stageii_path)
         reference_quality = _summarize_reference_stageii_quality(reference_sample)
         quality_summary["reference_stageii_quality"] = reference_quality
         quality_summary["reference_stageii_delta"] = _summarize_reference_stageii_delta(
@@ -1525,17 +1544,18 @@ def run_public_stageii_benchmark(
             reference_quality,
         )
         quality_summary["reference_stageii_chunk_seam_hotspots"] = _summarize_reference_stageii_chunk_seam_hotspots(
-            mesh_reference_path,
+            reference_stageii_path,
             sample_path,
         )
         quality_summary["reference_stageii_pose_window_hotspots"] = _summarize_reference_stageii_pose_window_hotspots(
-            mesh_reference_path,
+            reference_stageii_path,
             sample_path,
         )
         if reference_sample is not None:
             reference_stageii_elapsed_s = reference_sample.stageii_elapsed_s
             if baseline.stageii_elapsed_s is not None and reference_stageii_elapsed_s is not None:
                 reference_stageii_elapsed_delta_s = baseline.stageii_elapsed_s - reference_stageii_elapsed_s
+    if mesh_reference_path is not None:
         quality_summary["mesh_compare"] = _summarize_mesh_compare(
             sample_path,
             reference_path=mesh_reference_path,

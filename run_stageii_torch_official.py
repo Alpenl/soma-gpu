@@ -166,6 +166,14 @@ def build_parser():
         ),
     )
     parser.add_argument(
+        "--stageii-reference",
+        default=None,
+        help=(
+            "Optional stageii.pkl quality reference passed through to benchmark summaries without "
+            "changing mesh-space comparison inputs."
+        ),
+    )
+    parser.add_argument(
         "--mesh-support-base-dir",
         default=None,
         help="Optional support_files root used by mesh export/comparison; defaults to --support-base-dir.",
@@ -295,6 +303,8 @@ def _validate_mesh_cli_args(parser, args):
         parser.error("--mesh-reference requires benchmark to be enabled")
     if args.mesh_reference_output_suffix is not None and args.skip_benchmark:
         parser.error("--mesh-reference-output-suffix requires benchmark to be enabled")
+    if args.stageii_reference is not None and args.skip_benchmark:
+        parser.error("--stageii-reference requires benchmark to be enabled")
     if args.warmup_runs < 0:
         parser.error("--warmup-runs must be >= 0")
     if args.measured_runs <= 0:
@@ -371,6 +381,16 @@ def _validate_mesh_reference_path(parser, *, stageii_path, mesh_reference_path):
         )
 
 
+def _validate_stageii_reference_path(parser, *, stageii_path, stageii_reference_path):
+    if stageii_reference_path is None:
+        return
+    if _normalized_path(stageii_reference_path) == _normalized_path(stageii_path):
+        parser.error(
+            "stageii reference resolves to the current stageii output; "
+            "pass a distinct CPU or baseline stageii.pkl reference"
+        )
+
+
 def _validate_mesh_reference_export_collision(
     parser,
     *,
@@ -396,11 +416,13 @@ def _validate_mesh_reference_export_collision(
 def _preflight_planned_output_contracts(parser, args):
     planned_stageii_path = _planned_stageii_output_path(parser, args)
     mesh_reference_path = None
+    stageii_reference_path = None
 
     if not args.skip_benchmark:
         mesh_reference_path = _resolve_mesh_reference_path(parser, args)
+        stageii_reference_path = args.stageii_reference
     if planned_stageii_path is None:
-        return mesh_reference_path
+        return mesh_reference_path, stageii_reference_path
 
     if not args.skip_benchmark:
         benchmark_output_path = _resolve_benchmark_output_path(
@@ -422,6 +444,7 @@ def _preflight_planned_output_contracts(parser, args):
             benchmark_output_path,
             stageii_path=planned_stageii_path,
             mesh_reference_path=mesh_reference_path,
+            stageii_reference_path=stageii_reference_path,
             mesh_obj_path=mesh_obj_path,
             mesh_pc2_path=mesh_pc2_path,
         )
@@ -447,16 +470,18 @@ def _preflight_planned_output_contracts(parser, args):
             mesh_pc2_path=pc2_out,
         )
 
-    if mesh_reference_path is None:
-        return None
-
     if planned_stageii_path is not None:
         _validate_mesh_reference_path(
             parser,
             stageii_path=planned_stageii_path,
             mesh_reference_path=mesh_reference_path,
         )
-    return mesh_reference_path
+        _validate_stageii_reference_path(
+            parser,
+            stageii_path=planned_stageii_path,
+            stageii_reference_path=stageii_reference_path,
+        )
+    return mesh_reference_path, stageii_reference_path
 
 
 def _mesh_support_base_dir(args):
@@ -518,6 +543,7 @@ def _validate_benchmark_output_collision(
     *,
     stageii_path,
     mesh_reference_path=None,
+    stageii_reference_path=None,
     mesh_obj_path=None,
     mesh_pc2_path=None,
 ):
@@ -526,6 +552,7 @@ def _validate_benchmark_output_collision(
         protected_paths=(
             ("current stageii output", stageii_path),
             ("mesh reference", mesh_reference_path),
+            ("stageii reference", stageii_reference_path),
             ("mesh export obj", mesh_obj_path),
             ("mesh export pc2", mesh_pc2_path),
         ),
@@ -578,7 +605,7 @@ def run(argv=None, *, emit_json=True):
     _validate_real_mcp_corrected_baseline_anchor(parser, args)
     _validate_mesh_reference_output_suffix(parser, args)
     try:
-        mesh_reference_path = _preflight_planned_output_contracts(parser, args)
+        mesh_reference_path, stageii_reference_path = _preflight_planned_output_contracts(parser, args)
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -612,6 +639,11 @@ def run(argv=None, *, emit_json=True):
                 stageii_path=stageii_path,
                 mesh_reference_path=mesh_reference_path,
             )
+            _validate_stageii_reference_path(
+                parser,
+                stageii_path=stageii_path,
+                stageii_reference_path=stageii_reference_path,
+            )
             benchmark_output_path = _resolve_benchmark_output_path(
                 stageii_path,
                 output_path=args.benchmark_output,
@@ -630,18 +662,24 @@ def run(argv=None, *, emit_json=True):
                 benchmark_output_path,
                 stageii_path=stageii_path,
                 mesh_reference_path=mesh_reference_path,
+                stageii_reference_path=stageii_reference_path,
                 mesh_obj_path=mesh_obj_path,
                 mesh_pc2_path=mesh_pc2_path,
             )
+            benchmark_kwargs = {
+                "warmup_runs": args.warmup_runs,
+                "measured_runs": args.measured_runs,
+                "mesh_reference_path": mesh_reference_path,
+                "mesh_support_base_dir": _mesh_support_base_dir(args),
+                "mesh_chunk_size": args.mesh_chunk_size,
+                "mesh_chunk_overlap": args.mesh_chunk_overlap,
+                "lean_benchmark": args.lean_benchmark,
+            }
+            if stageii_reference_path is not None:
+                benchmark_kwargs["stageii_reference_path"] = stageii_reference_path
             report = run_public_stageii_benchmark(
                 str(stageii_path),
-                warmup_runs=args.warmup_runs,
-                measured_runs=args.measured_runs,
-                mesh_reference_path=mesh_reference_path,
-                mesh_support_base_dir=_mesh_support_base_dir(args),
-                mesh_chunk_size=args.mesh_chunk_size,
-                mesh_chunk_overlap=args.mesh_chunk_overlap,
-                lean_benchmark=args.lean_benchmark,
+                **benchmark_kwargs,
             )
             report = write_benchmark_report(report, str(benchmark_output_path))
             report_path = None

@@ -50,6 +50,14 @@ def build_parser():
         help="Optional baseline stageii.pkl or .pc2/.pc16 path used to append mesh-space comparison summaries.",
     )
     parser.add_argument(
+        "--stageii-reference",
+        default=None,
+        help=(
+            "Optional stageii.pkl quality reference used for relative hand/joint and hotspot summaries "
+            "without changing mesh-space comparison inputs."
+        ),
+    )
+    parser.add_argument(
         "--mesh-support-base-dir",
         default=None,
         help="support_files root used when --mesh-reference stageii/pc2 inputs need relocated model paths.",
@@ -129,17 +137,23 @@ def main(argv=None):
             protected_paths=(
                 ("benchmark input", args.input),
                 ("mesh reference", args.mesh_reference),
+                ("stageii reference", args.stageii_reference),
             ),
         )
+        benchmark_kwargs = {
+            "warmup_runs": args.warmup_runs,
+            "measured_runs": args.measured_runs,
+            "mesh_reference_path": args.mesh_reference,
+            "mesh_support_base_dir": _mesh_support_base_dir(args),
+            "mesh_chunk_size": args.mesh_chunk_size,
+            "mesh_chunk_overlap": args.mesh_chunk_overlap,
+            "lean_benchmark": args.lean_benchmark,
+        }
+        if args.stageii_reference is not None:
+            benchmark_kwargs["stageii_reference_path"] = args.stageii_reference
         report = run_public_stageii_benchmark(
             args.input,
-            warmup_runs=args.warmup_runs,
-            measured_runs=args.measured_runs,
-            mesh_reference_path=args.mesh_reference,
-            mesh_support_base_dir=_mesh_support_base_dir(args),
-            mesh_chunk_size=args.mesh_chunk_size,
-            mesh_chunk_overlap=args.mesh_chunk_overlap,
-            lean_benchmark=args.lean_benchmark,
+            **benchmark_kwargs,
         )
         payload = write_benchmark_report(report, output_path)
         report_path = None

@@ -650,6 +650,78 @@ def test_run_public_stageii_benchmark_includes_reference_stageii_quality_for_sta
     assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.25}}
 
 
+def test_run_public_stageii_benchmark_prefers_explicit_stageii_reference_over_mesh_reference(
+    tmp_path, monkeypatch
+):
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    mesh_reference_path = tmp_path / "baseline_stageii.pkl"
+    stageii_reference_path = tmp_path / "cpu_stageii.pkl"
+    _write_synthetic_stageii_sample(
+        candidate_path,
+        residual_offset=1.0,
+        stageii_elapsed_time=12.5,
+    )
+    _write_synthetic_stageii_sample(
+        mesh_reference_path,
+        residual_offset=2.0,
+        stageii_elapsed_time=10.0,
+    )
+    _write_synthetic_stageii_sample(
+        stageii_reference_path,
+        residual_offset=3.0,
+        stageii_elapsed_time=8.0,
+    )
+
+    captured = {}
+
+    def fake_summarize_mesh_compare(sample_path, *, reference_path, support_base_dir, chunk_size, chunk_overlap):
+        captured["mesh_compare_call"] = {
+            "sample_path": sample_path,
+            "reference_path": reference_path,
+            "support_base_dir": support_base_dir,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+        }
+        return {"frame_delta_l2": {"mean": 0.25}}
+
+    monkeypatch.setattr(
+        stageii_benchmark,
+        "_summarize_mesh_compare",
+        fake_summarize_mesh_compare,
+        raising=False,
+    )
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    report = run_public_stageii_benchmark(
+        candidate_path,
+        warmup_runs=0,
+        measured_runs=1,
+        mesh_reference_path=mesh_reference_path,
+        mesh_support_base_dir="/tmp/support_files",
+        stageii_reference_path=stageii_reference_path,
+    )
+
+    assert report["quality"]["reference_stageii_quality"]["marker_residual_l2"]["mean"] == pytest.approx(3.0)
+    assert report["quality"]["reference_stageii_delta"]["marker_residual_l2"] == {
+        "mean": pytest.approx(-2.0),
+        "p90": pytest.approx(-2.0),
+        "max": pytest.approx(-2.0),
+    }
+    assert report["speed"]["reference_stageii_elapsed_s"] == pytest.approx(8.0)
+    assert report["speed"]["reference_stageii_elapsed_delta_s"] == pytest.approx(4.5)
+    assert captured["mesh_compare_call"] == {
+        "sample_path": candidate_path,
+        "reference_path": mesh_reference_path,
+        "support_base_dir": "/tmp/support_files",
+        "chunk_size": None,
+        "chunk_overlap": None,
+    }
+    assert report["quality"]["mesh_compare"] == {"frame_delta_l2": {"mean": 0.25}}
+
+
 def test_run_public_stageii_benchmark_includes_reference_stageii_chunk_seam_hotspots(
     tmp_path, monkeypatch
 ):
@@ -868,6 +940,26 @@ def test_run_public_stageii_benchmark_rejects_mesh_reference_that_matches_input_
         )
 
 
+def test_run_public_stageii_benchmark_rejects_stageii_reference_that_matches_input_path(
+    tmp_path, monkeypatch
+):
+    candidate_path = tmp_path / "candidate_stageii.pkl"
+    _write_synthetic_stageii_sample(candidate_path, residual_offset=1.0)
+
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_preview_vertex_decode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mesh_export", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_mp4_render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stageii_benchmark, "_benchmark_artifact_bundle_export", lambda *args, **kwargs: None)
+
+    with pytest.raises(ValueError, match="stageii_reference_path resolves to sample_path"):
+        run_public_stageii_benchmark(
+            candidate_path,
+            warmup_runs=0,
+            measured_runs=1,
+            stageii_reference_path=candidate_path,
+        )
+
+
 def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monkeypatch, capsys):
     captured = {}
 
@@ -932,6 +1024,84 @@ def test_benchmark_stageii_public_main_passes_optional_mesh_reference_args(monke
         "mesh_chunk_size": 64,
         "mesh_chunk_overlap": 8,
         "lean_benchmark": False,
+        "report_path": "candidate_benchmark.json",
+    }
+    output = json.loads(capsys.readouterr().out)
+    assert output["sample"]["path"] == "candidate_stageii.pkl"
+
+
+def test_benchmark_stageii_public_main_passes_optional_stageii_reference_arg(monkeypatch, capsys):
+    captured = {}
+
+    def fake_run_public_stageii_benchmark(
+        sample_path,
+        *,
+        warmup_runs,
+        measured_runs,
+        mesh_reference_path,
+        mesh_support_base_dir,
+        mesh_chunk_size,
+        mesh_chunk_overlap,
+        lean_benchmark,
+        stageii_reference_path=None,
+    ):
+        captured.update(
+            {
+                "sample_path": sample_path,
+                "warmup_runs": warmup_runs,
+                "measured_runs": measured_runs,
+                "mesh_reference_path": mesh_reference_path,
+                "mesh_support_base_dir": mesh_support_base_dir,
+                "mesh_chunk_size": mesh_chunk_size,
+                "mesh_chunk_overlap": mesh_chunk_overlap,
+                "lean_benchmark": lean_benchmark,
+                "stageii_reference_path": stageii_reference_path,
+            }
+        )
+        return {
+            "sample": {"path": sample_path},
+            "quality": {"mesh_compare": None},
+            "artifact": {"report_path": None},
+        }
+
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "run_public_stageii_benchmark",
+        fake_run_public_stageii_benchmark,
+    )
+    monkeypatch.setattr(
+        benchmark_stageii_public,
+        "write_benchmark_report",
+        lambda report, output_path: captured.update({"report_path": str(output_path)})
+        or {
+            **report,
+            "artifact": {"report_path": str(output_path)},
+        },
+    )
+
+    benchmark_stageii_public.main(
+        [
+            "--input",
+            "candidate_stageii.pkl",
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+            "--stageii-reference",
+            "cpu_stageii.pkl",
+        ]
+    )
+
+    assert captured == {
+        "sample_path": "candidate_stageii.pkl",
+        "warmup_runs": 0,
+        "measured_runs": 1,
+        "mesh_reference_path": None,
+        "mesh_support_base_dir": None,
+        "mesh_chunk_size": None,
+        "mesh_chunk_overlap": None,
+        "lean_benchmark": False,
+        "stageii_reference_path": "cpu_stageii.pkl",
         "report_path": "candidate_benchmark.json",
     }
     output = json.loads(capsys.readouterr().out)

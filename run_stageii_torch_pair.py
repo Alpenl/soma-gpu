@@ -101,6 +101,14 @@ def build_parser():
         help="Optional JSON output path for the candidate benchmark report.",
     )
     parser.add_argument(
+        "--stageii-reference",
+        default=None,
+        help=(
+            "Optional stageii.pkl quality reference forwarded to benchmarked runs. "
+            "Use this for CPU MoSh++ quality-floor comparisons while keeping mesh compare on the baseline."
+        ),
+    )
+    parser.add_argument(
         "--warmup-runs",
         type=int,
         default=1,
@@ -172,6 +180,11 @@ def _append_benchmark_args(runner_args, args, *, benchmark_output=None, expected
         runner_args.append("--lean-benchmark")
 
 
+def _append_stageii_reference_args(runner_args, args):
+    if args.stageii_reference is not None:
+        runner_args.extend(["--stageii-reference", args.stageii_reference])
+
+
 def _append_mesh_args(
     runner_args,
     args,
@@ -230,6 +243,7 @@ def _build_baseline_runner_args(
             benchmark_output=args.baseline_benchmark_output,
             expected_benchmark_output=expected_benchmark_output,
         )
+        _append_stageii_reference_args(runner_args, args)
     return runner_args
 
 
@@ -263,6 +277,7 @@ def _build_candidate_runner_args(
         benchmark_output=args.candidate_benchmark_output,
         expected_benchmark_output=expected_benchmark_output,
     )
+    _append_stageii_reference_args(runner_args, args)
     if mesh_reference_path is not None:
         runner_args.extend(["--mesh-reference", mesh_reference_path])
     else:

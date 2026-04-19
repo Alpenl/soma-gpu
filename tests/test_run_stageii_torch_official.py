@@ -136,6 +136,76 @@ def test_run_stageii_torch_official_main_builds_cfg_and_wires_benchmark(tmp_path
     assert payload["benchmark"]["artifact"]["report_path"] == str(benchmark_output)
 
 
+def test_run_stageii_torch_official_main_forwards_stageii_reference_to_benchmark(
+    tmp_path, monkeypatch
+):
+    stageii_path = tmp_path / "candidate_stageii.pkl"
+    captured = {}
+
+    def fake_prepare_cfg(**kwargs):
+        return SimpleNamespace(dirs=SimpleNamespace(stageii_fname=str(stageii_path)))
+
+    def fake_run_moshpp_once(cfg):
+        stageii_path.write_bytes(b"stageii")
+
+    def fake_run_public_stageii_benchmark(
+        sample_path,
+        *,
+        warmup_runs,
+        measured_runs,
+        mesh_reference_path,
+        mesh_support_base_dir,
+        mesh_chunk_size,
+        mesh_chunk_overlap,
+        lean_benchmark,
+        stageii_reference_path=None,
+    ):
+        captured["benchmark_call"] = {
+            "sample_path": sample_path,
+            "warmup_runs": warmup_runs,
+            "measured_runs": measured_runs,
+            "mesh_reference_path": mesh_reference_path,
+            "mesh_support_base_dir": mesh_support_base_dir,
+            "mesh_chunk_size": mesh_chunk_size,
+            "mesh_chunk_overlap": mesh_chunk_overlap,
+            "lean_benchmark": lean_benchmark,
+            "stageii_reference_path": stageii_reference_path,
+        }
+        return {"sample": {"path": str(sample_path)}, "quality": {"mesh_compare": None}}
+
+    monkeypatch.setattr(run_stageii_torch_official, "MoSh", SimpleNamespace(prepare_cfg=fake_prepare_cfg))
+    monkeypatch.setattr(run_stageii_torch_official, "run_moshpp_once", fake_run_moshpp_once)
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_public_stageii_benchmark",
+        fake_run_public_stageii_benchmark,
+    )
+
+    run_stageii_torch_official.main(
+        _required_official_runner_args(tmp_path)
+        + [
+            "--warmup-runs",
+            "0",
+            "--measured-runs",
+            "1",
+            "--stageii-reference",
+            str(tmp_path / "cpu_stageii.pkl"),
+        ]
+    )
+
+    assert captured["benchmark_call"] == {
+        "sample_path": str(stageii_path),
+        "warmup_runs": 0,
+        "measured_runs": 1,
+        "mesh_reference_path": None,
+        "mesh_support_base_dir": str(tmp_path / "support_files"),
+        "mesh_chunk_size": None,
+        "mesh_chunk_overlap": None,
+        "lean_benchmark": False,
+        "stageii_reference_path": str(tmp_path / "cpu_stageii.pkl"),
+    }
+
+
 def test_run_stageii_torch_official_main_writes_default_benchmark_report_next_to_stageii(
     tmp_path, monkeypatch
 ):
@@ -2117,6 +2187,33 @@ def test_run_stageii_torch_official_main_rejects_mesh_reference_when_skip_benchm
         )
 
     assert "--mesh-reference requires benchmark to be enabled" in capsys.readouterr().err
+
+
+def test_run_stageii_torch_official_main_rejects_stageii_reference_when_skip_benchmark(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "MoSh",
+        SimpleNamespace(prepare_cfg=lambda **kwargs: pytest.fail("prepare_cfg should not run")),
+    )
+    monkeypatch.setattr(
+        run_stageii_torch_official,
+        "run_moshpp_once",
+        lambda cfg: pytest.fail("run_moshpp_once should not run"),
+    )
+
+    with pytest.raises(SystemExit):
+        run_stageii_torch_official.main(
+            _required_official_runner_args(tmp_path)
+            + [
+                "--skip-benchmark",
+                "--stageii-reference",
+                str(tmp_path / "cpu_stageii.pkl"),
+            ]
+        )
+
+    assert "--stageii-reference requires benchmark to be enabled" in capsys.readouterr().err
 
 
 def test_run_stageii_torch_official_main_rejects_expected_mesh_paths_without_export_mesh(
