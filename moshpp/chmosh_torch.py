@@ -1387,6 +1387,10 @@ def mosh_stageii_torch(
         runtime,
         "sequence_overlap_transl_seed_from_previous_chunk_indices",
     )
+    sequence_seed_no_cache_chunk_indices = _runtime_optional_nonnegative_int_set(
+        runtime,
+        "sequence_seed_no_cache_chunk_indices",
+    )
     sequence_probe_chunk_indices = _runtime_optional_nonnegative_int_set(runtime, "sequence_probe_chunk_indices")
     sequence_chunk_keep_start_override_indices = _runtime_optional_nonnegative_int_set(
         runtime,
@@ -1622,7 +1626,15 @@ def mosh_stageii_torch(
             chunk_overlap_count = 0 if chunk_idx == 0 else min(sequence_chunk_overlap, row_end - row_start)
             chunk_length = row_end - row_start
 
-            if sequence_seed_cache is None:
+            seed_cache_available = sequence_seed_cache is not None
+            seed_cache_disabled_for_chunk = (
+                seed_cache_available
+                and sequence_seed_no_cache_chunk_indices is not None
+                and chunk_idx in sequence_seed_no_cache_chunk_indices
+            )
+            seed_cache_used = seed_cache_available and not seed_cache_disabled_for_chunk
+
+            if not seed_cache_used:
                 chunk_latent_init = []
                 chunk_transl_init = []
                 chunk_expression_init = [] if optimize_face else None
@@ -1931,6 +1943,9 @@ def mosh_stageii_torch(
                 "default_keep_start": 0,
                 "selected_keep_start": 0,
                 "trim_count": 0,
+                "seed_cache_available": seed_cache_available,
+                "seed_cache_disabled_for_chunk": seed_cache_disabled_for_chunk,
+                "seed_cache_used": seed_cache_used,
                 "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
                 "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
                 "local_pose_reference_from_previous": local_pose_reference_applied,
@@ -1969,6 +1984,9 @@ def mosh_stageii_torch(
                         "row_end": int(row_end),
                         "overlap_count": int(overlap_count),
                         "trim_count": int(overlap_count - keep_start),
+                        "seed_cache_available": seed_cache_available,
+                        "seed_cache_disabled_for_chunk": seed_cache_disabled_for_chunk,
+                        "seed_cache_used": seed_cache_used,
                         "overlap_pose_seeded_from_previous": overlap_pose_seeded_from_previous,
                         "overlap_transl_seeded_from_previous": overlap_transl_seeded_from_previous,
                         "local_pose_reference_from_previous": local_pose_reference_applied,

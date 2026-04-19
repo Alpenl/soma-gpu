@@ -1266,6 +1266,175 @@ def test_mosh_stageii_torch_sequence_seed_chunk_init_reuses_cache_slices(tmp_pat
         assert torch.allclose(got, want)
 
 
+def test_mosh_stageii_torch_sequence_seed_chunk_init_can_skip_cache_for_selected_chunks(
+    tmp_path,
+    monkeypatch,
+):
+    module = _load_chmosh_torch_module()
+
+    markers_latent = torch.tensor(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    ).numpy()
+    latent_labels = ["A", "B", "C", "D"]
+    marker_offsets = torch.tensor(
+        [
+            [0.10, 0.00, 0.00],
+            [0.25, -0.15, 0.35],
+            [0.05, 0.20, -0.10],
+            [-0.15, 0.10, 0.05],
+        ],
+        dtype=torch.float32,
+    )
+    markers = markers_latent[None, :, :] + marker_offsets[:, None, :].numpy()
+    mocap_fname = tmp_path / "synthetic_sequence_seed_skip_chunk.pkl"
+    with mocap_fname.open("wb") as handle:
+        pickle.dump({"markers": markers, "labels": latent_labels, "frame_rate": 120.0}, handle)
+
+    cfg = _ns(
+        {
+            "mocap": {
+                "unit": "m",
+                "rotate": None,
+                "subject_name": None,
+                "multi_subject": False,
+                "start_fidx": 0,
+                "end_fidx": -1,
+                "ds_rate": 1,
+            },
+            "surface_model": {
+                "type": "smplx",
+                "num_betas": 10,
+                "dof_per_hand": 24,
+                "num_expressions": 10,
+                "use_hands_mean": True,
+                "betas_expr_start_id": 300,
+            },
+            "moshpp": {
+                "optimize_fingers": False,
+                "optimize_face": False,
+                "optimize_toes": False,
+                "optimize_dynamics": False,
+                "verbosity": 0,
+            },
+            "opt_settings": {
+                "maxiter": 0,
+                "weights": {
+                    "stageii_wt_data": 1.0,
+                    "stageii_wt_poseB": 0.0,
+                    "stageii_wt_poseH": 0.0,
+                    "stageii_wt_poseF": 0.0,
+                    "stageii_wt_expr": 0.0,
+                    "stageii_wt_dmpl": 0.0,
+                    "stageii_wt_velo": 0.0,
+                    "stageii_wt_annealing": 0.0,
+                },
+            },
+            "runtime": {
+                "backend": "torch",
+                "device": "cpu",
+                "sequence_chunk_size": 2,
+                "sequence_chunk_overlap": 1,
+                "sequence_optimizer": "adam",
+                "sequence_seed_refine_iters": 1,
+                "sequence_seed_no_cache_chunk_indices": "0",
+            },
+        }
+    )
+
+    initial_translation_calls = {"value": 0}
+    frame_call_idx = {"value": 0}
+    recorded = {"sequence_kwargs": []}
+
+    def fake_initial_translation(markers_obs, markers_latent, visible_mask=None):
+        call_idx = initial_translation_calls["value"]
+        initial_translation_calls["value"] += 1
+        value = 100.0 + float(call_idx)
+        return torch.full((1, 3), value, dtype=torch.float32)
+
+    def fake_fit_stageii_frame_torch(**kwargs):
+        call_idx = frame_call_idx["value"]
+        frame_call_idx["value"] += 1
+        markers_obs = torch.as_tensor(kwargs["marker_observations"], dtype=torch.float32)
+        latent_pose = torch.zeros(1, kwargs["layout"].latent_dim, dtype=torch.float32)
+        latent_pose[0, 0] = float(10 + call_idx)
+        transl = torch.full((1, 3), 20.0 + float(call_idx), dtype=torch.float32)
+        return SimpleNamespace(
+            latent_pose=latent_pose,
+            fullpose=torch.zeros(1, 165, dtype=torch.float32),
+            transl=transl,
+            expression=None,
+            predicted_markers=markers_obs.clone(),
+            vertices=markers_obs.unsqueeze(0).clone(),
+            joints=torch.zeros(1, 3, 3, dtype=torch.float32),
+            loss_terms={"data": 0.0, "poseB": 0.0, "poseH": 0.0, "poseF": 0.0, "expr": 0.0, "velo": 0.0},
+        )
+
+    def fake_fit_stageii_sequence_torch(**kwargs):
+        markers_obs = torch.as_tensor(kwargs["marker_observations"], dtype=torch.float32)
+        latent_pose_init = torch.as_tensor(kwargs["latent_pose_init"], dtype=torch.float32)
+        transl_init = torch.as_tensor(kwargs["transl_init"], dtype=torch.float32)
+        recorded["sequence_kwargs"].append(
+            {
+                "latent_pose_init": latent_pose_init.clone(),
+                "transl_init": transl_init.clone(),
+            }
+        )
+        return SimpleNamespace(
+            latent_pose=latent_pose_init,
+            fullpose=torch.zeros(markers_obs.shape[0], 165, dtype=torch.float32),
+            transl=transl_init,
+            expression=None,
+            predicted_markers=markers_obs.clone(),
+            vertices=markers_obs.clone(),
+            joints=torch.zeros(markers_obs.shape[0], 3, 3, dtype=torch.float32),
+            loss_terms={
+                "data": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseB": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseH": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "poseF": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "expr": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "velo": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+                "accel": torch.zeros(markers_obs.shape[0], dtype=torch.float32),
+            },
+        )
+
+    monkeypatch.setattr(module, "_initial_translation", fake_initial_translation)
+    monkeypatch.setattr(module, "fit_stageii_frame_torch", fake_fit_stageii_frame_torch)
+    monkeypatch.setattr(module, "fit_stageii_sequence_torch", fake_fit_stageii_sequence_torch, raising=False)
+
+    stageii_data = module.mosh_stageii_torch(
+        mocap_fname=str(mocap_fname),
+        cfg=cfg,
+        markers_latent=markers_latent,
+        latent_labels=latent_labels,
+        betas=torch.zeros(10).numpy(),
+        marker_meta={"marker_type_mask": {}, "marker_type": {}, "surface_model_type": "smplx"},
+        body_model_factory=lambda: TranslOnlyBodyModel(torch.as_tensor(markers_latent, dtype=torch.float32)),
+        pose_prior=ZeroPosePrior(63),
+        device="cpu",
+    )
+
+    assert stageii_data["fullpose"].shape == (4, 165)
+    assert len(recorded["sequence_kwargs"]) == 3
+    assert recorded["sequence_kwargs"][0]["latent_pose_init"][:, 0].tolist() == pytest.approx([0.0, 0.0])
+    assert recorded["sequence_kwargs"][0]["transl_init"][:, 0].tolist() == pytest.approx([101.0, 102.0])
+    assert recorded["sequence_kwargs"][1]["latent_pose_init"][:, 0].tolist() == pytest.approx([11.0, 12.0])
+    assert recorded["sequence_kwargs"][1]["transl_init"][:, 0].tolist() == pytest.approx([21.0, 22.0])
+    assert recorded["sequence_kwargs"][2]["latent_pose_init"][:, 0].tolist() == pytest.approx([12.0, 13.0])
+    assert recorded["sequence_kwargs"][2]["transl_init"][:, 0].tolist() == pytest.approx([22.0, 23.0])
+
+    stitch_diagnostics = stageii_data["stageii_debug_details"]["sequence_chunk_stitch_diagnostics"]
+    assert stitch_diagnostics[0]["seed_cache_used"] is False
+    assert stitch_diagnostics[1]["seed_cache_used"] is True
+    assert stitch_diagnostics[2]["seed_cache_used"] is True
+
+
 def test_mosh_stageii_torch_sequence_solver_can_reseed_only_selected_overlap_chunk_from_previous_chunk(
     tmp_path,
     monkeypatch,
