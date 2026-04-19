@@ -148,3 +148,7 @@ dmypy.json
 *.ckpt
 events.out.tfevents.*
 *_benchmark.json
+
+# Local agent/runtime state and GUI configs
+.codexpotter/
+imgui.ini
