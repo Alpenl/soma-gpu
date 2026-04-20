@@ -166,6 +166,12 @@ def test_convert_mosh_accepts_mcp_inputs_and_exports_matching_stageii_artifacts(
 
     assert len(mosh_calls) == 1
     assert mosh_calls[0]["mocap_fnames"] == [str(mocap_path)]
+    assert mosh_calls[0]["mosh_cfg"]["moshpp.optimize_fingers"] is True
+    assert mosh_calls[0]["mosh_cfg"]["moshpp.optimize_face"] is False
+    assert mosh_calls[0]["mosh_cfg"]["moshpp.stagei_frame_picker.type"] == "random"
+    assert mosh_calls[0]["mosh_cfg"]["moshpp.stagei_frame_picker.seed"] == 100
+    assert mosh_calls[0]["mosh_cfg"]["moshpp.stagei_frame_picker.num_frames"] == 12
+    assert mosh_calls[0]["mosh_cfg"]["opt_settings.maxiter"] == 100
     assert len(export_calls) == 1
     assert export_calls[0]["input_pkl"].endswith("swing_take_stageii.pkl")
     assert export_calls[0]["model_path"] == str(model_path)
@@ -173,7 +179,7 @@ def test_convert_mosh_accepts_mcp_inputs_and_exports_matching_stageii_artifacts(
     assert export_calls[0]["width"] == 160
     assert export_calls[0]["height"] == 120
     assert export_calls[0]["arch"] == "cpu"
-    assert export_calls[0]["camera_preset"] == "subject-frontal"
+    assert export_calls[0]["camera_preset"] == "fixed-front"
 
 
 def test_convert_mosh_export_relocates_model_path_under_support_base_dir(

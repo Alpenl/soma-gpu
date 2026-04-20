@@ -10,26 +10,25 @@ from types import SimpleNamespace
 import numpy as np
 
 from utils.script_utils import codec_for_video_path, list_stageii_pickles
+from workflow_defaults import (
+    CAMERA_PRESETS,
+    DEFAULT_CAMERA_PRESET,
+    DEFAULT_RENDER_NEUTRAL_FACE,
+    DEFAULT_RENDER_ZERO_EXPRESSION,
+    DEFAULT_RENDER_ZERO_JAW,
+    DEFAULT_VIDEO_ARCH,
+    DEFAULT_VIDEO_FFMPEG_CRF,
+    DEFAULT_VIDEO_FFMPEG_PRESET,
+    DEFAULT_VIDEO_FPS,
+    DEFAULT_VIDEO_HEIGHT,
+    DEFAULT_VIDEO_SUPERSAMPLE,
+    DEFAULT_VIDEO_WIDTH,
+    SUBJECT_CAMERA_DISTANCE,
+    SUBJECT_CAMERA_LOOKAT_HEIGHT,
+    SUBJECT_FRONTAL_CAMERA_PRESET,
+    WORLD_FRONTAL_CAMERA_PRESET,
+)
 
-WORLD_FRONTAL_CAMERA_PRESET = "frontal"
-SUBJECT_FRONTAL_CAMERA_PRESET = "subject-frontal"
-DEFAULT_CAMERA_PRESET = SUBJECT_FRONTAL_CAMERA_PRESET
-SUBJECT_CAMERA_DISTANCE = 3.0
-SUBJECT_CAMERA_LOOKAT_HEIGHT = 0.15
-
-CAMERA_PRESETS = {
-    WORLD_FRONTAL_CAMERA_PRESET: {
-        "camera_x": 0.0,
-        "camera_y": -3.0,
-        "camera_z": 1.0,
-        "lookat_x": 0.0,
-        "lookat_y": 0.0,
-        "lookat_z": 1.0,
-        "up_x": 0.0,
-        "up_y": 0.0,
-        "up_z": 1.0,
-    }
-}
 CAMERA_FIELDS = tuple(CAMERA_PRESETS[WORLD_FRONTAL_CAMERA_PRESET].keys())
 CAMERA_CHOICES = sorted(tuple(CAMERA_PRESETS) + (SUBJECT_FRONTAL_CAMERA_PRESET,))
 
@@ -72,36 +71,36 @@ def build_parser():
     parser.add_argument(
         "--fps",
         type=int,
-        default=30,
+        default=DEFAULT_VIDEO_FPS,
         help="Frames per second for the output videos.",
     )
     parser.add_argument(
         "--width",
         type=int,
-        default=512,
+        default=DEFAULT_VIDEO_WIDTH,
         help="Output video width.",
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=512,
+        default=DEFAULT_VIDEO_HEIGHT,
         help="Output video height.",
     )
     parser.add_argument(
         "--supersample",
         type=int,
-        default=1,
-        help="Render internally at N times the output resolution and downsample before encoding. Use 2 for final videos.",
+        default=DEFAULT_VIDEO_SUPERSAMPLE,
+        help="Render internally at N times the output resolution and downsample before encoding.",
     )
     parser.add_argument(
         "--ffmpeg-crf",
         type=int,
-        default=None,
-        help="Use ffmpeg/libx264 CRF encoding instead of cv2 VideoWriter. Try 16 for high-quality MP4.",
+        default=DEFAULT_VIDEO_FFMPEG_CRF,
+        help="Use ffmpeg/libx264 CRF encoding instead of cv2 VideoWriter.",
     )
     parser.add_argument(
         "--ffmpeg-preset",
-        default="medium",
+        default=DEFAULT_VIDEO_FFMPEG_PRESET,
         help="ffmpeg/libx264 preset used when --ffmpeg-crf is set, for example medium or slow.",
     )
     parser.add_argument(
@@ -109,10 +108,18 @@ def build_parser():
         default="ffmpeg",
         help="Path to the ffmpeg executable used when --ffmpeg-crf is set.",
     )
+    parser.set_defaults(neutral_face=DEFAULT_RENDER_NEUTRAL_FACE)
     parser.add_argument(
         "--neutral-face",
+        dest="neutral_face",
         action="store_true",
         help="Render with neutral face by zeroing jaw/eye pose and expression.",
+    )
+    parser.add_argument(
+        "--no-neutral-face",
+        dest="neutral_face",
+        action="store_false",
+        help="Keep stageii jaw/eye pose and expression when rendering.",
     )
     parser.add_argument(
         "--zero-jaw",
@@ -126,14 +133,18 @@ def build_parser():
     )
     parser.add_argument(
         "--arch",
-        default="gpu",
+        default=DEFAULT_VIDEO_ARCH,
         help="Taichi backend to use, for example gpu or cuda.",
     )
     parser.add_argument(
         "--camera-preset",
         default=DEFAULT_CAMERA_PRESET,
         choices=CAMERA_CHOICES,
-        help="Preview camera preset. subject-frontal follows the actor's facing direction and manual camera args override preset fields.",
+        help=(
+            "Preview camera preset. fixed-front matches the validated a5 delivery camera, "
+            "subject-frontal follows the actor's facing direction, and manual camera args "
+            "override preset fields."
+        ),
     )
     parser.add_argument("--camera-x", type=float, default=None, help="Camera position X.")
     parser.add_argument("--camera-y", type=float, default=None, help="Camera position Y.")
@@ -646,15 +657,15 @@ def render_vertices_to_video(
     vertices,
     faces,
     output_path,
-    fps=30,
-    width=512,
-    height=512,
-    arch="gpu",
-    camera_preset=WORLD_FRONTAL_CAMERA_PRESET,
+    fps=DEFAULT_VIDEO_FPS,
+    width=DEFAULT_VIDEO_WIDTH,
+    height=DEFAULT_VIDEO_HEIGHT,
+    arch=DEFAULT_VIDEO_ARCH,
+    camera_preset=DEFAULT_CAMERA_PRESET,
     show_progress=True,
-    supersample=1,
-    ffmpeg_crf=None,
-    ffmpeg_preset="medium",
+    supersample=DEFAULT_VIDEO_SUPERSAMPLE,
+    ffmpeg_crf=DEFAULT_VIDEO_FFMPEG_CRF,
+    ffmpeg_preset=DEFAULT_VIDEO_FFMPEG_PRESET,
     ffmpeg_path="ffmpeg",
     **camera_overrides,
 ):
@@ -727,7 +738,7 @@ def render_preview_jobs(args):
     ti.init(arch=getattr(ti, args.arch), debug=False, log_level=ti.ERROR)
 
     model = getattr(args, "model", None) or load_render_model(args.model_path)
-    supersample = max(int(getattr(args, "supersample", 1)), 1)
+    supersample = max(int(getattr(args, "supersample", DEFAULT_VIDEO_SUPERSAMPLE)), 1)
     render_width = int(args.width) * supersample
     render_height = int(args.height) * supersample
     renderer = _create_preview_renderer(
@@ -750,9 +761,9 @@ def render_preview_jobs(args):
                 pkl_path,
                 model,
                 stageii_inputs=stageii_inputs,
-                neutral_face=getattr(args, "neutral_face", False),
-                zero_jaw=getattr(args, "zero_jaw", False),
-                zero_expression=getattr(args, "zero_expression", False),
+                neutral_face=getattr(args, "neutral_face", DEFAULT_RENDER_NEUTRAL_FACE),
+                zero_jaw=getattr(args, "zero_jaw", DEFAULT_RENDER_ZERO_JAW),
+                zero_expression=getattr(args, "zero_expression", DEFAULT_RENDER_ZERO_EXPRESSION),
             )
             _write_vertices_video(
                 cv2=cv2,
@@ -767,8 +778,8 @@ def render_preview_jobs(args):
                 show_progress=show_progress,
                 render_width=render_width,
                 render_height=render_height,
-                ffmpeg_crf=getattr(args, "ffmpeg_crf", None),
-                ffmpeg_preset=getattr(args, "ffmpeg_preset", "medium"),
+                ffmpeg_crf=getattr(args, "ffmpeg_crf", DEFAULT_VIDEO_FFMPEG_CRF),
+                ffmpeg_preset=getattr(args, "ffmpeg_preset", DEFAULT_VIDEO_FFMPEG_PRESET),
                 ffmpeg_path=getattr(args, "ffmpeg_path", "ffmpeg"),
             )
     finally:
@@ -781,21 +792,21 @@ def render_stageii_preview(
     input_path,
     output_path=None,
     model_path,
-    fps=30,
-    width=512,
-    height=512,
-    arch="gpu",
+    fps=DEFAULT_VIDEO_FPS,
+    width=DEFAULT_VIDEO_WIDTH,
+    height=DEFAULT_VIDEO_HEIGHT,
+    arch=DEFAULT_VIDEO_ARCH,
     camera_preset=DEFAULT_CAMERA_PRESET,
     input_suffix="_stageii.pkl",
     video_suffix="_stageii.mp4",
     force=False,
-    supersample=1,
-    ffmpeg_crf=None,
-    ffmpeg_preset="medium",
+    supersample=DEFAULT_VIDEO_SUPERSAMPLE,
+    ffmpeg_crf=DEFAULT_VIDEO_FFMPEG_CRF,
+    ffmpeg_preset=DEFAULT_VIDEO_FFMPEG_PRESET,
     ffmpeg_path="ffmpeg",
-    neutral_face=False,
-    zero_jaw=False,
-    zero_expression=False,
+    neutral_face=DEFAULT_RENDER_NEUTRAL_FACE,
+    zero_jaw=DEFAULT_RENDER_ZERO_JAW,
+    zero_expression=DEFAULT_RENDER_ZERO_EXPRESSION,
     **camera_overrides,
 ):
     args_dict = {field: None for field in CAMERA_FIELDS}

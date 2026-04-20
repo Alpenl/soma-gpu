@@ -11,6 +11,18 @@ from utils.script_utils import (
     format_stageii_match_error,
     resolve_stageii_model_path,
 )
+from workflow_defaults import (
+    DEFAULT_RENDER_NEUTRAL_FACE,
+    DEFAULT_RENDER_ZERO_EXPRESSION,
+    DEFAULT_RENDER_ZERO_JAW,
+    DEFAULT_VIDEO_ARCH,
+    DEFAULT_VIDEO_FFMPEG_CRF,
+    DEFAULT_VIDEO_FFMPEG_PRESET,
+    DEFAULT_VIDEO_FPS,
+    DEFAULT_VIDEO_HEIGHT,
+    DEFAULT_VIDEO_SUPERSAMPLE,
+    DEFAULT_VIDEO_WIDTH,
+)
 
 
 def build_parser():
@@ -66,36 +78,36 @@ def build_parser():
     parser.add_argument(
         "--fps",
         type=int,
-        default=30,
+        default=DEFAULT_VIDEO_FPS,
         help="Frames per second for the preview video.",
     )
     parser.add_argument(
         "--width",
         type=int,
-        default=512,
+        default=DEFAULT_VIDEO_WIDTH,
         help="Output video width.",
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=512,
+        default=DEFAULT_VIDEO_HEIGHT,
         help="Output video height.",
     )
     parser.add_argument(
         "--supersample",
         type=int,
-        default=1,
-        help="Render preview MP4 internally at N times the output resolution and downsample. Use 2 for final videos.",
+        default=DEFAULT_VIDEO_SUPERSAMPLE,
+        help="Render preview MP4 internally at N times the output resolution and downsample.",
     )
     parser.add_argument(
         "--ffmpeg-crf",
         type=int,
-        default=None,
-        help="Use ffmpeg/libx264 CRF encoding for preview MP4. Try 16 for high-quality MP4.",
+        default=DEFAULT_VIDEO_FFMPEG_CRF,
+        help="Use ffmpeg/libx264 CRF encoding for preview MP4.",
     )
     parser.add_argument(
         "--ffmpeg-preset",
-        default="medium",
+        default=DEFAULT_VIDEO_FFMPEG_PRESET,
         help="ffmpeg/libx264 preset used when --ffmpeg-crf is set.",
     )
     parser.add_argument(
@@ -103,10 +115,18 @@ def build_parser():
         default="ffmpeg",
         help="Path to the ffmpeg executable used when --ffmpeg-crf is set.",
     )
+    parser.set_defaults(neutral_face=DEFAULT_RENDER_NEUTRAL_FACE)
     parser.add_argument(
         "--neutral-face",
+        dest="neutral_face",
         action="store_true",
         help="Render with neutral face by zeroing jaw/eye pose and expression.",
+    )
+    parser.add_argument(
+        "--no-neutral-face",
+        dest="neutral_face",
+        action="store_false",
+        help="Keep stageii jaw/eye pose and expression when rendering.",
     )
     parser.add_argument(
         "--zero-jaw",
@@ -120,14 +140,18 @@ def build_parser():
     )
     parser.add_argument(
         "--arch",
-        default="gpu",
+        default=DEFAULT_VIDEO_ARCH,
         help="Taichi backend to use, for example gpu or cuda.",
     )
     parser.add_argument(
         "--camera-preset",
         default=render_video.DEFAULT_CAMERA_PRESET,
         choices=render_video.CAMERA_CHOICES,
-        help="Preview camera preset. subject-frontal follows the actor's facing direction and manual camera args override preset fields.",
+        help=(
+            "Preview camera preset. fixed-front matches the validated a5 delivery camera, "
+            "subject-frontal follows the actor's facing direction, and manual camera args "
+            "override preset fields."
+        ),
     )
     for field in render_video.CAMERA_FIELDS:
         parser.add_argument(
@@ -176,20 +200,20 @@ def export_stageii_artifacts(
     obj_out=None,
     pc2_out=None,
     video_out=None,
-    fps=30,
-    width=512,
-    height=512,
-    arch="gpu",
+    fps=DEFAULT_VIDEO_FPS,
+    width=DEFAULT_VIDEO_WIDTH,
+    height=DEFAULT_VIDEO_HEIGHT,
+    arch=DEFAULT_VIDEO_ARCH,
     camera_preset=render_video.DEFAULT_CAMERA_PRESET,
     video_suffix="_stageii.mp4",
     show_progress=True,
-    supersample=1,
-    ffmpeg_crf=None,
-    ffmpeg_preset="medium",
+    supersample=DEFAULT_VIDEO_SUPERSAMPLE,
+    ffmpeg_crf=DEFAULT_VIDEO_FFMPEG_CRF,
+    ffmpeg_preset=DEFAULT_VIDEO_FFMPEG_PRESET,
     ffmpeg_path="ffmpeg",
-    neutral_face=False,
-    zero_jaw=False,
-    zero_expression=False,
+    neutral_face=DEFAULT_RENDER_NEUTRAL_FACE,
+    zero_jaw=DEFAULT_RENDER_ZERO_JAW,
+    zero_expression=DEFAULT_RENDER_ZERO_EXPRESSION,
     **camera_overrides,
 ):
     stageii_inputs = None
@@ -266,19 +290,19 @@ def export_stageii_artifacts_batch(
     support_base_dir=None,
     output_dir=None,
     input_root=None,
-    fps=30,
-    width=512,
-    height=512,
-    arch="gpu",
+    fps=DEFAULT_VIDEO_FPS,
+    width=DEFAULT_VIDEO_WIDTH,
+    height=DEFAULT_VIDEO_HEIGHT,
+    arch=DEFAULT_VIDEO_ARCH,
     camera_preset=render_video.DEFAULT_CAMERA_PRESET,
     show_progress=True,
-    supersample=1,
-    ffmpeg_crf=None,
-    ffmpeg_preset="medium",
+    supersample=DEFAULT_VIDEO_SUPERSAMPLE,
+    ffmpeg_crf=DEFAULT_VIDEO_FFMPEG_CRF,
+    ffmpeg_preset=DEFAULT_VIDEO_FFMPEG_PRESET,
     ffmpeg_path="ffmpeg",
-    neutral_face=False,
-    zero_jaw=False,
-    zero_expression=False,
+    neutral_face=DEFAULT_RENDER_NEUTRAL_FACE,
+    zero_jaw=DEFAULT_RENDER_ZERO_JAW,
+    zero_expression=DEFAULT_RENDER_ZERO_EXPRESSION,
     **camera_overrides,
 ):
     input_pkls = [str(Path(input_pkl)) for input_pkl in input_pkls]

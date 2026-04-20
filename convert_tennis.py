@@ -3,11 +3,18 @@ import os.path as osp
 from glob import glob
 from pathlib import Path
 
-from render_video import DEFAULT_CAMERA_PRESET
 from utils.script_utils import (
     discover_stageii_pickles,
     format_stageii_match_error,
     resolve_support_base_dir,
+)
+from workflow_defaults import (
+    DEFAULT_CAMERA_PRESET,
+    DEFAULT_MOSH_FIT_CFG,
+    DEFAULT_VIDEO_ARCH,
+    DEFAULT_VIDEO_FPS,
+    DEFAULT_VIDEO_HEIGHT,
+    DEFAULT_VIDEO_WIDTH,
 )
 
 DEFAULT_EXPR_ID = "V48_02_SuperSet"
@@ -91,24 +98,24 @@ def build_parser():
     parser.add_argument(
         "--export-fps",
         type=int,
-        default=30,
+        default=DEFAULT_VIDEO_FPS,
         help="Frames per second used by stageii artifact preview rendering.",
     )
     parser.add_argument(
         "--export-width",
         type=int,
-        default=512,
+        default=DEFAULT_VIDEO_WIDTH,
         help="Output width used by stageii artifact preview rendering.",
     )
     parser.add_argument(
         "--export-height",
         type=int,
-        default=512,
+        default=DEFAULT_VIDEO_HEIGHT,
         help="Output height used by stageii artifact preview rendering.",
     )
     parser.add_argument(
         "--export-arch",
-        default="gpu",
+        default=DEFAULT_VIDEO_ARCH,
         help="Taichi backend used by stageii artifact preview rendering.",
     )
     parser.add_argument(
@@ -187,10 +194,10 @@ def export_stageii_artifacts_for_dataset(
     support_base_dir=None,
     output_dir=None,
     fname_filter=None,
-    fps=30,
-    width=512,
-    height=512,
-    arch="gpu",
+    fps=DEFAULT_VIDEO_FPS,
+    width=DEFAULT_VIDEO_WIDTH,
+    height=DEFAULT_VIDEO_HEIGHT,
+    arch=DEFAULT_VIDEO_ARCH,
     camera_preset=DEFAULT_CAMERA_PRESET,
 ):
     import export_stageii_artifacts
@@ -288,8 +295,8 @@ def main(argv=None):
                 soma_mocap_target_ds_names=[args.dataset],
                 soma_data_ids=[args.data_id],
                 mosh_cfg={
+                    **DEFAULT_MOSH_FIT_CFG,
                     "moshpp.verbosity": 1,
-                    "moshpp.stagei_frame_picker.type": "random",
                     "dirs.support_base_dir": support_base_dir,
                 },
                 mocap_base_dir=args.mocap_base_dir,

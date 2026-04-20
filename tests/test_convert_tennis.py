@@ -126,6 +126,12 @@ def test_convert_tennis_exports_matching_stageii_artifacts_after_mosh(monkeypatc
     )
 
     assert [call["run_tasks"] for call in run_calls] == [["soma"], ["mosh"]]
+    assert run_calls[1]["mosh_cfg"]["moshpp.optimize_fingers"] is True
+    assert run_calls[1]["mosh_cfg"]["moshpp.optimize_face"] is False
+    assert run_calls[1]["mosh_cfg"]["moshpp.stagei_frame_picker.type"] == "random"
+    assert run_calls[1]["mosh_cfg"]["moshpp.stagei_frame_picker.seed"] == 100
+    assert run_calls[1]["mosh_cfg"]["moshpp.stagei_frame_picker.num_frames"] == 12
+    assert run_calls[1]["mosh_cfg"]["opt_settings.maxiter"] == 100
     assert len(export_calls) == 1
     assert export_calls[0]["input_pkl"].endswith("swing_stageii.pkl")
     assert export_calls[0]["model_path"] == str(model_path)
@@ -133,7 +139,7 @@ def test_convert_tennis_exports_matching_stageii_artifacts_after_mosh(monkeypatc
     assert export_calls[0]["width"] == 160
     assert export_calls[0]["height"] == 120
     assert export_calls[0]["arch"] == "cpu"
-    assert export_calls[0]["camera_preset"] == "subject-frontal"
+    assert export_calls[0]["camera_preset"] == "fixed-front"
 
 
 def test_convert_tennis_auto_detects_mcp_inputs_by_default(monkeypatch, tmp_path):

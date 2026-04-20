@@ -2,6 +2,28 @@
 
 这份说明面向“最终视频交付”场景，而不是 speed benchmark。目标是尽量在不改业务代码的前提下，把 `.mcp -> stageii -> OBJ/PC2/preview MP4` 这一条链路跑得更稳、更适合人工观看。
 
+## 0. 当前默认链路
+
+当前仓库已经把这次验证通过的 `a5` 口径固化成默认值：
+
+- `.mcp/.c3d -> .pkl`
+  - classic MoSh 入口会显式固定 `moshpp.optimize_fingers=true`
+  - `moshpp.optimize_face=false`
+  - `moshpp.stagei_frame_picker.type=random`
+  - `moshpp.stagei_frame_picker.seed=100`
+  - `moshpp.stagei_frame_picker.num_frames=12`
+  - `opt_settings.maxiter=100`
+- `.pkl -> .mp4`
+  - 默认机位是 `fixed-front`
+  - 等价于 `camera=(-3, 0, 1)`、`lookat=(0, 0, 1)`
+  - 默认输出 `1024x1024`
+  - 默认 `supersample=2`
+  - 默认 `ffmpeg-crf=16`
+  - 默认 `ffmpeg-preset=slow`
+  - 默认开启 `neutral-face`
+
+也就是说，如果你只是按仓库默认命令直接跑，不额外传这些参数，得到的就是当前这条稳定交付链。
+
 ## 适用场景
 
 - 你已经有一份真实 `.mcp`
@@ -71,15 +93,10 @@ python run_stageii_torch_official.py \
 ```bash
 python export_stageii_artifacts.py \
   --input-pkl "$STAGEII_PKL" \
-  --support-base-dir "$SUPPORT" \
-  --width 1024 \
-  --height 1024 \
-  --supersample 2 \
-  --ffmpeg-crf 16 \
-  --ffmpeg-preset slow
+  --support-base-dir "$SUPPORT"
 ```
 
-默认情况下，`export_stageii_artifacts.py` 会使用 `subject-frontal` 机位：它会根据 stageii 里的 root orientation 自动解出人物正面，而不是固定看世界坐标的某个轴向。
+默认情况下，`export_stageii_artifacts.py` 已经会使用这次验证过的 `a5` 交付机位和编码参数：`fixed-front`、`1024x1024`、`supersample=2`、`CRF=16`、`preset=slow`、`neutral-face`。如果你要改回世界坐标前视或手工机位，再显式覆盖。
 
 如果只想单独重渲 MP4，不重复导 OBJ/PC2：
 
@@ -88,15 +105,10 @@ python render_video.py \
   --input-path "$STAGEII_PKL" \
   --model-path "$SUPPORT/smplx/male/model.npz" \
   --output-path output_quality.mp4 \
-  --width 1024 \
-  --height 1024 \
-  --supersample 2 \
-  --ffmpeg-crf 16 \
-  --ffmpeg-preset slow \
   --force
 ```
 
-`render_video.py` 现在同样默认使用 `subject-frontal`。如果你想保留旧的世界坐标前视，可显式传：
+`render_video.py` 现在同样默认使用这套 `a5` 交付参数。如果你想保留旧的世界坐标前视，可显式传：
 
 ```bash
 --camera-preset frontal
@@ -185,16 +197,17 @@ runtime.sequence_temporal_accel=40
 
 - 这套 preset 不是速度优先，而是最终视频优先
 - 它更擅长压低 twitch / seam，不保证一定能修掉所有局部姿态 basin 问题
-- 默认的 `subject-frontal` 会根据 stageii 的 root orientation 跟随人物朝向，因此更适合作为最终视频导出的默认机位
+- 默认的 `fixed-front` 是一条固定机位，不会跟随人物朝向变化
+- `subject-frontal` 仍然保留，适合需要自动跟随人物正面的场景
 - `frontal` 相机 preset 仍然保留，但它只是世界坐标前视，不一定等于人物真实正面
-- 如果自动 `subject-frontal` 仍不符合你的构图目标，继续使用 `--camera-x/--camera-y/--camera-z` 和 `--lookat-*` 手动覆盖
+- 如果固定的 `fixed-front` 仍不符合你的构图目标，继续使用 `--camera-preset subject-frontal` 或 `--camera-x/--camera-y/--camera-z` 和 `--lookat-*` 手动覆盖
 
 ## 6. 建议工作方式
 
 实际使用时，推荐分成两步：
 
 1. 先用 `real-mcp-quality-video` 产出 `stageii.pkl`
-2. 先直接看默认的 `subject-frontal` 导出结果
+2. 先直接看默认的 `fixed-front` 导出结果
 3. 如果构图还不理想，再反复重渲 preview MP4，调机位和编码参数
 
 这样调视频视角、分辨率和编码时，不需要反复重跑长时间的 stageii 求解。

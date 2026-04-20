@@ -158,7 +158,7 @@ def test_build_preview_jobs_supports_single_input_and_direct_output_mp4(tmp_path
     assert jobs == [(str(input_path), str(output_path))]
 
 
-def test_build_parser_defaults_camera_preset_to_subject_frontal():
+def test_build_parser_defaults_to_a5_delivery_render_settings():
     parser = render_video.build_parser()
     args = parser.parse_args(
         [
@@ -169,7 +169,13 @@ def test_build_parser_defaults_camera_preset_to_subject_frontal():
         ]
     )
 
-    assert args.camera_preset == "subject-frontal"
+    assert args.camera_preset == "fixed-front"
+    assert args.width == 1024
+    assert args.height == 1024
+    assert args.supersample == 2
+    assert args.ffmpeg_crf == 16
+    assert args.ffmpeg_preset == "slow"
+    assert args.neutral_face is True
 
 
 def test_resolve_camera_config_uses_frontal_preset_and_allows_overrides():
@@ -193,6 +199,33 @@ def test_resolve_camera_config_uses_frontal_preset_and_allows_overrides():
     assert camera.camera_x == 0.0
     assert camera.camera_y == -3.0
     assert camera.camera_z == 2.25
+    assert camera.lookat_x == 0.0
+    assert camera.lookat_y == 0.0
+    assert camera.lookat_z == 1.0
+    assert camera.up_x == 0.0
+    assert camera.up_y == 0.0
+    assert camera.up_z == 1.0
+
+
+def test_resolve_camera_config_uses_fixed_front_preset():
+    camera = render_video.resolve_camera_config(
+        SimpleNamespace(
+            camera_preset="fixed-front",
+            camera_x=None,
+            camera_y=None,
+            camera_z=None,
+            lookat_x=None,
+            lookat_y=None,
+            lookat_z=None,
+            up_x=None,
+            up_y=None,
+            up_z=None,
+        )
+    )
+
+    assert camera.camera_x == -3.0
+    assert camera.camera_y == 0.0
+    assert camera.camera_z == 1.0
     assert camera.lookat_x == 0.0
     assert camera.lookat_y == 0.0
     assert camera.lookat_z == 1.0
@@ -260,7 +293,13 @@ def test_render_stageii_preview_provides_stable_single_file_entrypoint(monkeypat
     assert result == str(output_path)
     assert captured["args"].input_path == str(input_path)
     assert captured["args"].output_path == str(output_path)
-    assert captured["args"].camera_preset == "subject-frontal"
+    assert captured["args"].camera_preset == "fixed-front"
+    assert captured["args"].width == 1024
+    assert captured["args"].height == 1024
+    assert captured["args"].supersample == 2
+    assert captured["args"].ffmpeg_crf == 16
+    assert captured["args"].ffmpeg_preset == "slow"
+    assert captured["args"].neutral_face is True
 
 
 def test_render_stageii_preview_infers_output_path_when_omitted(monkeypatch, tmp_path):

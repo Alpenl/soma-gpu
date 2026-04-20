@@ -101,7 +101,7 @@ def test_export_stageii_artifacts_uses_default_output_paths_and_shared_render_in
     }
     assert captured["load_model_calls"] == [SUPPORT_ROOT / "smplx" / "male" / "model.npz"]
     assert captured["load_vertices_calls"] == [
-        (input_path, preloaded_model, {"neutral_face": False, "zero_jaw": False, "zero_expression": False})
+        (input_path, preloaded_model, {"neutral_face": True, "zero_jaw": False, "zero_expression": False})
     ]
     assert captured["mesh_calls"] == [
         (input_path, preloaded_model, predecoded_vertices, expected_obj, expected_pc2)
@@ -171,6 +171,19 @@ def test_export_stageii_artifacts_reuses_preloaded_model_and_vertices_without_lo
     }
     assert captured["mesh"] == (preloaded_model, predecoded_vertices)
     assert captured["video"] == (predecoded_vertices, preloaded_model.faces)
+
+
+def test_export_stageii_artifacts_parser_defaults_to_a5_delivery_render_settings():
+    parser = export_stageii_artifacts.build_parser()
+    args = parser.parse_args(["--input-pkl", "demo_stageii.pkl"])
+
+    assert args.width == 1024
+    assert args.height == 1024
+    assert args.supersample == 2
+    assert args.ffmpeg_crf == 16
+    assert args.ffmpeg_preset == "slow"
+    assert args.camera_preset == "fixed-front"
+    assert args.neutral_face is True
 
 
 def test_export_stageii_artifacts_forwards_face_zeroing_args_to_vertex_decode(monkeypatch, tmp_path):
