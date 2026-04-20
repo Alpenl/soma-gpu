@@ -60,3 +60,12 @@ DEFAULT_MOSH_FIT_CFG = {
     "opt_settings.weights.stageii_wt_poseH": 1.0,
     "opt_settings.weights.stageii_wt_poseF": 1.0,
 }
+
+# GPU per-frame solver config (quality-matched to CPU dogleg)
+DEFAULT_GPU_PERFRAME_RUNTIME = {
+    "backend": "torch",
+    "device": "cuda",
+    "sequence_chunk_size": 1,
+    "refine_lr": 0.05,
+    "sequence_seed_refine_iters": 5,
+}

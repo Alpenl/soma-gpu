@@ -119,6 +119,7 @@ python render_video.py \
 `render_video.py` 也默认使用同一套 `a5` 交付参数，也就是固定机位 `camera=(-3, 0, 1)`、`lookat=(0, 0, 1)`、`1024x1024`、`supersample=2`、`CRF=16`、`preset=slow`、`neutral-face`。如果只想看世界坐标前视，可显式传 `--camera-preset frontal`；如果还需要完全手工控制机位，则继续使用 `--camera-x/--camera-y/--camera-z` 等覆盖参数。
 
 补充说明见 [docs/高质量mcp到mp4导出.md](docs/高质量mcp到mp4导出.md)。
+关于 old CPU `/home/alpen/DEV/soma/convert_tennis.py` 在 `haonan-73` 上的 `73` 点方案一修正、`optimize_fingers=true` 加手版配置，以及每次失败的确定性原因，见 [docs/旧CPU_convert_tennis加手实验归档.md](docs/旧CPU_convert_tennis加手实验归档.md)。
 
 若想递归扫描整个 session / 目录下的现有 stageii 结果并批量补导出，可运行：
 ````
