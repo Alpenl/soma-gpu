@@ -12,6 +12,12 @@ from .frame_fit_torch import (
     make_stageii_latent_layout,
 )
 from .stageii_evaluator_torch import StageIIFrameEvaluator
+from .batch_frame_fit_torch import (
+    StageIIBatchFrameEvaluator,
+    TorchBatchFrameFitResult,
+    build_stageii_batch_frame_evaluator,
+    fit_stageii_frames_batched_torch,
+)
 from .sequence_evaluator_torch import (
     StageIISequenceEvaluator,
     build_stageii_sequence_evaluator,

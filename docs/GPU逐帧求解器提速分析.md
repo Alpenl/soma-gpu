@@ -4,6 +4,15 @@ Date: 2026-04-20
 Hardware: NVIDIA RTX 4090 D  
 Sequence: `wolf001 / 4090-haonan-73` (18919 frames, 10.5 min @ 30fps)
 
+后续几轮高风险求解器重写、真实 benchmark 和已否掉方向的归档见：[GPU逐帧求解器重写实验归档.md](./GPU逐帧求解器重写实验归档.md)
+
+状态更新（2026-04-21）：
+
+- 本文推荐路线里的“方案 A：直接测 `real-mcp-baseline`”已经实测完成
+- matched real 300 帧结果为 residual mean `25.20 mm`、p90 `41.54 mm`
+- 该质量相对 per-frame reference 明显不可接受，因此方案 A 已判否
+- 细节见归档文档中的对应实验条目
+
 ## 当前状态
 
 GPU per-frame LBFGS（`chunk_size=1, maxiter=100, refine_lr=0.05`）：
@@ -82,6 +91,8 @@ GPU 利用率仅 28%（`nvidia-smi`）。原因不是 CPU prep 慢，而是 LBFG
 ## 可行提速方案
 
 ### 方案 A：评估现有 chunked sequence 主线的吞吐（低风险，应先做）
+
+> 2026-04-21 状态：已完成实测，结论是否定。`real-mcp-baseline` 在 matched real 300 帧上的 residual 明显不可接受，不能作为停掉 per-frame 提速工作的依据。具体数字见归档文档。
 
 当前主线已支持 `sequence_chunk_size > 1` 的 batched sequence evaluator（`chmosh_torch.py:1682-1702`），并有多个已验证的 preset：
 
